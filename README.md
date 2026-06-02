@@ -87,6 +87,8 @@ All configuration is done via environment variables.
 | `DEFAULT_LANG` | *(empty)* | `""` = auto-detect from browser, or force `de`/`en` |
 | `CURRENCY` | `EUR` | `EUR` or `USD` — used for "money saved" display |
 | `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh |
+| `TZ` | `Etc/UTC` | IANA timezone identifier (e.g. `Europe/Berlin`, `America/New_York`) |
+| `RETENTION_DAYS` | `730` | Days to keep raw measurements. 0 = disable pruning. |
 | `CO2_KG_PER_KWH` | `0.38` | Grid CO₂ intensity (kg CO₂ per kWh) |
 | `LOG_LEVEL` | `INFO` | Python log level (DEBUG, INFO, WARNING) |
 
