@@ -1,17 +1,30 @@
 services:
   ez1-monitor:
     build: .
-    # If you push the image to a registry, replace `build: .` with:
-    # image: yourname/ez1-monitor:latest
+    # Or, after the GitHub Actions workflow has pushed an image:
+    # image: ghcr.io/thecsimon/ez1-monitor:latest
     container_name: ez1-monitor
-    restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       - /mnt/user/appdata/ez1-monitor:/data
     environment:
-      - INVERTER_IP=192.168.1.100   # <-- IP deines EZ1-M anpassen
+      # --- Connection ---
+      - INVERTER_IP=192.168.1.194        # IP of your EZ1-M
       - INVERTER_PORT=8050
-      - POLL_INTERVAL=60
-      - INSTALL_KWP=1.0             # für eventuelle Vergleichswerte
+      - POLL_INTERVAL=30
+
+      # --- Installation ---
+      - INSTALL_KWP=1.0                  # Installed peak power in kWp
+
+      # --- Localization (leave DEFAULT_LANG empty to auto-detect from browser) ---
+      - DEFAULT_LANG=en                   # "", "de" or "en"
+      - CURRENCY=EUR                     # "EUR" or "USD"
+
+      # --- Economic / environmental factors ---
+      - PRICE_PER_KWH=0.30               # Local electricity price per kWh
+      - CO2_KG_PER_KWH=0.38              # Grid CO2 intensity (kg CO2 per kWh)
+
+      # --- Logging ---
       - LOG_LEVEL=INFO
+    restart: unless-stopped
