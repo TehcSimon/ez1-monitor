@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, time
 from pathlib import Path
 
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import Database
@@ -18,12 +18,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ez1-monitor")
 
-# --- Config (from env) ----------------------------------------------------
-INVERTER_IP = os.getenv("INVERTER_IP", "192.168.1.100")
+# --- Configuration (from environment) -------------------------------------
+INVERTER_IP = os.getenv("INVERTER_IP", "192.168.1.194")
 INVERTER_PORT = int(os.getenv("INVERTER_PORT", "8050"))
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
 DB_PATH = os.getenv("DB_PATH", "/data/ez1.db")
-INSTALL_KWP = float(os.getenv("INSTALL_KWP", "1.0"))  # for vergleichswerte
+INSTALL_KWP = float(os.getenv("INSTALL_KWP", "1.0"))
+
+# Localization
+# DEFAULT_LANG: empty string = auto-detect from browser Accept-Language header
+#               "de" / "en"   = force this language for all clients
+DEFAULT_LANG = os.getenv("DEFAULT_LANG", "").lower().strip()
+SUPPORTED_LANGS = {"de", "en"}
+
+# Economic / environmental values for lifetime savings display
+CURRENCY = os.getenv("CURRENCY", "EUR").upper()
+PRICE_PER_KWH = float(os.getenv("PRICE_PER_KWH", "0.35"))
+CO2_KG_PER_KWH = float(os.getenv("CO2_KG_PER_KWH", "0.38"))
 # --------------------------------------------------------------------------
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -32,9 +43,28 @@ db = Database(DB_PATH)
 poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db)
 
 
+def detect_language(request: Request) -> str:
+    """Determine UI language: env override > browser Accept-Language > 'en' fallback."""
+    if DEFAULT_LANG in SUPPORTED_LANGS:
+        return DEFAULT_LANG
+
+    accept = request.headers.get("accept-language", "")
+    if accept:
+        # Parse first preferred language (e.g. "de-DE,de;q=0.9,en;q=0.8" -> "de")
+        first = accept.split(",")[0].split(";")[0].strip().lower()
+        primary = first.split("-")[0]
+        if primary in SUPPORTED_LANGS:
+            return primary
+
+    return "en"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Starting EZ1 Monitor — inverter at {INVERTER_IP}:{INVERTER_PORT}, poll every {POLL_INTERVAL}s")
+    logger.info(
+        f"Starting EZ1 Monitor — inverter at {INVERTER_IP}:{INVERTER_PORT}, "
+        f"poll every {POLL_INTERVAL}s, currency={CURRENCY}, price={PRICE_PER_KWH}/kWh"
+    )
     await db.init()
     await poller.start()
     yield
@@ -47,9 +77,15 @@ app = FastAPI(title="EZ1 Monitor", lifespan=lifespan)
 
 # ---------------------------- API ----------------------------------------
 
+@app.get("/health")
+async def health():
+    """Simple health endpoint for container health checks."""
+    return {"status": "ok"}
+
+
 @app.get("/api/live")
-async def get_live():
-    """Latest measurement + device info."""
+async def get_live(request: Request):
+    """Latest measurement, device info, and runtime configuration."""
     latest = await db.get_latest()
     info = await db.get_device_info()
     return {
@@ -59,6 +95,10 @@ async def get_live():
             "inverter_ip": INVERTER_IP,
             "poll_interval": POLL_INTERVAL,
             "install_kwp": INSTALL_KWP,
+            "language": detect_language(request),
+            "currency": CURRENCY,
+            "price_per_kwh": PRICE_PER_KWH,
+            "co2_kg_per_kwh": CO2_KG_PER_KWH,
         },
     }
 
@@ -67,20 +107,20 @@ async def get_live():
 async def get_history(
     range: str = Query("day", pattern="^(day|week|month|year)$"),
 ):
-    """Historical data for the given range."""
+    """Historical data points for the requested time range."""
     now = datetime.now()
     if range == "day":
         start = datetime.combine(now.date(), time.min)
         bucket = 0  # raw points
     elif range == "week":
         start = now - timedelta(days=7)
-        bucket = 600  # 10-min buckets
+        bucket = 600  # 10-minute buckets
     elif range == "month":
         start = now - timedelta(days=30)
         bucket = 3600  # 1-hour buckets
     else:  # year
         start = now - timedelta(days=365)
-        bucket = 86400  # daily
+        bucket = 86400  # daily buckets
 
     points = await db.get_range(int(start.timestamp()), int(now.timestamp()), bucket)
     return {"range": range, "bucket_seconds": bucket, "points": points}
@@ -88,7 +128,7 @@ async def get_history(
 
 @app.get("/api/stats")
 async def get_stats():
-    """Summary statistics with comparisons."""
+    """Aggregated statistics with period-over-period comparisons."""
     now = datetime.now()
     today_start = datetime.combine(now.date(), time.min)
     yesterday_start = today_start - timedelta(days=1)
@@ -102,32 +142,25 @@ async def get_stats():
     this_year_start = datetime(now.year, 1, 1)
 
     async def energy_between(start: datetime, end: datetime) -> float:
-        """Sum of daily MAX(e1+e2) values in the date range."""
+        """Sum of daily MAX(e1+e2) values within the date range."""
         daily = await db.get_range(int(start.timestamp()), int(end.timestamp()), 86400)
         # Each bucket is one day with MAX(e1), MAX(e2). e1/e2 are reset at midnight.
         return sum(((d.get("e1") or 0) + (d.get("e2") or 0)) for d in daily)
 
-    # Today / Yesterday
     today_kwh = await energy_between(today_start, now)
     yesterday_kwh = await energy_between(yesterday_start, today_start)
-
-    # This week vs last week (full last week)
     this_week_kwh = await energy_between(this_week_start, now)
     last_week_kwh = await energy_between(last_week_start, this_week_start)
-
-    # This month vs last month
     this_month_kwh = await energy_between(this_month_start, now)
     last_month_kwh = await energy_between(last_month_start, this_month_start)
-
-    # Year + total
     this_year_kwh = await energy_between(this_year_start, now)
     total_kwh = await db.get_total_energy()
 
-    # Vergleichswerte (CO2 + Cents based on ~0.35 €/kWh)
-    co2_kg = total_kwh * 0.38  # German grid mix ~380g/kWh
-    saved_eur = total_kwh * 0.35
+    # Lifetime savings — currency-agnostic field name
+    co2_kg = total_kwh * CO2_KG_PER_KWH
+    money_saved = total_kwh * PRICE_PER_KWH
 
-    # Today peak power
+    # Peak power reached today
     today_points = await db.get_range(int(today_start.timestamp()), int(now.timestamp()), 0)
     peak_w_today = 0.0
     if today_points:
@@ -146,7 +179,7 @@ async def get_stats():
         "total_kwh": round(total_kwh, 3),
         "peak_w_today": round(peak_w_today, 1),
         "co2_saved_kg": round(co2_kg, 2),
-        "money_saved_eur": round(saved_eur, 2),
+        "money_saved": round(money_saved, 2),
         "daily_30d": daily_30d,
     }
 
