@@ -1,123 +1,164 @@
 # EZ1 Monitor
 
-Schlanker Docker-Container zur Überwachung eines **APsystems EZ1-M** Wechselrichters
-via lokaler API (Port 8050). Speichert alle Messwerte in SQLite und liefert ein
-Web-Frontend mit Live-Daten, Tages-/Monats-/Jahresverlauf und kWh-Statistiken.
+[![Build and push container image](https://github.com/ThecSimon/ez1-monitor/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/ThecSimon/ez1-monitor/actions/workflows/build-and-push.yml)
 
-Kein Konto, keine Cloud, keine Telemetrie.
+A lean, self-hosted monitoring dashboard for the **APsystems EZ1-M** microinverter.
+Polls the inverter's local API, stores all measurements in SQLite, and serves
+a web frontend with live data, historical charts, and lifetime statistics.
+
+No cloud, no account, no telemetry. Localized for German and English.
+
+<!-- TODO: add screenshot once dashboard is running with production data -->
 
 ## Features
 
-- Pollt den EZ1-M alle 60 s (konfigurierbar) via offizieller `apsystems-ez1` Lib
-- Speichert PV1/PV2 Leistung, Tages- und Lebensdauerertrag, Online-Status
-- Web-Dashboard mit:
-  - Live-Leistung (gesamt + PV1/PV2 einzeln)
-  - Auslastung im Verhältnis zum Drosselungslimit
-  - Tagesverlauf-Chart (Leistung über Zeit)
-  - Wochen-/Monats-/Jahres-Verlauf (Bar-Chart kWh)
-  - Vergleichskarten: Heute vs. gestern, Woche, Monat
-  - Spitzenleistung des Tages
-  - Gesamterzeugung + CO₂- und Geldersparnis-Berechnung
+- Polls the EZ1-M every 60 s (configurable) via the official `apsystems-ez1` library
+- Stores PV1/PV2 power, today's energy, lifetime energy, online status
+- Web dashboard with:
+    - Live power (total + per-channel) and throttle utilization
+    - Today's intraday curve
+    - Week / Month / Year history (bar chart, kWh per day)
+    - Period comparisons (today vs yesterday, week, month)
+    - Lifetime totals: energy, CO₂ avoided, money saved
+- UI in German or English (auto-detected from browser, can be forced via env)
+- Configurable currency (EUR / USD) and electricity price
+- Container healthcheck for clean integration
 
-## Voraussetzungen
+## Prerequisites
 
-1. Der EZ1-M hängt in deinem WLAN
-2. Die **lokale API** ist aktiviert (in der AP EasyPower App unter den
-   Wechselrichter-Einstellungen → "Local Mode" / "Lokale API")
-3. Der WR hat eine bekannte IP (idealerweise im Router als Fix-IP/DHCP-Reservierung)
+1. EZ1-M is on your network with a known IP (DHCP reservation recommended)
+2. **Local API is enabled** on the inverter — in the AP EasyPower app under the
+   inverter settings, set "Local Mode" to **Continuous**
+3. The local API responds on port 8050:
+   ```bash
+   curl http://<EZ1-IP>:8050/getDeviceInfo
+   ```
+   This should return JSON with `deviceId`, `maxPower`, etc.
 
-API-Endpunkt testen vor dem Start:
-```
-curl http://<EZ1-IP>:8050/getDeviceInfo
-```
-Sollte JSON mit `deviceId` etc. liefern.
+## Quick Start
 
-## Quick Start (docker-compose)
+### Option A: `docker run`
 
 ```bash
-git clone <repo>
-cd ez1-monitor
+docker run -d \
+  --name ez1-monitor \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v ez1-data:/data \
+  -e INVERTER_IP=<EZ1-IP> \
+  -e PRICE_PER_KWH=0.30 \
+  ghcr.io/thecsimon/ez1-monitor:latest
+```
 
-# IP anpassen
-nano docker-compose.yml
+### Option B: `docker compose`
 
+Edit `docker-compose.yml` (set `INVERTER_IP` and your local values), then:
+
+```bash
 docker compose up -d
 ```
 
-Dashboard öffnen: http://<host-ip>:8080
+Open the dashboard at `http://<host>:8080`.
 
-## Unraid-Setup (ohne Community-Template)
+### Option C: Unraid
 
-1. **In den Community Apps** ist das Image nicht enthalten – du baust es lokal.
-2. Repository klonen:
-   ```bash
-   cd /mnt/user/appdata
-   git clone <repo> ez1-monitor-src
-   cd ez1-monitor-src
-   docker build -t ez1-monitor:local .
-   ```
-3. **Docker → Container hinzufügen** in Unraid:
-   - **Name:** `ez1-monitor`
-   - **Repository:** `ez1-monitor:local`
-   - **Network Type:** Bridge
-   - **Port:** Host `8080` → Container `8080`
-   - **Path:** Host `/mnt/user/appdata/ez1-monitor` → Container `/data`
-   - **Variables:**
-     - `INVERTER_IP` = `192.168.x.x` (deine EZ1-M IP)
-     - `INVERTER_PORT` = `8050`
-     - `POLL_INTERVAL` = `60`
-     - `INSTALL_KWP` = `1.0`
-4. **Apply** → Container startet, Dashboard unter `http://<unraid-ip>:8080`
+1. Docker tab → **Add Container**
+2. Repository: `ghcr.io/thecsimon/ez1-monitor:latest`
+3. Network Type: Bridge
+4. Port: Host `8080` → Container `8080`
+5. Path: Host `/mnt/user/appdata/ez1-monitor` → Container `/data`
+6. Add the environment variables listed below as needed
+7. Apply — dashboard is at `http://<unraid-ip>:8080`
 
-## Konfiguration (Umgebungsvariablen)
+## Configuration
 
-| Variable | Default | Beschreibung |
+All configuration is done via environment variables.
+
+| Variable | Default | Description |
 |---|---|---|
-| `INVERTER_IP` | `192.168.1.100` | IP-Adresse des EZ1-M im Heimnetz |
-| `INVERTER_PORT` | `8050` | Port der lokalen API |
-| `POLL_INTERVAL` | `60` | Sekunden zwischen API-Abfragen |
-| `DB_PATH` | `/data/ez1.db` | Pfad zur SQLite-Datei |
-| `INSTALL_KWP` | `1.0` | installierte Modul-Peakleistung in kWp |
-| `LOG_LEVEL` | `INFO` | Python-Log-Level (DEBUG, INFO, WARNING) |
+| `INVERTER_IP` | `192.168.1.194` | IP address of the EZ1-M inverter |
+| `INVERTER_PORT` | `8050` | Port of the local API |
+| `POLL_INTERVAL` | `60` | Seconds between API polls |
+| `DB_PATH` | `/data/ez1.db` | Path to the SQLite database file |
+| `INSTALL_KWP` | `1.0` | Installed peak power in kWp |
+| `DEFAULT_LANG` | *(empty)* | `""` = auto-detect from browser, or force `de`/`en` |
+| `CURRENCY` | `EUR` | `EUR` or `USD` — used for "money saved" display |
+| `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh |
+| `CO2_KG_PER_KWH` | `0.38` | Grid CO₂ intensity (kg CO₂ per kWh) |
+| `LOG_LEVEL` | `INFO` | Python log level (DEBUG, INFO, WARNING) |
 
-## Datenbank
+## API Endpoints
 
-SQLite-Datei unter `/data/ez1.db`. Bei 60-s-Polling ca. 1.440 Zeilen pro Tag,
-≈ 500.000 pro Jahr. Bei ~80 Bytes pro Zeile = **~40 MB pro Jahr**. WAL-Modus ist
-aktiv, also keine Locks im Normalbetrieb.
+For integrations and scripts:
 
-Backup: einfach die Datei `/mnt/user/appdata/ez1-monitor/ez1.db` mitkopieren
-(Unraid macht das via Appdata-Backup-Plugin automatisch).
+| Endpoint | Description |
+|---|---|
+| `GET /health` | Container health check (returns `{"status":"ok"}`) |
+| `GET /api/live` | Latest measurement + device info + runtime config |
+| `GET /api/history?range=day\|week\|month\|year` | Historical data points |
+| `GET /api/stats` | Aggregated statistics with period comparisons |
 
-## API-Endpunkte (für eigene Skripte/Integrationen)
+All endpoints return JSON. Example:
 
-- `GET /api/live` — Letzte Messung + Gerät-Info + Config
-- `GET /api/history?range=day|week|month|year` — Zeitreihen-Daten
-- `GET /api/stats` — Zusammengefasste Statistiken inkl. Vergleichswerte
-
-Alle liefern JSON. Beispiel:
 ```bash
-curl http://<unraid-ip>:8080/api/live | jq
+curl http://<host>:8080/api/live | jq
 ```
 
-## Fehlersuche
+## Database
 
-**Status bleibt auf "offline" / "verbinde…"**
-1. Container-Logs prüfen: `docker logs ez1-monitor`
-2. Vom Container aus die API testen:
+SQLite at `/data/ez1.db` (WAL mode). At 60 s polling intervals:
+- ~1,440 rows per day
+- ~525,000 rows per year
+- ~40 MB per year of disk usage
+
+Back up the file by copying it (Unraid appdata-backup plugin handles this automatically).
+
+## Troubleshooting
+
+**Status stays "connecting…" or "offline"**
+
+1. Check container logs:
+   ```bash
+   docker logs ez1-monitor
+   ```
+2. Verify the inverter is reachable from inside the container:
    ```bash
    docker exec ez1-monitor curl http://<EZ1-IP>:8050/getDeviceInfo
    ```
-3. EZ1-M neu starten (Stecker für 30 s ziehen) und prüfen, ob die lokale API
-   aktiv ist (AP EasyPower App → Settings)
+3. Make sure the local API is set to **Continuous** in the AP EasyPower app — the
+   default *Standard* mode disables it after 15 minutes of inactivity.
 
-**Datenbank zurücksetzen**
+**Reset the database**
+
 ```bash
 docker compose down
 rm /mnt/user/appdata/ez1-monitor/ez1.db
 docker compose up -d
 ```
 
-## Lizenz
+## Development
 
-MIT — mach was du willst, garantiert ungewartet 🙃
+Build locally:
+
+```bash
+git clone https://github.com/ThecSimon/ez1-monitor.git
+cd ez1-monitor
+docker build --platform linux/amd64 -t ez1-monitor:local .
+docker run --rm -p 8080:8080 -e INVERTER_IP=<your-ip> ez1-monitor:local
+```
+
+The repo's GitHub Actions workflow builds multi-arch images (`linux/amd64`,
+`linux/arm64`) and pushes them to GHCR on every push to `main`.
+
+## Contributing
+
+Pull requests welcome. Particularly appreciated:
+
+- Additional UI translations (extend `app/static/i18n.js`)
+- Bug reports with logs from `docker logs ez1-monitor`
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Built for personal use with the APsystems EZ1-M. Not affiliated with APsystems.
