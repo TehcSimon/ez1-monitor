@@ -4,6 +4,7 @@ services:
     # Or, after the GitHub Actions workflow has pushed an image:
     # image: ghcr.io/thecsimon/ez1-monitor:latest
     container_name: ez1-monitor
+    restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
@@ -12,19 +13,27 @@ services:
       # --- Connection ---
       - INVERTER_IP=192.168.1.194        # IP of your EZ1-M
       - INVERTER_PORT=8050
-      - POLL_INTERVAL=30
+      - POLL_INTERVAL=60
 
       # --- Installation ---
       - INSTALL_KWP=1.0                  # Installed peak power in kWp
 
+      # --- Data retention ---
+      - RETENTION_DAYS=730               # Keep raw measurements for N days
+        # (730 = 2 years, allows YoY compare)
+      # Set to 0 to disable pruning
+
+      # --- Timezone ---
+      - TZ=Europe/Berlin                 # IANA timezone identifier
+      # e.g. America/New_York, Asia/Tokyo
+
       # --- Localization (leave DEFAULT_LANG empty to auto-detect from browser) ---
-      - DEFAULT_LANG=en                   # "", "de" or "en"
+      - DEFAULT_LANG=                    # "", "de" or "en"
       - CURRENCY=EUR                     # "EUR" or "USD"
 
       # --- Economic / environmental factors ---
-      - PRICE_PER_KWH=0.30               # Local electricity price per kWh
+      - PRICE_PER_KWH=0.35               # Local electricity price per kWh
       - CO2_KG_PER_KWH=0.38              # Grid CO2 intensity (kg CO2 per kWh)
 
       # --- Logging ---
       - LOG_LEVEL=INFO
-    restart: unless-stopped
