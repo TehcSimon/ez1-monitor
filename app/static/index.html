@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,148 +10,149 @@
   <link rel="stylesheet" href="/static/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="/static/i18n.js"></script>
 </head>
 <body>
-  <div class="grain"></div>
+<div class="grain"></div>
 
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo-mark"></div>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-mark"></div>
+    <div>
+      <h1>EZ1 Monitor</h1>
+      <p class="subtitle" id="device-subtitle" data-i18n="app.subtitleLoading">— loading —</p>
+    </div>
+  </div>
+  <div class="status-pill" id="status-pill">
+    <span class="status-dot"></span>
+    <span id="status-text" data-i18n="status.connecting">connecting …</span>
+  </div>
+</header>
+
+<main>
+  <!-- Hero: current power -->
+  <section class="hero card">
+    <div class="hero-main">
+      <div class="hero-label" data-i18n="hero.label">Current Power</div>
+      <div class="hero-value">
+        <span id="current-power">—</span>
+        <span class="unit">W</span>
+      </div>
+      <div class="hero-bar">
+        <div class="hero-bar-fill" id="power-bar"></div>
+        <div class="hero-bar-meta">
+          <span id="power-pct">0 %</span>
+          <span id="power-max">/ 800 W</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-side">
+      <div class="pv-stat">
+        <div class="pv-label" data-i18n="hero.pv1">PV 1</div>
+        <div class="pv-value"><span id="pv1-power">—</span> W</div>
+        <div class="pv-energy"><span id="pv1-energy">—</span> <span data-i18n="hero.energyToday">kWh today</span></div>
+      </div>
+      <div class="pv-stat">
+        <div class="pv-label" data-i18n="hero.pv2">PV 2</div>
+        <div class="pv-value"><span id="pv2-power">—</span> W</div>
+        <div class="pv-energy"><span id="pv2-energy">—</span> <span data-i18n="hero.energyToday">kWh today</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Today chart -->
+  <section class="card chart-card">
+    <div class="card-header">
+      <h2 data-i18n="chart.todayTitle">Today's Curve</h2>
+      <span class="card-meta" id="today-date"></span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="chart-today"></canvas>
+    </div>
+  </section>
+
+  <!-- Comparison cards -->
+  <section class="comparison-grid">
+    <div class="card stat-card">
+      <div class="stat-title" data-i18n="stats.today">Today</div>
+      <div class="stat-value"><span id="stat-today">—</span> <span class="stat-unit">kWh</span></div>
+      <div class="stat-compare" id="stat-today-compare"></div>
+      <div class="stat-sub"><span data-i18n="stats.yesterday">yesterday</span>: <span id="stat-yesterday">—</span> kWh</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-title" data-i18n="stats.week">This Week</div>
+      <div class="stat-value"><span id="stat-week">—</span> <span class="stat-unit">kWh</span></div>
+      <div class="stat-compare" id="stat-week-compare"></div>
+      <div class="stat-sub"><span data-i18n="stats.lastWeek">last week</span>: <span id="stat-last-week">—</span> kWh</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-title" data-i18n="stats.month">This Month</div>
+      <div class="stat-value"><span id="stat-month">—</span> <span class="stat-unit">kWh</span></div>
+      <div class="stat-compare" id="stat-month-compare"></div>
+      <div class="stat-sub"><span data-i18n="stats.lastMonth">last month</span>: <span id="stat-last-month">—</span> kWh</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-title" data-i18n="stats.peakToday">Peak Today</div>
+      <div class="stat-value"><span id="stat-peak">—</span> <span class="stat-unit">W</span></div>
+      <div class="stat-compare"></div>
+      <div class="stat-sub" id="stat-throttle">max throttle: 800 W</div>
+    </div>
+  </section>
+
+  <!-- Historical chart -->
+  <section class="card chart-card">
+    <div class="card-header">
+      <h2 data-i18n="chart.historyTitle">History</h2>
+      <div class="range-tabs">
+        <button class="range-tab" data-range="week" data-i18n="chart.rangeWeek">Week</button>
+        <button class="range-tab active" data-range="month" data-i18n="chart.rangeMonth">Month</button>
+        <button class="range-tab" data-range="year" data-i18n="chart.rangeYear">Year</button>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="chart-history"></canvas>
+    </div>
+  </section>
+
+  <!-- Lifetime stats -->
+  <section class="lifetime-grid">
+    <div class="card lifetime-card accent">
+      <div class="lifetime-icon">⚡</div>
       <div>
-        <h1>EZ1 Monitor</h1>
-        <p class="subtitle" id="device-subtitle">— wird geladen —</p>
+        <div class="lifetime-title" data-i18n="lifetime.totalGeneration">Total Generation</div>
+        <div class="lifetime-value"><span id="lifetime-kwh">—</span> kWh</div>
+        <div class="lifetime-sub" data-i18n="lifetime.sinceStart">since commissioning</div>
       </div>
     </div>
-    <div class="status-pill" id="status-pill">
-      <span class="status-dot"></span>
-      <span id="status-text">verbinde …</span>
+    <div class="card lifetime-card">
+      <div class="lifetime-icon">🌱</div>
+      <div>
+        <div class="lifetime-title" data-i18n="lifetime.co2Avoided">CO₂ Avoided</div>
+        <div class="lifetime-value"><span id="lifetime-co2">—</span> kg</div>
+        <div class="lifetime-sub" id="lifetime-co2-sub">based on 380 g/kWh</div>
+      </div>
     </div>
-  </header>
+    <div class="card lifetime-card">
+      <div class="lifetime-icon">💰</div>
+      <div>
+        <div class="lifetime-title" data-i18n="lifetime.moneySaved">Money Saved</div>
+        <div class="lifetime-value" id="lifetime-money">—</div>
+        <div class="lifetime-sub" id="lifetime-money-sub">at $0.35/kWh</div>
+      </div>
+    </div>
+  </section>
+</main>
 
-  <main>
-    <!-- HERO: Current Power -->
-    <section class="hero card">
-      <div class="hero-main">
-        <div class="hero-label">Aktuelle Leistung</div>
-        <div class="hero-value">
-          <span id="current-power">—</span>
-          <span class="unit">W</span>
-        </div>
-        <div class="hero-bar">
-          <div class="hero-bar-fill" id="power-bar"></div>
-          <div class="hero-bar-meta">
-            <span id="power-pct">0 %</span>
-            <span id="power-max">/ 800 W</span>
-          </div>
-        </div>
-      </div>
-      <div class="hero-side">
-        <div class="pv-stat">
-          <div class="pv-label">PV 1</div>
-          <div class="pv-value"><span id="pv1-power">—</span> W</div>
-          <div class="pv-energy"><span id="pv1-energy">—</span> kWh heute</div>
-        </div>
-        <div class="pv-stat">
-          <div class="pv-label">PV 2</div>
-          <div class="pv-value"><span id="pv2-power">—</span> W</div>
-          <div class="pv-energy"><span id="pv2-energy">—</span> kWh heute</div>
-        </div>
-      </div>
-    </section>
+<footer>
+  <span>EZ1 Monitor</span>
+  <span class="dot-sep">·</span>
+  <span id="footer-inverter">—</span>
+  <span class="dot-sep">·</span>
+  <span id="footer-update-text">Update every <span id="footer-interval">—</span> s</span>
+  <span class="dot-sep">·</span>
+  <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
+</footer>
 
-    <!-- TODAY CHART -->
-    <section class="card chart-card">
-      <div class="card-header">
-        <h2>Tagesverlauf</h2>
-        <span class="card-meta" id="today-date"></span>
-      </div>
-      <div class="chart-wrap">
-        <canvas id="chart-today"></canvas>
-      </div>
-    </section>
-
-    <!-- COMPARISON CARDS -->
-    <section class="comparison-grid">
-      <div class="card stat-card">
-        <div class="stat-title">Heute</div>
-        <div class="stat-value"><span id="stat-today">—</span> <span class="stat-unit">kWh</span></div>
-        <div class="stat-compare" id="stat-today-compare"></div>
-        <div class="stat-sub">gestern: <span id="stat-yesterday">—</span> kWh</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-title">Diese Woche</div>
-        <div class="stat-value"><span id="stat-week">—</span> <span class="stat-unit">kWh</span></div>
-        <div class="stat-compare" id="stat-week-compare"></div>
-        <div class="stat-sub">letzte Woche: <span id="stat-last-week">—</span> kWh</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-title">Dieser Monat</div>
-        <div class="stat-value"><span id="stat-month">—</span> <span class="stat-unit">kWh</span></div>
-        <div class="stat-compare" id="stat-month-compare"></div>
-        <div class="stat-sub">letzter Monat: <span id="stat-last-month">—</span> kWh</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-title">Spitze heute</div>
-        <div class="stat-value"><span id="stat-peak">—</span> <span class="stat-unit">W</span></div>
-        <div class="stat-compare"></div>
-        <div class="stat-sub">max. Drosselung: 800 W</div>
-      </div>
-    </section>
-
-    <!-- HISTORICAL CHART (week/month/year) -->
-    <section class="card chart-card">
-      <div class="card-header">
-        <h2>Verlauf</h2>
-        <div class="range-tabs">
-          <button class="range-tab" data-range="week">Woche</button>
-          <button class="range-tab active" data-range="month">Monat</button>
-          <button class="range-tab" data-range="year">Jahr</button>
-        </div>
-      </div>
-      <div class="chart-wrap">
-        <canvas id="chart-history"></canvas>
-      </div>
-    </section>
-
-    <!-- LIFETIME STATS -->
-    <section class="lifetime-grid">
-      <div class="card lifetime-card accent">
-        <div class="lifetime-icon">⚡</div>
-        <div>
-          <div class="lifetime-title">Gesamterzeugung</div>
-          <div class="lifetime-value"><span id="lifetime-kwh">—</span> kWh</div>
-          <div class="lifetime-sub">seit Inbetriebnahme</div>
-        </div>
-      </div>
-      <div class="card lifetime-card">
-        <div class="lifetime-icon">🌱</div>
-        <div>
-          <div class="lifetime-title">CO₂ vermieden</div>
-          <div class="lifetime-value"><span id="lifetime-co2">—</span> kg</div>
-          <div class="lifetime-sub">basierend auf 380 g/kWh</div>
-        </div>
-      </div>
-      <div class="card lifetime-card">
-        <div class="lifetime-icon">€</div>
-        <div>
-          <div class="lifetime-title">Eingesparter Strom</div>
-          <div class="lifetime-value"><span id="lifetime-eur">—</span> €</div>
-          <div class="lifetime-sub">bei 35 ct/kWh</div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer>
-    <span>EZ1 Monitor</span>
-    <span class="dot-sep">·</span>
-    <span id="footer-inverter">—</span>
-    <span class="dot-sep">·</span>
-    <span>Update alle <span id="footer-interval">—</span> s</span>
-    <span class="dot-sep">·</span>
-    <span>letzte Messung: <span id="footer-last">—</span></span>
-  </footer>
-
-  <script src="/static/app.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>
