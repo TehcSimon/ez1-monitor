@@ -6,7 +6,7 @@ A lean, self-hosted monitoring dashboard for the **APsystems EZ1-M** microinvert
 Polls the inverter's local API, stores all measurements in SQLite, and serves
 a web frontend with live data, historical charts, and lifetime statistics.
 
-No cloud, no account, no telemetry. Localized for German and English.
+No cloud, no account, no telemetry. Localized for English and German.
 
 <!-- TODO: add screenshot once dashboard is running with production data -->
 
@@ -46,7 +46,6 @@ docker run -d \
   -p 8080:8080 \
   -v ez1-data:/data \
   -e INVERTER_IP=<EZ1-IP> \
-  -e PRICE_PER_KWH=0.30 \
   ghcr.io/thecsimon/ez1-monitor:latest
 ```
 
@@ -69,6 +68,10 @@ Open the dashboard at `http://<host>:8080`.
 5. Path: Host `/mnt/user/appdata/ez1-monitor` → Container `/data`
 6. Add the environment variables listed below as needed
 7. Apply — dashboard is at `http://<unraid-ip>:8080`
+
+### Unraid Template Repository
+
+For easier installation on Unraid, add this URL to **Apps → Settings → Template Repositories**:
 
 ## Configuration
 
