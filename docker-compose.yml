@@ -1,0 +1,17 @@
+services:
+  ez1-monitor:
+    build: .
+    # If you push the image to a registry, replace `build: .` with:
+    # image: yourname/ez1-monitor:latest
+    container_name: ez1-monitor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /mnt/user/appdata/ez1-monitor:/data
+    environment:
+      - INVERTER_IP=192.168.1.100   # <-- IP deines EZ1-M anpassen
+      - INVERTER_PORT=8050
+      - POLL_INTERVAL=60
+      - INSTALL_KWP=1.0             # für eventuelle Vergleichswerte
+      - LOG_LEVEL=INFO
