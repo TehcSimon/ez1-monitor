@@ -106,7 +106,6 @@ class Database:
                     (start_ts, end_ts),
                 )
             else:
-                # Bucket aggregation: average power, max energy-today (cumulative)
                 cur = await db.execute(
                     f"""SELECT
                           (timestamp / {bucket_seconds}) * {bucket_seconds} AS bucket_ts,
@@ -158,3 +157,21 @@ class Database:
         if not latest:
             return 0.0
         return (latest.get("te1") or 0) + (latest.get("te2") or 0)
+
+    async def delete_old_measurements(self, older_than_days: int) -> int:
+        """Delete measurements older than N days. Returns count of rows deleted."""
+        cutoff = int((datetime.now() - timedelta(days=older_than_days)).timestamp())
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                "DELETE FROM measurements WHERE timestamp < ?",
+                (cutoff,),
+            )
+            await db.commit()
+            return cur.rowcount or 0
+
+    async def count_measurements(self) -> int:
+        """Return total number of measurement rows (for diagnostics)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute("SELECT COUNT(*) FROM measurements")
+            row = await cur.fetchone()
+            return row[0] if row else 0

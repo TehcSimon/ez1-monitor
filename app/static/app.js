@@ -34,8 +34,6 @@ const fmt = {
     maximumFractionDigits: 2,
   }).format(v || 0),
   pricePerKwh: v => {
-    // Display style varies per locale: "30 ct/kWh" feels native in DE,
-    // currency-prefixed "$0.30/kWh" feels native in EN.
     if (state.lang === "de" && state.currency === "EUR") {
       return `${Math.round(v * 100)} ct/kWh`;
     }
@@ -47,6 +45,14 @@ const fmt = {
     return `${formatted}/kWh`;
   },
 };
+
+/** Local YYYY-MM-DD key for grouping (uses the browser's local timezone, not UTC). */
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 // --- Chart defaults ----------------------------------------------------
 const css = getComputedStyle(document.documentElement);
@@ -72,7 +78,6 @@ async function loadLive() {
     const res = await fetch("/api/live");
     const data = await res.json();
 
-    // First-time setup of runtime state from server config
     if (data.config) {
       state.lang = data.config.language || "en";
       state.locale = state.lang === "de" ? "de-DE" : "en-US";
@@ -131,7 +136,6 @@ async function loadLive() {
 }
 
 function updateDynamicLabels() {
-  // Subtitles that depend on env-configured values
   const co2Sub = document.getElementById("lifetime-co2-sub");
   if (co2Sub) co2Sub.textContent = window.i18n.t(state.lang, "lifetime.co2BasedOn", {
     g: Math.round(state.co2KgPerKwh * 1000),
@@ -252,12 +256,12 @@ async function loadHistoryChart(range) {
     const isYear = range === "year";
     const points = data.points || [];
 
-    // Aggregate to daily kWh (max(e1+e2) per day)
+    // Aggregate to daily kWh (max(e1+e2) per day) using LOCAL timezone, not UTC
     const byDay = new Map();
     for (const p of points) {
       if (!p.online) continue;
       const d = new Date(p.timestamp * 1000);
-      const key = d.toISOString().slice(0, 10);
+      const key = localDateKey(d);
       const total = (p.e1 || 0) + (p.e2 || 0);
       if (!byDay.has(key) || byDay.get(key).max < total) {
         byDay.set(key, { ts: p.timestamp, max: total });

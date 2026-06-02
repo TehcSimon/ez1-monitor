@@ -1,4 +1,5 @@
 """FastAPI app for EZ1 Monitor."""
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -25,6 +26,10 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
 DB_PATH = os.getenv("DB_PATH", "/data/ez1.db")
 INSTALL_KWP = float(os.getenv("INSTALL_KWP", "1.0"))
 
+# Data retention: keep measurements for this many days. Default: 2 years
+# (allows year-over-year comparisons). Set to 0 to disable automatic pruning.
+RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "730"))
+
 # Localization
 # DEFAULT_LANG: empty string = auto-detect from browser Accept-Language header
 #               "de" / "en"   = force this language for all clients
@@ -50,7 +55,6 @@ def detect_language(request: Request) -> str:
 
     accept = request.headers.get("accept-language", "")
     if accept:
-        # Parse first preferred language (e.g. "de-DE,de;q=0.9,en;q=0.8" -> "de")
         first = accept.split(",")[0].split(";")[0].strip().lower()
         primary = first.split("-")[0]
         if primary in SUPPORTED_LANGS:
@@ -59,17 +63,49 @@ def detect_language(request: Request) -> str:
     return "en"
 
 
+async def retention_task():
+    """Background task: prune measurements older than RETENTION_DAYS, once per day."""
+    if RETENTION_DAYS <= 0:
+        logger.info("Retention disabled (RETENTION_DAYS <= 0)")
+        return
+
+    # Wait a bit before first run so the DB has time to settle on startup
+    await asyncio.sleep(60)
+    while True:
+        try:
+            deleted = await db.delete_old_measurements(RETENTION_DAYS)
+            total = await db.count_measurements()
+            if deleted > 0:
+                logger.info(
+                    f"Retention: pruned {deleted} measurements older than "
+                    f"{RETENTION_DAYS} days. {total} rows remain."
+                )
+        except Exception as e:
+            logger.warning(f"Retention task failed: {e}")
+        await asyncio.sleep(86400)  # run once per day
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    tz_name = os.environ.get("TZ", "system default")
     logger.info(
         f"Starting EZ1 Monitor — inverter at {INVERTER_IP}:{INVERTER_PORT}, "
-        f"poll every {POLL_INTERVAL}s, currency={CURRENCY}, price={PRICE_PER_KWH}/kWh"
+        f"poll every {POLL_INTERVAL}s, currency={CURRENCY}, "
+        f"price={PRICE_PER_KWH}/kWh, timezone={tz_name}, retention={RETENTION_DAYS}d"
     )
     await db.init()
     await poller.start()
-    yield
-    logger.info("Shutting down ...")
-    await poller.stop()
+    retention_handle = asyncio.create_task(retention_task())
+    try:
+        yield
+    finally:
+        logger.info("Shutting down ...")
+        retention_handle.cancel()
+        try:
+            await retention_handle
+        except asyncio.CancelledError:
+            pass
+        await poller.stop()
 
 
 app = FastAPI(title="EZ1 Monitor", lifespan=lifespan)
@@ -99,6 +135,8 @@ async def get_live(request: Request):
             "currency": CURRENCY,
             "price_per_kwh": PRICE_PER_KWH,
             "co2_kg_per_kwh": CO2_KG_PER_KWH,
+            "retention_days": RETENTION_DAYS,
+            "timezone": os.environ.get("TZ", "UTC"),
         },
     }
 
@@ -142,9 +180,7 @@ async def get_stats():
     this_year_start = datetime(now.year, 1, 1)
 
     async def energy_between(start: datetime, end: datetime) -> float:
-        """Sum of daily MAX(e1+e2) values within the date range."""
         daily = await db.get_range(int(start.timestamp()), int(end.timestamp()), 86400)
-        # Each bucket is one day with MAX(e1), MAX(e2). e1/e2 are reset at midnight.
         return sum(((d.get("e1") or 0) + (d.get("e2") or 0)) for d in daily)
 
     today_kwh = await energy_between(today_start, now)
@@ -156,11 +192,9 @@ async def get_stats():
     this_year_kwh = await energy_between(this_year_start, now)
     total_kwh = await db.get_total_energy()
 
-    # Lifetime savings — currency-agnostic field name
     co2_kg = total_kwh * CO2_KG_PER_KWH
     money_saved = total_kwh * PRICE_PER_KWH
 
-    # Peak power reached today
     today_points = await db.get_range(int(today_start.timestamp()), int(now.timestamp()), 0)
     peak_w_today = 0.0
     if today_points:
