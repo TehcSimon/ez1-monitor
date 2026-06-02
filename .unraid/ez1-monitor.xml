@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<Container version="2">
+    <Name>ez1-monitor</Name>
+    <Repository>ghcr.io/thecsimon/ez1-monitor:latest</Repository>
+    <Registry>https://github.com/ThecSimon/ez1-monitor/pkgs/container/ez1-monitor</Registry>
+    <Network>bridge</Network>
+    <MyIP/>
+    <Shell>sh</Shell>
+    <Privileged>false</Privileged>
+    <Support>https://github.com/ThecSimon/ez1-monitor/issues</Support>
+    <Project>https://github.com/ThecSimon/ez1-monitor</Project>
+    <Overview>
+        Local-only monitoring dashboard for the APsystems EZ1-M microinverter.
+        Polls the inverter's local API every minute (configurable), stores all
+        measurements in SQLite, and serves a web dashboard with live power,
+        daily/weekly/monthly history, period comparisons and lifetime statistics
+        (energy, CO2 avoided, money saved). No cloud, no account, no telemetry.
+        UI auto-detects German or English from browser language.
+        [br][br]
+        [b]Prerequisites:[/b][br]
+        1. EZ1-M reachable on your network with a known IP (use DHCP reservation).[br]
+        2. Local API enabled on the inverter (AP EasyPower app -> inverter settings
+        -> Local Mode -> Continuous).[br]
+        3. Test API responds: [i]curl http://&lt;ez1-ip&gt;:8050/getDeviceInfo[/i]
+    </Overview>
+    <Category>HomeAutomation: Productivity: Status:Stable</Category>
+    <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+    <TemplateURL>https://raw.githubusercontent.com/ThecSimon/ez1-monitor/main/.unraid/ez1-monitor.xml</TemplateURL>
+    <Icon>https://raw.githubusercontent.com/ThecSimon/ez1-monitor/main/.unraid/icon.png</Icon>
+    <ExtraParams>--restart=unless-stopped</ExtraParams>
+    <PostArgs/>
+    <CPUset/>
+    <DateInstalled/>
+    <DonateText/>
+    <DonateLink/>
+    <Requires/>
+
+    <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="HTTP port the dashboard is served on." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+
+    <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/ez1-monitor" Mode="rw" Description="Persistent storage for the SQLite database." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ez1-monitor</Config>
+
+    <Config Name="Inverter IP" Target="INVERTER_IP" Default="192.168.1.100" Mode="" Description="IP address of your EZ1-M inverter. Use a DHCP reservation so it never changes." Type="Variable" Display="always" Required="true" Mask="false">192.168.1.100</Config>
+
+    <Config Name="Inverter Port" Target="INVERTER_PORT" Default="8050" Mode="" Description="Port of the inverter's local API. Default is 8050." Type="Variable" Display="advanced" Required="false" Mask="false">8050</Config>
+
+    <Config Name="Poll interval (seconds)" Target="POLL_INTERVAL" Default="60" Mode="" Description="How often the inverter is polled. Default 60s. Lower values create more data; higher values are gentler on the inverter." Type="Variable" Display="advanced" Required="false" Mask="false">60</Config>
+
+    <Config Name="Installed peak power (kWp)" Target="INSTALL_KWP" Default="1.0" Mode="" Description="Installed module peak power in kWp. Used for optional comparisons." Type="Variable" Display="advanced" Required="false" Mask="false">1.0</Config>
+
+    <Config Name="UI language" Target="DEFAULT_LANG" Default="" Mode="" Description="Force the UI language. Leave empty to auto-detect from the browser. Valid values: empty, de, en" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+
+    <Config Name="Currency" Target="CURRENCY" Default="EUR" Mode="" Description="Currency code for the 'money saved' card. Valid values: EUR, USD" Type="Variable" Display="always" Required="false" Mask="false">EUR</Config>
+
+    <Config Name="Electricity price per kWh" Target="PRICE_PER_KWH" Default="0.35" Mode="" Description="Your local electricity price per kWh (in the configured currency). Used for the 'money saved' calculation." Type="Variable" Display="always" Required="false" Mask="false">0.35</Config>
+
+    <Config Name="Grid CO2 intensity (kg/kWh)" Target="CO2_KG_PER_KWH" Default="0.38" Mode="" Description="Grid CO2 intensity in kg CO2 per kWh. Default 0.38 reflects the recent German grid mix. Use a lower value for greener grids, higher for fossil-heavy grids." Type="Variable" Display="advanced" Required="false" Mask="false">0.38</Config>
+
+    <Config Name="Log level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="Python log level: DEBUG, INFO, WARNING, ERROR" Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
+</Container>
