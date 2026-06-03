@@ -1,9 +1,10 @@
 /* EZ1 Monitor — dashboard frontend */
 
-const REFRESH_MS = 10_000;
-const HISTORY_REFRESH_MS = 60_000;
+const REFRESH_LIVE_ACTIVE = 10_000;
+const REFRESH_LIVE_IDLE   = 60_000;
+const REFRESH_HIST_ACTIVE = 60_000;
+const REFRESH_HIST_IDLE   = 300_000;
 
-// Runtime state (filled from /api/live config)
 const state = {
   lang: "en",
   locale: "en-US",
@@ -13,11 +14,13 @@ const state = {
   installKwp: 1.0,
   maxPowerW: 800,
   currentRange: "month",
+  statusState: "noData",
+  pollInterval: 60,
 };
 
 let todayChart, historyChart;
+let liveTimer, statsTimer, todayTimer, historyTimer;
 
-// --- Formatting helpers ------------------------------------------------
 const fmt = {
   power: v => (v == null ? "—" : Math.round(Number(v)).toString()),
   kwh:   v => (v == null ? "—" : Number(v).toFixed(2)),
@@ -35,18 +38,30 @@ const fmt = {
   }).format(v || 0),
   pricePerKwh: v => {
     if (state.lang === "de" && state.currency === "EUR") {
-      return `${Math.round(v * 100)} ct/kWh`;
+      const cents = v * 100;
+      const display = Number.isInteger(cents)
+        ? cents.toFixed(0)
+        : cents.toFixed(2).replace(".", ",");
+      return `${display} ct/kWh`;
     }
     const formatted = new Intl.NumberFormat(state.locale, {
       style: "currency",
       currency: state.currency,
       minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
     }).format(v);
     return `${formatted}/kWh`;
   },
+  monthYear: (isoYearMonth) => {
+    // "2025-06" → "Juni 2025" (DE) / "June 2025" (EN)
+    if (!isoYearMonth) return "—";
+    const [y, m] = isoYearMonth.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString(state.locale, {
+      month: "long", year: "numeric"
+    });
+  },
 };
 
-/** Local YYYY-MM-DD key for grouping (uses the browser's local timezone, not UTC). */
 function localDateKey(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -54,7 +69,6 @@ function localDateKey(date) {
   return `${y}-${m}-${d}`;
 }
 
-// --- Chart defaults ----------------------------------------------------
 const css = getComputedStyle(document.documentElement);
 const COLORS = {
   accent: css.getPropertyValue("--accent").trim() || "#f59e0b",
@@ -72,6 +86,17 @@ Chart.defaults.scale.grid.color = COLORS.border;
 Chart.defaults.scale.grid.tickColor = COLORS.border;
 
 
+// --- Status pill -------------------------------------------------------
+
+function applyStatus(statusState) {
+  const pill = document.getElementById("status-pill");
+  pill.classList.remove("online", "offline", "standby", "error", "noData");
+  pill.classList.add(statusState);
+  document.getElementById("status-text").textContent =
+    window.i18n.t(state.lang, `status.${statusState}`);
+}
+
+
 // --- Live data ---------------------------------------------------------
 async function loadLive() {
   try {
@@ -85,86 +110,82 @@ async function loadLive() {
       state.pricePerKwh = data.config.price_per_kwh || 0.35;
       state.co2KgPerKwh = data.config.co2_kg_per_kwh || 0.38;
       state.installKwp = data.config.install_kwp || 1.0;
+      state.pollInterval = data.config.poll_interval || 60;
 
       window.i18n.applyTranslations(state.lang);
       updateDynamicLabels();
 
-      document.getElementById("footer-interval").textContent = data.config.poll_interval;
-      document.getElementById("footer-inverter").textContent = data.config.inverter_ip;
+      document.getElementById("footer-inverter").textContent =
+        data.config.inverter_ip;
     }
 
     if (data.device) {
       state.maxPowerW = data.device.max_power || 800;
       const deviceId = data.device.device_id || data.device.serial_number || "EZ1-M";
       document.getElementById("device-subtitle").textContent =
-          `${deviceId} · max ${state.maxPowerW} W`;
+        `${deviceId} · max ${state.maxPowerW} W`;
     }
+
+    const newState = (data.status && data.status.state) || "noData";
+    const stateChanged = newState !== state.statusState;
+    state.statusState = newState;
+    applyStatus(newState);
 
     const m = data.latest;
-    if (!m) {
-      setStatus(false, window.i18n.t(state.lang, "status.noData"));
-      return;
+    if (m) {
+      if (m.online) {
+        const totalW = (m.p1 || 0) + (m.p2 || 0);
+        document.getElementById("current-power").textContent = fmt.power(totalW);
+        document.getElementById("pv1-power").textContent = fmt.power(m.p1);
+        document.getElementById("pv2-power").textContent = fmt.power(m.p2);
+        document.getElementById("pv1-energy").textContent = fmt.kwh(m.e1);
+        document.getElementById("pv2-energy").textContent = fmt.kwh(m.e2);
+        const pct = Math.min(100, (totalW / state.maxPowerW) * 100);
+        document.getElementById("power-bar").style.width = pct + "%";
+        document.getElementById("power-pct").textContent = fmt.pct(pct) + " %";
+      } else if (newState === "standby" || newState === "error") {
+        document.getElementById("current-power").textContent = "0";
+        document.getElementById("pv1-power").textContent = "0";
+        document.getElementById("pv2-power").textContent = "0";
+        document.getElementById("power-bar").style.width = "0%";
+        document.getElementById("power-pct").textContent = "0 %";
+      }
+      document.getElementById("power-max").textContent =
+        window.i18n.t(state.lang, "hero.maxPower", { max: state.maxPowerW });
+      if (m.timestamp) {
+        document.getElementById("today-date").textContent = fmt.date(m.timestamp);
+        document.getElementById("footer-last").textContent = fmt.time(m.timestamp);
+      }
     }
 
-    const totalW = (m.p1 || 0) + (m.p2 || 0);
-    document.getElementById("current-power").textContent = fmt.power(totalW);
-    document.getElementById("pv1-power").textContent = fmt.power(m.p1);
-    document.getElementById("pv2-power").textContent = fmt.power(m.p2);
-    document.getElementById("pv1-energy").textContent = fmt.kwh(m.e1);
-    document.getElementById("pv2-energy").textContent = fmt.kwh(m.e2);
-
-    const pct = Math.min(100, (totalW / state.maxPowerW) * 100);
-    document.getElementById("power-bar").style.width = pct + "%";
-    document.getElementById("power-pct").textContent = fmt.pct(pct) + " %";
-    document.getElementById("power-max").textContent =
-        window.i18n.t(state.lang, "hero.maxPower", { max: state.maxPowerW });
-
-    document.getElementById("today-date").textContent = fmt.date(m.timestamp);
-    document.getElementById("footer-last").textContent = fmt.time(m.timestamp);
-
-    const age = Date.now() / 1000 - m.timestamp;
-    const isOnline = !!m.online && age < 300;
-    if (isOnline) {
-      setStatus(true, window.i18n.t(state.lang, "status.online"));
-    } else {
-      setStatus(false, window.i18n.t(state.lang, "status.staleData", { minutes: Math.round(age / 60) }));
+    if (stateChanged) {
+      scheduleTimers();
     }
   } catch (e) {
     console.error("loadLive:", e);
-    setStatus(false, window.i18n.t(state.lang, "status.connectionError"));
+    applyStatus("error");
   }
 }
 
 function updateDynamicLabels() {
   const co2Sub = document.getElementById("lifetime-co2-sub");
-  if (co2Sub) co2Sub.textContent = window.i18n.t(state.lang, "lifetime.co2BasedOn", {
-    g: Math.round(state.co2KgPerKwh * 1000),
-  });
-
-  const moneySub = document.getElementById("lifetime-money-sub");
-  if (moneySub) moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOn", {
-    price: fmt.pricePerKwh(state.pricePerKwh),
-  });
-
-  const throttle = document.getElementById("stat-throttle");
-  if (throttle) throttle.textContent = window.i18n.t(state.lang, "stats.throttleMax", {
-    max: state.maxPowerW,
-  });
-
-  const footerUpdate = document.getElementById("footer-update-text");
-  if (footerUpdate) {
-    const interval = document.getElementById("footer-interval").textContent;
-    footerUpdate.innerHTML = window.i18n.t(state.lang, "footer.updateEvery", {
-      s: `<span id="footer-interval">${interval}</span>`,
+  if (co2Sub) {
+    co2Sub.textContent = window.i18n.t(state.lang, "lifetime.co2BasedOn", {
+      g: Math.round(state.co2KgPerKwh * 1000),
     });
   }
-}
-
-function setStatus(online, text) {
-  const pill = document.getElementById("status-pill");
-  pill.classList.toggle("online", online);
-  pill.classList.toggle("offline", !online);
-  document.getElementById("status-text").textContent = text;
+  const moneySub = document.getElementById("lifetime-money-sub");
+  if (moneySub) {
+    moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOn", {
+      price: fmt.pricePerKwh(state.pricePerKwh),
+    });
+  }
+  const footerUpdate = document.getElementById("footer-update-text");
+  if (footerUpdate) {
+    footerUpdate.textContent = window.i18n.t(state.lang, "footer.updateEvery", {
+      s: state.pollInterval,
+    });
+  }
 }
 
 
@@ -174,20 +195,45 @@ async function loadStats() {
     const res = await fetch("/api/stats");
     const s = await res.json();
 
-    document.getElementById("stat-today").textContent = fmt.kwh(s.today_kwh);
-    document.getElementById("stat-yesterday").textContent = fmt.kwh(s.yesterday_kwh);
-    document.getElementById("stat-week").textContent = fmt.kwh(s.this_week_kwh);
-    document.getElementById("stat-last-week").textContent = fmt.kwh(s.last_week_kwh);
-    document.getElementById("stat-month").textContent = fmt.kwh(s.this_month_kwh);
+    // Standard cards
+    document.getElementById("stat-today").textContent      = fmt.kwh(s.today_kwh);
+    document.getElementById("stat-yesterday").textContent  = fmt.kwh(s.yesterday_kwh);
+    document.getElementById("stat-week").textContent       = fmt.kwh(s.this_week_kwh);
+    document.getElementById("stat-last-week").textContent  = fmt.kwh(s.last_week_kwh);
+    document.getElementById("stat-month").textContent      = fmt.kwh(s.this_month_kwh);
     document.getElementById("stat-last-month").textContent = fmt.kwh(s.last_month_kwh);
-    document.getElementById("stat-peak").textContent = fmt.power(s.peak_w_today);
+    document.getElementById("stat-year").textContent       = fmt.kwh(s.this_year_kwh);
+    document.getElementById("stat-last-year-ytd").textContent = fmt.kwh(s.last_year_ytd_kwh);
 
+    // Compare indicators (next to main value)
     renderCompare("stat-today-compare", s.today_kwh, s.yesterday_kwh);
     renderCompare("stat-week-compare",  s.this_week_kwh,  s.last_week_kwh);
     renderCompare("stat-month-compare", s.this_month_kwh, s.last_month_kwh);
+    renderCompare("stat-year-compare",  s.this_year_kwh,  s.last_year_ytd_kwh);
 
-    document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
-    document.getElementById("lifetime-co2").textContent = (s.co2_saved_kg || 0).toFixed(1);
+    // Year-over-year for the month card
+    document.getElementById("stat-same-month-ly").textContent =
+      fmt.kwh(s.same_month_last_year_kwh);
+    document.getElementById("stat-same-month-ly-total").textContent =
+      fmt.kwh(s.same_month_last_year_total_kwh);
+    document.getElementById("stat-same-month-ly-label").textContent =
+      fmt.monthYear(s.same_month_last_year_iso);
+    renderCompare("stat-same-month-ly-compare",
+                  s.this_month_kwh, s.same_month_last_year_kwh);
+
+    // Hide the "full month" sub-row if there's nothing meaningful to compare to
+    const totalRow = document.getElementById("stat-same-month-ly-total-row");
+    if (totalRow) {
+      totalRow.style.display =
+        (s.same_month_last_year_total_kwh > 0) ? "" : "none";
+    }
+
+    // Hero
+    document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
+
+    // Lifetime
+    document.getElementById("lifetime-kwh").textContent   = fmt.kwh(s.total_kwh);
+    document.getElementById("lifetime-co2").textContent   = (s.co2_saved_kg || 0).toFixed(1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
   } catch (e) {
     console.error("loadStats:", e);
@@ -196,15 +242,16 @@ async function loadStats() {
 
 function renderCompare(elementId, current, previous) {
   const el = document.getElementById(elementId);
+  if (!el) return;
   if (!previous || previous === 0) {
-    el.textContent = "—";
+    el.textContent = "";
     el.className = "stat-compare";
     return;
   }
   const delta = current - previous;
   const pct = (delta / previous) * 100;
   const sign = delta >= 0 ? "▲" : "▼";
-  el.textContent = `${sign} ${Math.abs(pct).toFixed(0)} % (${delta >= 0 ? "+" : ""}${delta.toFixed(2)} kWh)`;
+  el.textContent = `${sign} ${Math.abs(pct).toFixed(0)} %`;
   el.className = "stat-compare " + (delta >= 0 ? "up" : "down");
 }
 
@@ -256,7 +303,6 @@ async function loadHistoryChart(range) {
     const isYear = range === "year";
     const points = data.points || [];
 
-    // Aggregate to daily kWh (max(e1+e2) per day) using LOCAL timezone, not UTC
     const byDay = new Map();
     for (const p of points) {
       if (!p.online) continue;
@@ -365,7 +411,6 @@ function tooltipStyle(callbacks) {
 }
 
 
-// --- Range tabs --------------------------------------------------------
 document.querySelectorAll(".range-tab").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".range-tab").forEach(b => b.classList.remove("active"));
@@ -376,17 +421,29 @@ document.querySelectorAll(".range-tab").forEach(btn => {
 });
 
 
-// --- Bootstrap ---------------------------------------------------------
+function scheduleTimers() {
+  const active = state.statusState === "online";
+  const liveInterval = active ? REFRESH_LIVE_ACTIVE : REFRESH_LIVE_IDLE;
+  const histInterval = active ? REFRESH_HIST_ACTIVE : REFRESH_HIST_IDLE;
+
+  if (liveTimer) clearInterval(liveTimer);
+  if (statsTimer) clearInterval(statsTimer);
+  if (todayTimer) clearInterval(todayTimer);
+  if (historyTimer) clearInterval(historyTimer);
+
+  liveTimer    = setInterval(loadLive, liveInterval);
+  statsTimer   = setInterval(loadStats, histInterval);
+  todayTimer   = setInterval(loadTodayChart, histInterval);
+  historyTimer = setInterval(() => loadHistoryChart(state.currentRange), histInterval * 5);
+}
+
+
 async function init() {
   await loadLive();
   await loadStats();
   await loadTodayChart();
   await loadHistoryChart(state.currentRange);
-
-  setInterval(loadLive, REFRESH_MS);
-  setInterval(loadStats, HISTORY_REFRESH_MS);
-  setInterval(loadTodayChart, HISTORY_REFRESH_MS);
-  setInterval(() => loadHistoryChart(state.currentRange), HISTORY_REFRESH_MS * 5);
+  scheduleTimers();
 }
 
 init();

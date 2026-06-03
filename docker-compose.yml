@@ -10,30 +10,29 @@ services:
     volumes:
       - /mnt/user/appdata/ez1-monitor:/data
     environment:
-      # --- Connection ---
-      - INVERTER_IP=192.168.1.194        # IP of your EZ1-M
+      # --- Connection (INVERTER_IP is required, no default) ---
+      - INVERTER_IP=192.168.50.123       # REQUIRED — set to your EZ1-M's IP
       - INVERTER_PORT=8050
-      - POLL_INTERVAL=60
+      - POLL_INTERVAL=60                 # seconds between polls
 
       # --- Installation ---
-      - INSTALL_KWP=1.0                  # Installed peak power in kWp
+      - INSTALL_KWP=1.0                  # installed peak power in kWp
 
       # --- Data retention ---
-      - RETENTION_DAYS=730               # Keep raw measurements for N days
-        # (730 = 2 years, allows YoY compare)
-      # Set to 0 to disable pruning
+      - RETENTION_DAYS=730               # keep raw measurements for N days
+                                         # (730 = 2 years for YoY compare).
+                                         # Set to 0 to disable pruning.
 
       # --- Timezone ---
-      - TZ=Europe/Berlin                 # IANA timezone identifier
-      # e.g. America/New_York, Asia/Tokyo
+      - TZ=Europe/Berlin                 # IANA tz, e.g. America/New_York
 
-      # --- Localization (leave DEFAULT_LANG empty to auto-detect from browser) ---
+      # --- Localization (leave DEFAULT_LANG empty to auto-detect) ---
       - DEFAULT_LANG=                    # "", "de" or "en"
       - CURRENCY=EUR                     # "EUR" or "USD"
 
       # --- Economic / environmental factors ---
-      - PRICE_PER_KWH=0.35               # Local electricity price per kWh
-      - CO2_KG_PER_KWH=0.38              # Grid CO2 intensity (kg CO2 per kWh)
+      - PRICE_PER_KWH=0.35               # local electricity price per kWh
+      - CO2_KG_PER_KWH=0.38              # grid CO2 intensity (kg CO2/kWh)
 
       # --- Logging ---
       - LOG_LEVEL=INFO

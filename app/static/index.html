@@ -45,6 +45,11 @@
           <span id="power-max">/ 800 W</span>
         </div>
       </div>
+      <div class="hero-peak">
+        <span data-i18n="hero.peakToday">Peak today</span>:
+        <span id="hero-peak-value">—</span>
+        <span class="hero-peak-unit">W</span>
+      </div>
     </div>
     <div class="hero-side">
       <div class="pv-stat">
@@ -71,32 +76,55 @@
     </div>
   </section>
 
-  <!-- Comparison cards -->
+  <!-- Comparison cards: Heute → Woche → Monat → Jahr -->
   <section class="comparison-grid">
+
     <div class="card stat-card">
       <div class="stat-title" data-i18n="stats.today">Today</div>
-      <div class="stat-value"><span id="stat-today">—</span> <span class="stat-unit">kWh</span></div>
-      <div class="stat-compare" id="stat-today-compare"></div>
+      <div class="stat-value-row">
+        <span class="stat-value-num"><span id="stat-today">—</span> <span class="stat-unit">kWh</span></span>
+        <span class="stat-compare" id="stat-today-compare"></span>
+      </div>
       <div class="stat-sub"><span data-i18n="stats.yesterday">yesterday</span>: <span id="stat-yesterday">—</span> kWh</div>
     </div>
+
     <div class="card stat-card">
       <div class="stat-title" data-i18n="stats.week">This Week</div>
-      <div class="stat-value"><span id="stat-week">—</span> <span class="stat-unit">kWh</span></div>
-      <div class="stat-compare" id="stat-week-compare"></div>
+      <div class="stat-value-row">
+        <span class="stat-value-num"><span id="stat-week">—</span> <span class="stat-unit">kWh</span></span>
+        <span class="stat-compare" id="stat-week-compare"></span>
+      </div>
       <div class="stat-sub"><span data-i18n="stats.lastWeek">last week</span>: <span id="stat-last-week">—</span> kWh</div>
     </div>
-    <div class="card stat-card">
+
+    <!-- Month card: standard compare + same-month-last-year (the highlight feature) -->
+    <div class="card stat-card stat-card-tall">
       <div class="stat-title" data-i18n="stats.month">This Month</div>
-      <div class="stat-value"><span id="stat-month">—</span> <span class="stat-unit">kWh</span></div>
-      <div class="stat-compare" id="stat-month-compare"></div>
+      <div class="stat-value-row">
+        <span class="stat-value-num"><span id="stat-month">—</span> <span class="stat-unit">kWh</span></span>
+        <span class="stat-compare" id="stat-month-compare"></span>
+      </div>
       <div class="stat-sub"><span data-i18n="stats.lastMonth">last month</span>: <span id="stat-last-month">—</span> kWh</div>
+      <div class="stat-sub stat-sub-yoy">
+        <span class="stat-value-row">
+          <span><span id="stat-same-month-ly-label">—</span>: <span id="stat-same-month-ly">—</span> kWh</span>
+          <span class="stat-compare" id="stat-same-month-ly-compare"></span>
+        </span>
+        <div class="stat-sub-yoy-total" id="stat-same-month-ly-total-row">
+          <span data-i18n="stats.fullMonth">full month</span>: <span id="stat-same-month-ly-total">—</span> kWh
+        </div>
+      </div>
     </div>
+
     <div class="card stat-card">
-      <div class="stat-title" data-i18n="stats.peakToday">Peak Today</div>
-      <div class="stat-value"><span id="stat-peak">—</span> <span class="stat-unit">W</span></div>
-      <div class="stat-compare"></div>
-      <div class="stat-sub" id="stat-throttle">max throttle: 800 W</div>
+      <div class="stat-title" data-i18n="stats.year">This Year</div>
+      <div class="stat-value-row">
+        <span class="stat-value-num"><span id="stat-year">—</span> <span class="stat-unit">kWh</span></span>
+        <span class="stat-compare" id="stat-year-compare"></span>
+      </div>
+      <div class="stat-sub"><span data-i18n="stats.lastYearYtd">last year YTD</span>: <span id="stat-last-year-ytd">—</span> kWh</div>
     </div>
+
   </section>
 
   <!-- Historical chart -->
@@ -148,7 +176,7 @@
   <span class="dot-sep">·</span>
   <span id="footer-inverter">—</span>
   <span class="dot-sep">·</span>
-  <span id="footer-update-text">Update every <span id="footer-interval">—</span> s</span>
+  <span id="footer-update-text"></span>
   <span class="dot-sep">·</span>
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>

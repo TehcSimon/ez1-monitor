@@ -1,5 +1,4 @@
 :root {
-  /* Dark, warm-tinted palette inspired by instrument panels */
   --bg-base:        #0c0a08;
   --bg-card:        #15120e;
   --bg-card-2:      #1c1812;
@@ -10,9 +9,9 @@
   --text-secondary: #b8a98c;
   --text-muted:     #6f6353;
 
-  --accent:         #f59e0b;   /* solar amber */
-  --accent-warm:    #fb923c;   /* warmer orange */
-  --accent-glow:    #f59e0b33; /* amber w/ alpha */
+  --accent:         #f59e0b;
+  --accent-warm:    #fb923c;
+  --accent-glow:    #f59e0b33;
 
   --good:           #4ade80;
   --bad:            #f87171;
@@ -39,7 +38,6 @@ body {
   line-height: 1.5;
 }
 
-/* Subtle grain texture overlay */
 .grain {
   position: fixed;
   inset: 0;
@@ -113,12 +111,29 @@ h1 {
   border-radius: 50%;
   background: var(--neutral);
 }
+
 .status-pill.online .status-dot {
   background: var(--good);
   box-shadow: 0 0 8px var(--good);
   animation: pulse 2s ease-in-out infinite;
 }
-.status-pill.offline .status-dot { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+
+.status-pill.standby .status-dot {
+  background: var(--text-muted);
+  box-shadow: none;
+}
+.status-pill.standby { color: var(--text-muted); }
+
+.status-pill.error .status-dot {
+  background: var(--bad);
+  box-shadow: 0 0 8px var(--bad);
+  animation: pulse 2s ease-in-out infinite;
+}
+.status-pill.error { color: var(--bad); }
+
+.status-pill.noData .status-dot {
+  background: var(--neutral);
+}
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -167,7 +182,7 @@ main {
   letter-spacing: 0.05em;
 }
 
-/* ------------------------- Hero (current power) ------------------------- */
+/* ------------------------- Hero ------------------------- */
 .hero {
   display: grid;
   grid-template-columns: 1fr 280px;
@@ -237,6 +252,22 @@ main {
   letter-spacing: 0.05em;
 }
 
+.hero-peak {
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+}
+.hero-peak #hero-peak-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.hero-peak .hero-peak-unit {
+  color: var(--text-muted);
+}
+
 .hero-side {
   display: flex;
   flex-direction: column;
@@ -283,14 +314,19 @@ main {
   width: 100%;
 }
 
-/* ------------------------- Comparison cards ------------------------- */
+/* ------------------------- Comparison cards (4 cards) ------------------------- */
 .comparison-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+  align-items: stretch;
 }
 
-.stat-card { padding: 20px; }
+.stat-card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
 
 .stat-title {
   font-family: var(--font-mono);
@@ -301,28 +337,37 @@ main {
   margin-bottom: 12px;
 }
 
-.stat-value {
+/* Inline row: main value (left) + compare indicator (right) */
+.stat-value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-value-num {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 32px;
+  font-size: 28px;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .stat-unit {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
 .stat-compare {
   font-family: var(--font-mono);
   font-size: 12px;
-  margin-top: 8px;
-  height: 18px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .stat-compare.up   { color: var(--good); }
 .stat-compare.down { color: var(--bad); }
@@ -331,8 +376,30 @@ main {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 8px;
 }
+
+/* Year-over-year block inside the month card */
+.stat-sub-yoy {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.stat-sub-yoy .stat-value-row .stat-compare {
+  font-size: 11px;
+}
+
+.stat-sub-yoy-total {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  font-style: italic;
+}
+
+/* The month card naturally grows taller because it has more content */
+.stat-card-tall { /* placeholder, grid handles the rest */ }
 
 /* ------------------------- Range tabs ------------------------- */
 .range-tabs {
@@ -449,6 +516,12 @@ footer {
   .hero { padding: 24px; }
   .hero-value { font-size: 64px; }
   .hero-side { flex-direction: column; }
-  .comparison-grid { grid-template-columns: 1fr 1fr; }
-  .stat-value { font-size: 24px; }
+  .comparison-grid { grid-template-columns: 1fr; }
+  .stat-value-num { font-size: 22px; }
+  /* On very narrow screens, stack value and compare instead of side-by-side */
+  .stat-value-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
 }

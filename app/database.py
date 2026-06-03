@@ -85,6 +85,7 @@ class Database:
             return dict(row) if row else None
 
     async def get_latest(self) -> Optional[dict]:
+        """Return the most recent measurement row (online or offline)."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -92,6 +93,32 @@ class Database:
             )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def get_latest_online(self) -> Optional[dict]:
+        """Return the most recent measurement that was a successful poll."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT * FROM measurements
+                   WHERE online = 1
+                   ORDER BY timestamp DESC LIMIT 1"""
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def get_recent_avg_power(self, seconds: int = 300) -> Optional[float]:
+        """Average total power (p1+p2) over the last N seconds of successful polls.
+        Returns None if there are no successful polls in that window."""
+        cutoff = int(datetime.now().timestamp()) - seconds
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT AVG(COALESCE(p1, 0) + COALESCE(p2, 0))
+                   FROM measurements
+                   WHERE timestamp >= ? AND online = 1""",
+                (cutoff,),
+            )
+            row = await cur.fetchone()
+            return row[0] if row and row[0] is not None else None
 
     async def get_range(self, start_ts: int, end_ts: int, bucket_seconds: int = 0) -> list[dict]:
         """Get measurements in time range. If bucket_seconds > 0, aggregate."""
@@ -152,11 +179,31 @@ class Database:
             ]
 
     async def get_total_energy(self) -> float:
-        """Get total lifetime energy (latest te1+te2)."""
-        latest = await self.get_latest()
-        if not latest:
-            return 0.0
-        return (latest.get("te1") or 0) + (latest.get("te2") or 0)
+        """Lifetime energy from the most recent SUCCESSFUL poll.
+        Fixes bug where offline polls (with NULL te1/te2) zeroed out the display."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT te1, te2 FROM measurements
+                   WHERE online = 1 AND te1 IS NOT NULL AND te2 IS NOT NULL
+                   ORDER BY timestamp DESC LIMIT 1"""
+            )
+            row = await cur.fetchone()
+            if not row:
+                return 0.0
+            return (row["te1"] or 0) + (row["te2"] or 0)
+
+    async def get_peak_today(self) -> float:
+        """Highest total instantaneous power (p1+p2) seen since local midnight."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT MAX(COALESCE(p1, 0) + COALESCE(p2, 0))
+                   FROM measurements
+                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+                     AND online = 1"""
+            )
+            row = await cur.fetchone()
+            return row[0] if row and row[0] is not None else 0.0
 
     async def delete_old_measurements(self, older_than_days: int) -> int:
         """Delete measurements older than N days. Returns count of rows deleted."""

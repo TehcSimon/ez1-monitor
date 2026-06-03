@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*.*.*']
-  # Erlaubt manuelles Auslösen aus der GitHub UI
+  # Allow manual triggering from the GitHub UI
   workflow_dispatch:
 
 env:
@@ -17,7 +17,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # Für Provenance/Attestation (Software Supply Chain)
+      # Required for Provenance/Attestation (software supply chain)
       id-token: write
       attestations: write
 

@@ -21,9 +21,10 @@ COPY app/ ./app/
 VOLUME ["/data"]
 EXPOSE 8080
 
-# Defaults — override via docker-compose / Unraid template
-ENV INVERTER_IP=192.168.1.194 \
-    INVERTER_PORT=8050 \
+# Defaults — override via docker-compose / Unraid template.
+# Note: INVERTER_IP has NO default. The container fails to start without it,
+# rather than running silently with an empty dashboard.
+ENV INVERTER_PORT=8050 \
     POLL_INTERVAL=60 \
     DB_PATH=/data/ez1.db \
     INSTALL_KWP=1.0 \
