@@ -8,13 +8,13 @@ from typing import Optional
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS measurements (
     timestamp     INTEGER PRIMARY KEY,
-    p1            REAL,       -- Power channel 1 (W)
-    p2            REAL,       -- Power channel 2 (W)
-    e1            REAL,       -- Energy today channel 1 (kWh)
-    e2            REAL,       -- Energy today channel 2 (kWh)
-    te1           REAL,       -- Total energy channel 1 (kWh)
-    te2           REAL,       -- Total energy channel 2 (kWh)
-    online        INTEGER     -- 1 = poll ok, 0 = poll failed
+    p1            REAL,
+    p2            REAL,
+    e1            REAL,
+    e2            REAL,
+    te1           REAL,
+    te2           REAL,
+    online        INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_timestamp ON measurements(timestamp);
@@ -41,17 +41,7 @@ class Database:
             await db.executescript(SCHEMA)
             await db.commit()
 
-    async def insert_measurement(
-        self,
-        timestamp: int,
-        p1: Optional[float],
-        p2: Optional[float],
-        e1: Optional[float],
-        e2: Optional[float],
-        te1: Optional[float],
-        te2: Optional[float],
-        online: bool,
-    ):
+    async def insert_measurement(self, timestamp, p1, p2, e1, e2, te1, te2, online):
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT OR REPLACE INTO measurements
@@ -61,13 +51,7 @@ class Database:
             )
             await db.commit()
 
-    async def update_device_info(
-        self,
-        device_id: str,
-        serial_number: str,
-        min_power: int,
-        max_power: int,
-    ):
+    async def update_device_info(self, device_id, serial_number, min_power, max_power):
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT OR REPLACE INTO device_info
@@ -85,7 +69,6 @@ class Database:
             return dict(row) if row else None
 
     async def get_latest(self) -> Optional[dict]:
-        """Return the most recent measurement row (online or offline)."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -95,7 +78,6 @@ class Database:
             return dict(row) if row else None
 
     async def get_latest_online(self) -> Optional[dict]:
-        """Return the most recent measurement that was a successful poll."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -107,8 +89,6 @@ class Database:
             return dict(row) if row else None
 
     async def get_recent_avg_power(self, seconds: int = 300) -> Optional[float]:
-        """Average total power (p1+p2) over the last N seconds of successful polls.
-        Returns None if there are no successful polls in that window."""
         cutoff = int(datetime.now().timestamp()) - seconds
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
@@ -121,7 +101,6 @@ class Database:
             return row[0] if row and row[0] is not None else None
 
     async def get_range(self, start_ts: int, end_ts: int, bucket_seconds: int = 0) -> list[dict]:
-        """Get measurements in time range. If bucket_seconds > 0, aggregate."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             if bucket_seconds <= 0:
@@ -155,7 +134,6 @@ class Database:
             return [dict(r) for r in rows]
 
     async def get_daily_totals(self, days: int = 30) -> list[dict]:
-        """Get daily kWh totals for the last N days (based on max e1+e2 per day)."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -178,9 +156,40 @@ class Database:
                 for r in rows
             ]
 
+    async def get_monthly_totals(self, months: int = 12) -> list[dict]:
+        """kWh sum per calendar month over the last N months.
+
+        Logic: per-day MAX(e1+e2) gives that day's total production
+        (e1/e2 are daily counters that reset at midnight). Sum those
+        per calendar month."""
+        # Oversize the day window so we catch all days in the requested
+        # month range, then group by year-month.
+        cutoff_days = months * 32
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT
+                      strftime('%Y-%m', timestamp, 'unixepoch', 'localtime') AS month,
+                      date(timestamp, 'unixepoch', 'localtime') AS day,
+                      MAX(COALESCE(e1, 0) + COALESCE(e2, 0)) AS day_kwh
+                   FROM measurements
+                   WHERE timestamp >= ? AND online = 1
+                   GROUP BY day
+                   ORDER BY day ASC""",
+                (int((datetime.now() - timedelta(days=cutoff_days)).timestamp()),),
+            )
+            rows = await cur.fetchall()
+
+        # Sum per month
+        monthly: dict[str, float] = {}
+        for r in rows:
+            monthly[r["month"]] = monthly.get(r["month"], 0.0) + (r["day_kwh"] or 0.0)
+        # Keep only the last `months` months and sort
+        sorted_items = sorted(monthly.items())[-months:]
+        return [{"month": k, "kwh": round(v, 3)} for k, v in sorted_items]
+
     async def get_total_energy(self) -> float:
-        """Lifetime energy from the most recent SUCCESSFUL poll.
-        Fixes bug where offline polls (with NULL te1/te2) zeroed out the display."""
+        """Lifetime energy from the most recent successful poll."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -194,7 +203,6 @@ class Database:
             return (row["te1"] or 0) + (row["te2"] or 0)
 
     async def get_peak_today(self) -> float:
-        """Highest total instantaneous power (p1+p2) seen since local midnight."""
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
                 """SELECT MAX(COALESCE(p1, 0) + COALESCE(p2, 0))
@@ -206,7 +214,6 @@ class Database:
             return row[0] if row and row[0] is not None else 0.0
 
     async def delete_old_measurements(self, older_than_days: int) -> int:
-        """Delete measurements older than N days. Returns count of rows deleted."""
         cutoff = int((datetime.now() - timedelta(days=older_than_days)).timestamp())
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
@@ -217,7 +224,6 @@ class Database:
             return cur.rowcount or 0
 
     async def count_measurements(self) -> int:
-        """Return total number of measurement rows (for diagnostics)."""
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute("SELECT COUNT(*) FROM measurements")
             row = await cur.fetchone()
