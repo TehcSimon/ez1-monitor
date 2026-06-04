@@ -25,7 +25,6 @@ logger = logging.getLogger("ez1-monitor")
 # --- Configuration validation --------------------------------------------
 
 def _required_inverter_ip() -> str:
-    """INVERTER_IP is mandatory and must look like a valid IP or hostname."""
     value = os.getenv("INVERTER_IP", "").strip()
     if not value:
         raise RuntimeError(
@@ -45,17 +44,13 @@ def _required_inverter_ip() -> str:
 
 
 def _shift_year(dt: datetime, years: int = -1) -> datetime:
-    """Shift a datetime by N years.
-    Falls back to Feb 28 for Feb 29 → non-leap-year edge cases."""
     try:
         return dt.replace(year=dt.year + years)
     except ValueError:
-        # Feb 29 in a non-leap target year
         return dt.replace(year=dt.year + years, day=28)
 
 
 def _last_day_of_month(dt: datetime) -> datetime:
-    """Return the very last microsecond of dt's calendar month."""
     if dt.month == 12:
         next_month = datetime(dt.year + 1, 1, 1)
     else:
@@ -80,7 +75,6 @@ CURRENCY = os.getenv("CURRENCY", "EUR").upper()
 PRICE_PER_KWH = float(os.getenv("PRICE_PER_KWH", "0.35"))
 CO2_KG_PER_KWH = float(os.getenv("CO2_KG_PER_KWH", "0.38"))
 
-# Status classification thresholds
 ONLINE_FRESH_SECONDS = 300
 DUSK_WINDOW_SECONDS = 300
 DUSK_THRESHOLD_W = 5.0
@@ -105,7 +99,6 @@ def detect_language(request: Request) -> str:
 
 
 async def compute_status() -> dict:
-    """Classify the inverter's current state into one of four buckets."""
     latest = await db.get_latest()
     if not latest:
         return {"state": "noData", "age_seconds": None, "recent_avg_w": None}
@@ -200,8 +193,21 @@ async def get_live(request: Request):
 @app.get("/api/history")
 async def get_history(
     range: str = Query("day", pattern="^(day|week|month|year)$"),
+    granularity: str = Query("auto", pattern="^(auto|daily|monthly)$"),
 ):
+    """Historical data for the requested time range.
+
+    For range=year, the optional granularity parameter switches between:
+    - "daily"   (default): per-day points covering the last 365 days
+    - "monthly": per-month totals covering the last 12 months
+    """
     now = datetime.now()
+
+    # Special path: rolling 12-month aggregate for the year view
+    if range == "year" and granularity == "monthly":
+        monthly = await db.get_monthly_totals(12)
+        return {"range": "year", "granularity": "monthly", "months": monthly}
+
     if range == "day":
         start = datetime.combine(now.date(), time.min)
         bucket = 0
@@ -211,16 +217,22 @@ async def get_history(
     elif range == "month":
         start = now - timedelta(days=30)
         bucket = 3600
-    else:
+    else:  # year, daily
         start = now - timedelta(days=365)
         bucket = 86400
+
     points = await db.get_range(int(start.timestamp()), int(now.timestamp()), bucket)
-    return {"range": range, "bucket_seconds": bucket, "points": points}
+    return {
+        "range": range,
+        "granularity": "daily" if range == "year" else "auto",
+        "bucket_seconds": bucket,
+        "points": points,
+    }
 
 
 @app.get("/api/stats")
 async def get_stats():
-    """Aggregated statistics with period-over-period and year-over-year comparisons."""
+    """Aggregated statistics with stichtag (same-progress) comparisons."""
     now = datetime.now()
     today_start = datetime.combine(now.date(), time.min)
     yesterday_start = today_start - timedelta(days=1)
@@ -233,13 +245,20 @@ async def get_stats():
         last_month_start = datetime(now.year, now.month - 1, 1)
     this_year_start = datetime(now.year, 1, 1)
 
-    # Year-over-year reference points
+    # Stichtag (same-progress) reference points
+    yesterday_until_now = now - timedelta(days=1)
+    last_week_until_now = now - timedelta(days=7)
+    last_month_until_progress = _shift_year(
+        last_month_start, 0
+    ) + (now - this_month_start)
+    # Edge case: last month may have fewer days than current progress
+    last_month_end = _last_day_of_month(last_month_start)
+    if last_month_until_progress > last_month_end:
+        last_month_until_progress = last_month_end
+
+    # Year-over-year references
     last_year_start = _shift_year(this_year_start, -1)
     last_year_until_today = _shift_year(now, -1)
-
-    # "Same month last year" — two slices:
-    #   - up to the same day-of-month as today (fair YoY % comparison)
-    #   - full month (anchor reference)
     same_month_ly_start = _shift_year(this_month_start, -1)
     same_month_ly_until_today = _shift_year(now, -1)
     same_month_ly_full_end = _last_day_of_month(same_month_ly_start)
@@ -248,43 +267,66 @@ async def get_stats():
         daily = await db.get_range(int(start.timestamp()), int(end.timestamp()), 86400)
         return sum(((d.get("e1") or 0) + (d.get("e2") or 0)) for d in daily)
 
+    # Today / yesterday
     today_kwh = await energy_between(today_start, now)
-    yesterday_kwh = await energy_between(yesterday_start, today_start)
-    this_week_kwh = await energy_between(this_week_start, now)
-    last_week_kwh = await energy_between(last_week_start, this_week_start)
-    this_month_kwh = await energy_between(this_month_start, now)
-    last_month_kwh = await energy_between(last_month_start, this_month_start)
-    this_year_kwh = await energy_between(this_year_start, now)
+    yesterday_until_now_kwh = await energy_between(yesterday_start, yesterday_until_now)
+    yesterday_full_kwh = await energy_between(yesterday_start, today_start)
 
-    # Year-over-year aggregates
+    # Week
+    this_week_kwh = await energy_between(this_week_start, now)
+    last_week_until_now_kwh = await energy_between(last_week_start, last_week_until_now)
+    last_week_full_kwh = await energy_between(last_week_start, this_week_start)
+
+    # Month (same calendar progress + full)
+    this_month_kwh = await energy_between(this_month_start, now)
+    last_month_until_progress_kwh = await energy_between(
+        last_month_start, last_month_until_progress
+    )
+    last_month_full_kwh = await energy_between(last_month_start, this_month_start)
+
+    # Year
+    this_year_kwh = await energy_between(this_year_start, now)
     last_year_ytd_kwh = await energy_between(last_year_start, last_year_until_today)
+
+    # Year-over-year on month card
     same_month_ly_kwh = await energy_between(same_month_ly_start, same_month_ly_until_today)
     same_month_ly_total_kwh = await energy_between(same_month_ly_start, same_month_ly_full_end)
 
     total_kwh = await db.get_total_energy()
     co2_kg = total_kwh * CO2_KG_PER_KWH
     money_saved = total_kwh * PRICE_PER_KWH
-
     peak_w_today = await db.get_peak_today()
-    daily_30d = await db.get_daily_totals(30)
 
     return {
+        # Today
         "today_kwh": round(today_kwh, 3),
-        "yesterday_kwh": round(yesterday_kwh, 3),
+        "yesterday_until_now_kwh": round(yesterday_until_now_kwh, 3),
+        "yesterday_full_kwh": round(yesterday_full_kwh, 3),
+
+        # Week
         "this_week_kwh": round(this_week_kwh, 3),
-        "last_week_kwh": round(last_week_kwh, 3),
+        "last_week_until_now_kwh": round(last_week_until_now_kwh, 3),
+        "last_week_full_kwh": round(last_week_full_kwh, 3),
+
+        # Month
         "this_month_kwh": round(this_month_kwh, 3),
-        "last_month_kwh": round(last_month_kwh, 3),
+        "last_month_until_progress_kwh": round(last_month_until_progress_kwh, 3),
+        "last_month_full_kwh": round(last_month_full_kwh, 3),
+
+        # Year
         "this_year_kwh": round(this_year_kwh, 3),
         "last_year_ytd_kwh": round(last_year_ytd_kwh, 3),
+
+        # Year-over-year (month card)
         "same_month_last_year_kwh": round(same_month_ly_kwh, 3),
         "same_month_last_year_total_kwh": round(same_month_ly_total_kwh, 3),
         "same_month_last_year_iso": same_month_ly_start.strftime("%Y-%m"),
+
+        # Lifetime + peak
         "total_kwh": round(total_kwh, 3),
         "peak_w_today": round(peak_w_today, 1),
         "co2_saved_kg": round(co2_kg, 2),
         "money_saved": round(money_saved, 2),
-        "daily_30d": daily_30d,
     }
 
 
