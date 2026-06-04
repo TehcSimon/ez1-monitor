@@ -76,35 +76,40 @@
     </div>
   </section>
 
-  <!-- Comparison cards: Heute → Woche → Monat → Jahr -->
+  <!-- Comparison cards: all four have the same structure now -->
   <section class="comparison-grid">
 
-    <div class="card stat-card">
+    <!-- TODAY -->
+    <div class="card stat-card stat-card-tall">
       <div class="stat-title" data-i18n="stats.today">Today</div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-today">—</span> <span class="stat-unit">kWh</span></span>
         <span class="stat-compare" id="stat-today-compare"></span>
       </div>
-      <div class="stat-sub"><span data-i18n="stats.yesterday">yesterday</span>: <span id="stat-yesterday">—</span> kWh</div>
+      <div class="stat-sub"><span data-i18n="stats.yesterdayUntilNow">yesterday until now</span>: <span id="stat-yesterday-until-now">—</span> kWh</div>
+      <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.yesterdayFull">yesterday total</span>: <span id="stat-yesterday-full">—</span> kWh</div>
     </div>
 
-    <div class="card stat-card">
+    <!-- WEEK -->
+    <div class="card stat-card stat-card-tall">
       <div class="stat-title" data-i18n="stats.week">This Week</div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-week">—</span> <span class="stat-unit">kWh</span></span>
         <span class="stat-compare" id="stat-week-compare"></span>
       </div>
-      <div class="stat-sub"><span data-i18n="stats.lastWeek">last week</span>: <span id="stat-last-week">—</span> kWh</div>
+      <div class="stat-sub"><span data-i18n="stats.lastWeekUntilNow">last week until now</span>: <span id="stat-last-week-until-now">—</span> kWh</div>
+      <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.lastWeekFull">last week total</span>: <span id="stat-last-week-full">—</span> kWh</div>
     </div>
 
-    <!-- Month card: standard compare + same-month-last-year (the highlight feature) -->
+    <!-- MONTH (also has YoY block) -->
     <div class="card stat-card stat-card-tall">
       <div class="stat-title" data-i18n="stats.month">This Month</div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-month">—</span> <span class="stat-unit">kWh</span></span>
         <span class="stat-compare" id="stat-month-compare"></span>
       </div>
-      <div class="stat-sub"><span data-i18n="stats.lastMonth">last month</span>: <span id="stat-last-month">—</span> kWh</div>
+      <div class="stat-sub"><span data-i18n="stats.lastMonthUntilProgress">last month until same day</span>: <span id="stat-last-month-until-progress">—</span> kWh</div>
+      <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.lastMonthFull">last month total</span>: <span id="stat-last-month-full">—</span> kWh</div>
       <div class="stat-sub stat-sub-yoy">
         <span class="stat-value-row">
           <span><span id="stat-same-month-ly-label">—</span>: <span id="stat-same-month-ly">—</span> kWh</span>
@@ -116,7 +121,8 @@
       </div>
     </div>
 
-    <div class="card stat-card">
+    <!-- YEAR -->
+    <div class="card stat-card stat-card-tall">
       <div class="stat-title" data-i18n="stats.year">This Year</div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-year">—</span> <span class="stat-unit">kWh</span></span>
@@ -127,14 +133,20 @@
 
   </section>
 
-  <!-- Historical chart -->
+  <!-- Historical chart with range tabs + (when year) granularity tabs -->
   <section class="card chart-card">
     <div class="card-header">
       <h2 data-i18n="chart.historyTitle">History</h2>
-      <div class="range-tabs">
-        <button class="range-tab" data-range="week" data-i18n="chart.rangeWeek">Week</button>
-        <button class="range-tab active" data-range="month" data-i18n="chart.rangeMonth">Month</button>
-        <button class="range-tab" data-range="year" data-i18n="chart.rangeYear">Year</button>
+      <div class="chart-controls">
+        <div class="granularity-tabs" id="granularity-tabs" style="display: none;">
+          <button class="gran-tab active" data-gran="daily" data-i18n="chart.granDaily">Daily</button>
+          <button class="gran-tab" data-gran="monthly" data-i18n="chart.granMonthly">Monthly</button>
+        </div>
+        <div class="range-tabs">
+          <button class="range-tab" data-range="week" data-i18n="chart.rangeWeek">Week</button>
+          <button class="range-tab active" data-range="month" data-i18n="chart.rangeMonth">Month</button>
+          <button class="range-tab" data-range="year" data-i18n="chart.rangeYear">Year</button>
+        </div>
       </div>
     </div>
     <div class="chart-wrap">

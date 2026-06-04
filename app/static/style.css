@@ -379,6 +379,11 @@ main {
   margin-top: 8px;
 }
 
+/* Anker sub-text (lighter, italic — secondary reference value) */
+.stat-sub-anchor {
+  opacity: 0.75;
+}
+
 /* Year-over-year block inside the month card */
 .stat-sub-yoy {
   margin-top: 10px;
@@ -401,8 +406,15 @@ main {
 /* The month card naturally grows taller because it has more content */
 .stat-card-tall { /* placeholder, grid handles the rest */ }
 
-/* ------------------------- Range tabs ------------------------- */
-.range-tabs {
+/* ------------------------- Range + Granularity tabs ------------------------- */
+.chart-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.range-tabs, .granularity-tabs {
   display: flex;
   gap: 4px;
   background: var(--bg-card-2);
@@ -410,7 +422,7 @@ main {
   border-radius: 8px;
   padding: 4px;
 }
-.range-tab {
+.range-tab, .gran-tab {
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -423,8 +435,8 @@ main {
   cursor: pointer;
   transition: all 0.2s;
 }
-.range-tab:hover { color: var(--text-secondary); }
-.range-tab.active {
+.range-tab:hover, .gran-tab:hover { color: var(--text-secondary); }
+.range-tab.active, .gran-tab.active {
   background: var(--accent);
   color: #15120e;
   font-weight: 700;

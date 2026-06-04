@@ -14,6 +14,7 @@ const state = {
   installKwp: 1.0,
   maxPowerW: 800,
   currentRange: "month",
+  yearGranularity: "daily",   // "daily" or "monthly"
   statusState: "noData",
   pollInterval: 60,
 };
@@ -53,11 +54,17 @@ const fmt = {
     return `${formatted}/kWh`;
   },
   monthYear: (isoYearMonth) => {
-    // "2025-06" → "Juni 2025" (DE) / "June 2025" (EN)
     if (!isoYearMonth) return "—";
     const [y, m] = isoYearMonth.split("-").map(Number);
     return new Date(y, m - 1, 1).toLocaleDateString(state.locale, {
       month: "long", year: "numeric"
+    });
+  },
+  shortMonthYear: (isoYearMonth) => {
+    if (!isoYearMonth) return "—";
+    const [y, m] = isoYearMonth.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString(state.locale, {
+      month: "short", year: "2-digit"
     });
   },
 };
@@ -86,6 +93,42 @@ Chart.defaults.scale.grid.color = COLORS.border;
 Chart.defaults.scale.grid.tickColor = COLORS.border;
 
 
+// --- Custom Chart.js plugin: dashed line + label at year boundary ---
+const yearBoundaryPlugin = {
+  id: "yearBoundary",
+  afterDatasetsDraw(chart, args, options) {
+    const boundaries = options.boundaries || [];
+    if (!boundaries.length) return;
+    const ctx = chart.ctx;
+    const xAxis = chart.scales.x;
+    const top = chart.chartArea.top;
+    const bottom = chart.chartArea.bottom;
+    ctx.save();
+    boundaries.forEach(b => {
+      // Get the X coordinate corresponding to the label
+      const xPos = xAxis.getPixelForValue(b.label);
+      if (xPos < chart.chartArea.left || xPos > chart.chartArea.right) return;
+      // Dashed vertical line
+      ctx.strokeStyle = COLORS.accentWarm + "aa";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(xPos, top);
+      ctx.lineTo(xPos, bottom);
+      ctx.stroke();
+      // Year label
+      ctx.setLineDash([]);
+      ctx.fillStyle = COLORS.accentWarm;
+      ctx.font = "bold 11px JetBrains Mono, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText(" " + b.year, xPos, top + 4);
+    });
+    ctx.restore();
+  },
+};
+
+
 // --- Status pill -------------------------------------------------------
 
 function applyStatus(statusState) {
@@ -98,6 +141,7 @@ function applyStatus(statusState) {
 
 
 // --- Live data ---------------------------------------------------------
+
 async function loadLive() {
   try {
     const res = await fetch("/api/live");
@@ -190,50 +234,51 @@ function updateDynamicLabels() {
 
 
 // --- Stats -------------------------------------------------------------
+
 async function loadStats() {
   try {
     const res = await fetch("/api/stats");
     const s = await res.json();
 
-    // Standard cards
-    document.getElementById("stat-today").textContent      = fmt.kwh(s.today_kwh);
-    document.getElementById("stat-yesterday").textContent  = fmt.kwh(s.yesterday_kwh);
-    document.getElementById("stat-week").textContent       = fmt.kwh(s.this_week_kwh);
-    document.getElementById("stat-last-week").textContent  = fmt.kwh(s.last_week_kwh);
-    document.getElementById("stat-month").textContent      = fmt.kwh(s.this_month_kwh);
-    document.getElementById("stat-last-month").textContent = fmt.kwh(s.last_month_kwh);
-    document.getElementById("stat-year").textContent       = fmt.kwh(s.this_year_kwh);
-    document.getElementById("stat-last-year-ytd").textContent = fmt.kwh(s.last_year_ytd_kwh);
+    // Today
+    document.getElementById("stat-today").textContent = fmt.kwh(s.today_kwh);
+    document.getElementById("stat-yesterday-until-now").textContent = fmt.kwh(s.yesterday_until_now_kwh);
+    document.getElementById("stat-yesterday-full").textContent = fmt.kwh(s.yesterday_full_kwh);
+    renderCompare("stat-today-compare", s.today_kwh, s.yesterday_until_now_kwh);
 
-    // Compare indicators (next to main value)
-    renderCompare("stat-today-compare", s.today_kwh, s.yesterday_kwh);
-    renderCompare("stat-week-compare",  s.this_week_kwh,  s.last_week_kwh);
-    renderCompare("stat-month-compare", s.this_month_kwh, s.last_month_kwh);
-    renderCompare("stat-year-compare",  s.this_year_kwh,  s.last_year_ytd_kwh);
+    // Week
+    document.getElementById("stat-week").textContent = fmt.kwh(s.this_week_kwh);
+    document.getElementById("stat-last-week-until-now").textContent = fmt.kwh(s.last_week_until_now_kwh);
+    document.getElementById("stat-last-week-full").textContent = fmt.kwh(s.last_week_full_kwh);
+    renderCompare("stat-week-compare", s.this_week_kwh, s.last_week_until_now_kwh);
 
-    // Year-over-year for the month card
-    document.getElementById("stat-same-month-ly").textContent =
-      fmt.kwh(s.same_month_last_year_kwh);
-    document.getElementById("stat-same-month-ly-total").textContent =
-      fmt.kwh(s.same_month_last_year_total_kwh);
-    document.getElementById("stat-same-month-ly-label").textContent =
-      fmt.monthYear(s.same_month_last_year_iso);
-    renderCompare("stat-same-month-ly-compare",
-                  s.this_month_kwh, s.same_month_last_year_kwh);
+    // Month
+    document.getElementById("stat-month").textContent = fmt.kwh(s.this_month_kwh);
+    document.getElementById("stat-last-month-until-progress").textContent = fmt.kwh(s.last_month_until_progress_kwh);
+    document.getElementById("stat-last-month-full").textContent = fmt.kwh(s.last_month_full_kwh);
+    renderCompare("stat-month-compare", s.this_month_kwh, s.last_month_until_progress_kwh);
 
-    // Hide the "full month" sub-row if there's nothing meaningful to compare to
+    // Year-over-year on month card
+    document.getElementById("stat-same-month-ly").textContent = fmt.kwh(s.same_month_last_year_kwh);
+    document.getElementById("stat-same-month-ly-total").textContent = fmt.kwh(s.same_month_last_year_total_kwh);
+    document.getElementById("stat-same-month-ly-label").textContent = fmt.monthYear(s.same_month_last_year_iso);
+    renderCompare("stat-same-month-ly-compare", s.this_month_kwh, s.same_month_last_year_kwh);
     const totalRow = document.getElementById("stat-same-month-ly-total-row");
     if (totalRow) {
-      totalRow.style.display =
-        (s.same_month_last_year_total_kwh > 0) ? "" : "none";
+      totalRow.style.display = (s.same_month_last_year_total_kwh > 0) ? "" : "none";
     }
+
+    // Year
+    document.getElementById("stat-year").textContent = fmt.kwh(s.this_year_kwh);
+    document.getElementById("stat-last-year-ytd").textContent = fmt.kwh(s.last_year_ytd_kwh);
+    renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
 
     // Hero
     document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
 
     // Lifetime
-    document.getElementById("lifetime-kwh").textContent   = fmt.kwh(s.total_kwh);
-    document.getElementById("lifetime-co2").textContent   = (s.co2_saved_kg || 0).toFixed(1);
+    document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
+    document.getElementById("lifetime-co2").textContent = (s.co2_saved_kg || 0).toFixed(1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
   } catch (e) {
     console.error("loadStats:", e);
@@ -256,7 +301,8 @@ function renderCompare(elementId, current, previous) {
 }
 
 
-// --- Charts ------------------------------------------------------------
+// --- Today chart ------------------------------------------------------
+
 async function loadTodayChart() {
   try {
     const res = await fetch("/api/history?range=day");
@@ -296,78 +342,193 @@ async function loadTodayChart() {
   }
 }
 
+
+// --- History chart ----------------------------------------------------
+
 async function loadHistoryChart(range) {
   try {
-    const res = await fetch(`/api/history?range=${range}`);
-    const data = await res.json();
     const isYear = range === "year";
-    const points = data.points || [];
+    const useMonthly = isYear && state.yearGranularity === "monthly";
+    const url = useMonthly
+      ? "/api/history?range=year&granularity=monthly"
+      : `/api/history?range=${range}`;
 
-    const byDay = new Map();
-    for (const p of points) {
-      if (!p.online) continue;
-      const d = new Date(p.timestamp * 1000);
-      const key = localDateKey(d);
-      const total = (p.e1 || 0) + (p.e2 || 0);
-      if (!byDay.has(key) || byDay.get(key).max < total) {
-        byDay.set(key, { ts: p.timestamp, max: total });
-      }
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (useMonthly) {
+      renderMonthlyHistory(data);
+    } else {
+      renderDailyHistory(data, isYear);
     }
-    const days = [...byDay.entries()].sort();
-    const labels = days.map(([k]) => k);
-    const series = days.map(([_, v]) => v.max);
 
-    if (historyChart) historyChart.destroy();
-    const ctx = document.getElementById("chart-history").getContext("2d");
-
-    historyChart = new Chart(ctx, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [{
-          label: "kWh",
-          data: series,
-          backgroundColor: COLORS.accent + "cc",
-          borderColor: COLORS.accent,
-          borderWidth: 1,
-          borderRadius: 3,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: tooltipStyle({
-            title: items => new Date(items[0].label).toLocaleDateString(state.locale, {
-              weekday: "short", day: "2-digit", month: "short",
-            }),
-            label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
-          }),
-        },
-        scales: {
-          x: {
-            ticks: {
-              maxRotation: 0,
-              autoSkip: true,
-              callback: function (val) {
-                const lbl = this.getLabelForValue(val);
-                const d = new Date(lbl);
-                if (isYear) return d.toLocaleDateString(state.locale, { month: "short" });
-                return d.toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
-              },
-            },
-          },
-          y: {
-            beginAtZero: true,
-            ticks: { callback: v => v + " kWh" },
-          },
-        },
-      },
-    });
+    // Show/hide the granularity tabs based on current range
+    const granTabs = document.getElementById("granularity-tabs");
+    if (granTabs) granTabs.style.display = isYear ? "" : "none";
   } catch (e) {
     console.error("loadHistoryChart:", e);
   }
+}
+
+function renderDailyHistory(data, isYear) {
+  const points = data.points || [];
+  const byDay = new Map();
+  for (const p of points) {
+    if (!p.online) continue;
+    const d = new Date(p.timestamp * 1000);
+    const key = localDateKey(d);
+    const total = (p.e1 || 0) + (p.e2 || 0);
+    if (!byDay.has(key) || byDay.get(key).max < total) {
+      byDay.set(key, { ts: p.timestamp, max: total });
+    }
+  }
+  const days = [...byDay.entries()].sort();
+  const labels = days.map(([k]) => k);
+  const series = days.map(([_, v]) => v.max);
+
+  // For the year view: dim previous-year bars and find year boundaries
+  const thisYear = new Date().getFullYear();
+  const boundaries = [];
+  let backgroundColors;
+  if (isYear && labels.length > 0) {
+    backgroundColors = labels.map(label => {
+      const y = parseInt(label.substring(0, 4), 10);
+      return y === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55";
+    });
+    // Find every Jan 1 within the visible range
+    let previousYear = null;
+    labels.forEach(label => {
+      const y = parseInt(label.substring(0, 4), 10);
+      if (previousYear !== null && y !== previousYear) {
+        boundaries.push({ label: label, year: y });
+      }
+      previousYear = y;
+    });
+  } else {
+    backgroundColors = COLORS.accent + "cc";
+  }
+
+  if (historyChart) historyChart.destroy();
+  const ctx = document.getElementById("chart-history").getContext("2d");
+
+  historyChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "kWh",
+        data: series,
+        backgroundColor: backgroundColors,
+        borderColor: COLORS.accent,
+        borderWidth: 1,
+        borderRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltipStyle({
+          title: items => new Date(items[0].label).toLocaleDateString(state.locale, {
+            weekday: "short", day: "2-digit", month: "short", year: "numeric",
+          }),
+          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+        }),
+        yearBoundary: { boundaries },
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxRotation: 0,
+            autoSkip: true,
+            callback: function (val) {
+              const lbl = this.getLabelForValue(val);
+              const d = new Date(lbl);
+              if (isYear) return d.toLocaleDateString(state.locale, { month: "short" });
+              return d.toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
+            },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { callback: v => v + " kWh" },
+        },
+      },
+    },
+    plugins: [yearBoundaryPlugin],
+  });
+}
+
+function renderMonthlyHistory(data) {
+  const months = data.months || [];
+  const labels = months.map(m => m.month);  // "2026-06"
+  const series = months.map(m => m.kwh);
+
+  // Dim months from previous year
+  const thisYear = new Date().getFullYear();
+  const backgroundColors = labels.map(label => {
+    const y = parseInt(label.substring(0, 4), 10);
+    return y === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55";
+  });
+
+  // Find year boundaries (Jan of current year, etc.)
+  const boundaries = [];
+  let previousYear = null;
+  labels.forEach(label => {
+    const y = parseInt(label.substring(0, 4), 10);
+    if (previousYear !== null && y !== previousYear) {
+      boundaries.push({ label: label, year: y });
+    }
+    previousYear = y;
+  });
+
+  if (historyChart) historyChart.destroy();
+  const ctx = document.getElementById("chart-history").getContext("2d");
+
+  historyChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "kWh",
+        data: series,
+        backgroundColor: backgroundColors,
+        borderColor: COLORS.accent,
+        borderWidth: 1,
+        borderRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltipStyle({
+          title: items => fmt.monthYear(items[0].label),
+          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+        }),
+        yearBoundary: { boundaries },
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxRotation: 0,
+            autoSkip: false,
+            callback: function (val) {
+              const lbl = this.getLabelForValue(val);
+              return fmt.shortMonthYear(lbl);
+            },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { callback: v => v + " kWh" },
+        },
+      },
+    },
+    plugins: [yearBoundaryPlugin],
+  });
 }
 
 function timeChartOptions(timeFormat) {
@@ -411,12 +572,25 @@ function tooltipStyle(callbacks) {
 }
 
 
+// --- Range + granularity tabs -----------------------------------------
+
 document.querySelectorAll(".range-tab").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".range-tab").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     state.currentRange = btn.dataset.range;
     loadHistoryChart(state.currentRange);
+  });
+});
+
+document.querySelectorAll(".gran-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".gran-tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.yearGranularity = btn.dataset.gran;
+    if (state.currentRange === "year") {
+      loadHistoryChart("year");
+    }
   });
 });
 
