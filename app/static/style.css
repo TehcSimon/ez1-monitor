@@ -406,9 +406,18 @@ main {
   font-family: var(--font-mono);
   font-weight: 500;
   font-size: 28px;
-  color: var(--text-primary);
+  /* Use the accent color so PV1+PV2 values visually belong together with
+     the big current-power number above them — "ah, these combine to the
+     hero number". Slightly dimmer than the hero so the hero stays the
+     focal point. */
+  color: var(--accent);
+  opacity: 0.85;
   font-variant-numeric: tabular-nums;
   margin-top: 4px;
+  /* Prevent the unit (W) from wrapping to a second line on 3-digit
+     wattage values like "103 W" on narrow cards. The PV cards are
+     already constrained to their grid cell, so nowrap is safe. */
+  white-space: nowrap;
 }
 
 .pv-energy {
@@ -818,6 +827,18 @@ input.day-picker-input + input:focus {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+/* Secondary subtitle line — used for the grid-mix details on the CO2 card.
+   Slightly dimmer than the primary sub so the eye still reads top-to-bottom
+   in the right hierarchy. Hidden when empty (no live data) via :empty. */
+.lifetime-sub-secondary {
+  font-size: 10px;
+  opacity: 0.75;
+  letter-spacing: 0.02em;
+}
+.lifetime-sub-secondary:empty {
+  display: none;
 }
 
 /* ------------------------- Footer ------------------------- */
