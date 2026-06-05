@@ -70,9 +70,8 @@ const TRANSLATIONS = {
       lastReading: "letzte Messung",
     },
     theme: {
-      system: "Theme: System (klick für Hell)",
-      light: "Theme: Hell (klick für Dunkel)",
-      dark: "Theme: Dunkel (klick für System)",
+      switchToLight: "Zum hellen Theme wechseln",
+      switchToDark: "Zum dunklen Theme wechseln",
     },
   },
 
@@ -145,9 +144,8 @@ const TRANSLATIONS = {
       lastReading: "last reading",
     },
     theme: {
-      system: "Theme: System (click for Light)",
-      light: "Theme: Light (click for Dark)",
-      dark: "Theme: Dark (click for System)",
+      switchToLight: "Switch to light theme",
+      switchToDark: "Switch to dark theme",
     },
   },
 };
