@@ -1,27 +1,50 @@
-FROM python:3.12-slim
+# Multi-stage Alpine build:
+# - builder: installs Python wheels into a single target dir
+# - runtime: copies just the installed packages, no pip metadata,
+#   no build tools, no compiler caches
+#
+# Alpine was chosen over python:3.12-slim because all our dependencies
+# (FastAPI, uvicorn, aiosqlite, apsystems-ez1, prometheus-client) have
+# pre-built musl wheels available, so no compiler is needed at install
+# time. If a future dependency drops musl wheel support, fall back to
+# python:3.12-slim by changing both stages' base image.
+
+# --- Builder stage ----------------------------------------------------
+FROM python:3.12-alpine AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /build
+
+COPY requirements.txt .
+# Install into /install so we can copy that single tree into runtime
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+
+# --- Runtime stage ----------------------------------------------------
+FROM python:3.12-alpine
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
 # tzdata: required so the TZ env var maps to real timezone files.
 # curl:   required for the HEALTHCHECK.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        tzdata \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache tzdata curl
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
 
 # UID-agnostic non-root user (OpenShift / Kubernetes / Docker compatible).
 # The container is set up to run as ANY UID by ensuring files are owned by
 # group 0 with group permissions equal to user permissions. The default UID
 # is 1000, but the runtime can override it via --user, securityContext, or
 # OpenShift's arbitrary UID assignment.
-RUN useradd -r -u 1000 -g 0 -d /app -s /sbin/nologin appuser \
+RUN adduser -D -u 1000 -G root -h /app -s /sbin/nologin appuser \
     && mkdir -p /data
 
 COPY app/ ./app/

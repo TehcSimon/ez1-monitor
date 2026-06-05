@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.idea
+.vscode
+*.iml
+.DS_Store
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+
+# Docs / meta files not needed at runtime
+README.md
+LICENSE
+docs/
+.github/
+
+# Unraid template (not needed in the image itself)
+.unraid/
+
+# Local docker-compose
+docker-compose.yml
+
+# Local data / build artifacts
+data/
+*.db
+*.db-shm
+*.db-wal
+*.tar.gz
