@@ -69,6 +69,11 @@ const TRANSLATIONS = {
       updateEvery: "Update alle {s} s",
       lastReading: "letzte Messung",
     },
+    theme: {
+      system: "Theme: System (klick für Hell)",
+      light: "Theme: Hell (klick für Dunkel)",
+      dark: "Theme: Dunkel (klick für System)",
+    },
   },
 
   en: {
@@ -138,6 +143,11 @@ const TRANSLATIONS = {
     footer: {
       updateEvery: "Update every {s} s",
       lastReading: "last reading",
+    },
+    theme: {
+      system: "Theme: System (click for Light)",
+      light: "Theme: Light (click for Dark)",
+      dark: "Theme: Dark (click for System)",
     },
   },
 };

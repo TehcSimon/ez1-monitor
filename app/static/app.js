@@ -107,22 +107,28 @@ function isToday(d) {
       && d.getDate() === today.getDate();
 }
 
-const css = getComputedStyle(document.documentElement);
-const COLORS = {
-  accent: css.getPropertyValue("--accent").trim() || "#f59e0b",
-  accentWarm: css.getPropertyValue("--accent-warm").trim() || "#fb923c",
-  text: css.getPropertyValue("--text-primary").trim() || "#f4ede0",
-  muted: css.getPropertyValue("--text-muted").trim() || "#6f6353",
-  border: css.getPropertyValue("--border").trim() || "#2a241c",
-  good: css.getPropertyValue("--good").trim() || "#4ade80",
-};
+// COLORS is populated from CSS variables. Re-call refreshChartColors() after
+// a theme switch to pick up new values from the freshly-set CSS variables.
+const COLORS = {};
 
-Chart.defaults.color = COLORS.muted;
-Chart.defaults.font.family = "'JetBrains Mono', monospace";
-Chart.defaults.font.size = 11;
-Chart.defaults.borderColor = COLORS.border;
-Chart.defaults.scale.grid.color = COLORS.border;
-Chart.defaults.scale.grid.tickColor = COLORS.border;
+function refreshChartColors() {
+  const css = getComputedStyle(document.documentElement);
+  COLORS.accent     = css.getPropertyValue("--accent").trim() || "#f59e0b";
+  COLORS.accentWarm = css.getPropertyValue("--accent-warm").trim() || "#fb923c";
+  COLORS.text       = css.getPropertyValue("--text-primary").trim() || "#f4ede0";
+  COLORS.muted      = css.getPropertyValue("--text-muted").trim() || "#6f6353";
+  COLORS.border     = css.getPropertyValue("--border").trim() || "#2a241c";
+  COLORS.good       = css.getPropertyValue("--good").trim() || "#4ade80";
+  COLORS.tooltipBg  = css.getPropertyValue("--tooltip-bg").trim() || "#000";
+  Chart.defaults.color = COLORS.muted;
+  Chart.defaults.font.family = "'JetBrains Mono', monospace";
+  Chart.defaults.font.size = 11;
+  Chart.defaults.borderColor = COLORS.border;
+  Chart.defaults.scale.grid.color = COLORS.border;
+  Chart.defaults.scale.grid.tickColor = COLORS.border;
+}
+
+refreshChartColors();
 
 
 // --- Custom Chart.js plugin: dashed line + label at year boundary ---
@@ -747,7 +753,9 @@ function timeChartOptions(timeFormat) {
 
 function tooltipStyle(callbacks) {
   return {
-    backgroundColor: "#000",
+    backgroundColor: COLORS.tooltipBg,
+    titleColor: COLORS.text,
+    bodyColor: COLORS.text,
     titleFont: { family: "JetBrains Mono", weight: 500 },
     bodyFont: { family: "JetBrains Mono" },
     borderColor: COLORS.border,
@@ -783,6 +791,73 @@ document.querySelectorAll(".gran-tab").forEach(btn => {
 document.getElementById("day-prev")?.addEventListener("click", () => shiftViewedDay(-1));
 document.getElementById("day-next")?.addEventListener("click", () => shiftViewedDay(+1));
 document.getElementById("day-today")?.addEventListener("click", () => setViewedDay(null));
+
+
+// --- Theme management (system / light / dark) -----------------------
+
+const THEME_KEY = "ez1-theme";
+const THEME_STATES = ["system", "light", "dark"];
+
+function getStoredTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  return THEME_STATES.includes(stored) ? stored : "system";
+}
+
+function applyStoredTheme() {
+  const theme = getStoredTheme();
+  if (theme === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", theme);
+  }
+  updateThemeToggleIcon();
+}
+
+function updateThemeToggleIcon() {
+  const theme = getStoredTheme();
+  document.querySelectorAll(".theme-icon").forEach(el => {
+    el.style.display = (el.dataset.icon === theme) ? "" : "none";
+  });
+  const btn = document.getElementById("theme-toggle");
+  if (btn) {
+    const label = window.i18n.t(state.lang, "theme." + theme);
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  }
+}
+
+function cycleTheme() {
+  const current = getStoredTheme();
+  const next = THEME_STATES[(THEME_STATES.indexOf(current) + 1) % THEME_STATES.length];
+  if (next === "system") {
+    localStorage.removeItem(THEME_KEY);
+  } else {
+    localStorage.setItem(THEME_KEY, next);
+  }
+  applyStoredTheme();
+  // Charts must be re-rendered with new colors
+  refreshChartColors();
+  if (todayChart || historyChart) {
+    loadTodayChart();
+    loadHistoryChart(state.currentRange);
+  }
+}
+
+// React to OS theme changes while user is on "system"
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (getStoredTheme() === "system") {
+    refreshChartColors();
+    if (todayChart || historyChart) {
+      loadTodayChart();
+      loadHistoryChart(state.currentRange);
+    }
+  }
+});
+
+document.getElementById("theme-toggle")?.addEventListener("click", cycleTheme);
+
+// Apply stored theme immediately (before init) so there's no flash
+applyStoredTheme();
 
 
 function scheduleTimers() {
