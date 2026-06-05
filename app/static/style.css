@@ -29,6 +29,8 @@
   --body-glow-1:    #2a1f0a44;
   --body-glow-2:    #1a0f0044;
   --topbar-bg:      #150e07;
+  --accent-card-glow: #3a2810;   /* warm dark glow inside accent lifetime card */
+  --hero-text-shadow: 0 0 40px var(--accent-glow);  /* warm aura behind big numbers */
 }
 
 /* Light theme — applied when user explicitly chose light, OR when the
@@ -58,7 +60,9 @@
     --button-text:    #ffffff;
     --body-glow-1:    #fef3c722;
     --body-glow-2:    #fed7aa22;
-    --topbar-bg:      #fffdf7;
+    --topbar-bg:      #f0e8d5;
+    --accent-card-glow: #fef3c7;
+    --hero-text-shadow: none;
   }
 }
 
@@ -86,7 +90,9 @@ html[data-theme="light"] {
   --button-text:    #ffffff;
   --body-glow-1:    #fef3c722;
   --body-glow-2:    #fed7aa22;
-  --topbar-bg:      #fffdf7;
+  --topbar-bg:      #f0e8d5;
+  --accent-card-glow: #fef3c7;
+  --hero-text-shadow: none;
 }
 
 /* Dark theme override (explicit user choice) — same as :root defaults */
@@ -115,6 +121,8 @@ html[data-theme="dark"] {
   --body-glow-1:    #2a1f0a44;
   --body-glow-2:    #1a0f0044;
   --topbar-bg:      #150e07;
+  --accent-card-glow: #3a2810;
+  --hero-text-shadow: 0 0 40px var(--accent-glow);
 }
 
 * { box-sizing: border-box; }
@@ -301,7 +309,7 @@ main {
   letter-spacing: -0.04em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 40px var(--accent-glow);
+  text-shadow: var(--hero-text-shadow);
   display: flex;
   align-items: baseline;
   gap: 12px;
@@ -594,7 +602,13 @@ main {
   cursor: not-allowed;
 }
 
-.day-picker-input {
+/* Apply to both: the original .day-picker-input and flatpickr's altInput
+   (which it generates as the visible input when altInput: true). The alt
+   input is a sibling of the original input with class .flatpickr-alt-input
+   in older versions, or inherits the original's classes in newer ones. */
+.day-picker-input,
+.day-picker-input ~ .flatpickr-alt-input,
+input.day-picker-input + input {
   background: var(--bg-card-2);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -607,11 +621,15 @@ main {
   text-align: center;
   letter-spacing: 0.02em;
 }
-.day-picker-input:hover {
+.day-picker-input:hover,
+.day-picker-input ~ .flatpickr-alt-input:hover,
+input.day-picker-input + input:hover {
   border-color: var(--border-bright);
   background: var(--bg-card);
 }
-.day-picker-input:focus {
+.day-picker-input:focus,
+.day-picker-input ~ .flatpickr-alt-input:focus,
+input.day-picker-input + input:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -748,7 +766,7 @@ main {
 
 .lifetime-card.accent {
   background:
-    radial-gradient(ellipse at 80% 20%, #3a2810, var(--bg-card) 70%),
+    radial-gradient(ellipse at 80% 20%, var(--accent-card-glow), var(--bg-card) 70%),
     var(--bg-card);
   border-color: var(--accent);
 }
