@@ -28,6 +28,7 @@ const state = {
   maxPowerW: 800,
   currentRange: "month",
   yearGranularity: "daily",
+  multiYearGranularity: "monthly",   // monthly | yearly
   statusState: "noData",
   pollInterval: 60,
   retentionDays: 730,
@@ -217,6 +218,12 @@ async function loadLive() {
         `${deviceId} · max ${state.maxPowerW} W`;
     }
 
+    // Carbon block (v1.4.0): live grid intensity from Electricity Maps or
+    // fallback to static. Stored on state so updateDynamicLabels() can
+    // render the CO2 card subtitles with full provenance.
+    state.carbon = data.carbon || null;
+    updateDynamicLabels();
+
     const newState = (data.status && data.status.state) || "noData";
     const stateChanged = newState !== state.statusState;
     state.statusState = newState;
@@ -258,12 +265,8 @@ async function loadLive() {
 }
 
 function updateDynamicLabels() {
-  const co2Sub = document.getElementById("lifetime-co2-sub");
-  if (co2Sub) {
-    co2Sub.textContent = window.i18n.t(state.lang, "lifetime.co2BasedOn", {
-      g: Math.round(state.co2KgPerKwh * 1000),
-    });
-  }
+  renderCarbonSubtitles();
+
   const moneySub = document.getElementById("lifetime-money-sub");
   if (moneySub) {
     moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOn", {
@@ -275,6 +278,64 @@ function updateDynamicLabels() {
     footerUpdate.textContent = window.i18n.t(state.lang, "footer.updateEvery", {
       s: state.pollInterval,
     });
+  }
+}
+
+
+// --- CO2 card subtitles (variant B: two lines, all info at a glance) ---
+
+function renderCarbonSubtitles() {
+  // Two lines on the CO2 card:
+  //   Line 1: source label + g/kWh + freshness ("Live (DE) · 117 g/kWh · 22:00 Uhr")
+  //   Line 2: grid mix details ("Grid-Mix: 43% fossil · 57% sauber")
+  // Line 2 is empty when fossilFuelPercentage isn't available (static mode
+  // or older API responses). The CSS hides empty .lifetime-sub-secondary.
+  const sub1 = document.getElementById("lifetime-co2-sub-1");
+  const sub2 = document.getElementById("lifetime-co2-sub-2");
+  if (!sub1 || !sub2) return;
+
+  const c = state.carbon;
+  // No carbon block yet (very first request before /api/live resolved) →
+  // fall back to the v1.3.x behavior so the UI never shows "—"
+  if (!c) {
+    sub1.textContent = window.i18n.t(state.lang, "lifetime.co2BasedOn", {
+      g: Math.round((state.co2KgPerKwh || 0.38) * 1000),
+    });
+    sub2.textContent = "";
+    return;
+  }
+
+  const g = Math.round(c.g_per_kwh);
+  const zone = c.country_code || c.configured_zone || "—";
+
+  if (c.source === "live") {
+    const time = c.datetime ? fmt.time(Math.floor(new Date(c.datetime).getTime() / 1000)) : "";
+    sub1.textContent = window.i18n.t(state.lang, "lifetime.co2Live", {
+      zone, g, time,
+    });
+  } else if (c.source === "stale") {
+    const hours = Math.round((c.age_seconds || 0) / 3600);
+    sub1.textContent = window.i18n.t(state.lang, "lifetime.co2Stale", {
+      zone, g, hours,
+    });
+  } else if (c.source === "avg") {
+    sub1.textContent = window.i18n.t(state.lang, "lifetime.co2Avg", {
+      zone, g, count: c.rolling_count || 0,
+    });
+  } else {
+    // static
+    sub1.textContent = window.i18n.t(state.lang, "lifetime.co2Static", { g });
+  }
+
+  // Grid mix line — only shown when we have fossil percentage
+  if (typeof c.fossil_pct === "number") {
+    const fossil = Math.round(c.fossil_pct);
+    const clean = 100 - fossil;
+    sub2.textContent = window.i18n.t(state.lang, "lifetime.co2GridMix", {
+      fossil, clean,
+    });
+  } else {
+    sub2.textContent = "";  // CSS :empty hides this line
   }
 }
 
@@ -483,11 +544,38 @@ function setViewedDay(date) {
     // the new date immediately, with no 10-second delay until next poll.
     if (dayPicker.altInput && dayPicker.config) {
       try {
-        dayPicker.altInput.value = flatpickr.formatDate(
+        const formatted = flatpickr.formatDate(
           target,
           dayPicker.config.altFormat,
           dayPicker.l10n
         );
+        dayPicker.altInput.value = formatted;
+
+        // iOS Safari quirk: setting input.value via JS does not always
+        // trigger a repaint of text inputs that are positioned inside
+        // a flex/grid container, especially right after the field was
+        // empty. Three things together coax the browser to paint:
+        //
+        //   1) Force a synchronous reflow by reading offsetHeight (a
+        //      well-known web-perf trick — JavaScript blocks until the
+        //      browser has computed layout, which forces it to commit
+        //      pending DOM mutations including the new value).
+        //   2) Dispatch a synthetic 'input' event so any listeners (and
+        //      iOS's own UI-update machinery) are notified.
+        //   3) Schedule a second value-set in the next animation frame
+        //      as a safety net — if the first one was somehow lost in
+        //      a transition or event-queue race, this catches it.
+        //
+        // The combination is overkill on desktop browsers, but cheap.
+        // Net effect: snappy date updates on iOS Safari mobile.
+        void dayPicker.altInput.offsetHeight;
+        dayPicker.altInput.dispatchEvent(new Event("input", { bubbles: true }));
+        requestAnimationFrame(() => {
+          if (dayPicker && dayPicker.altInput &&
+              dayPicker.altInput.value !== formatted) {
+            dayPicker.altInput.value = formatted;
+          }
+        });
       } catch (e) {
         // Defensive — if formatDate fails for any reason, fall back to a
         // simple toLocaleDateString rather than leaving the field blank.
@@ -589,6 +677,29 @@ async function loadTodayChart() {
 async function loadHistoryChart(range) {
   try {
     const isYear = range === "year";
+    const isMultiYear = range === "multiyear";
+
+    // Multi-year view: pulls from monthly_aggregates table (survives
+    // retention pruning). Same chart shape as the year-view monthly mode,
+    // just spans every year that has data instead of the last 12 months.
+    if (isMultiYear) {
+      const url = state.multiYearGranularity === "yearly"
+        ? "/api/history?range=multiyear&granularity=yearly"
+        : "/api/history?range=multiyear&granularity=monthly";
+      const res = await fetch(url);
+      const data = await res.json();
+      if (state.multiYearGranularity === "yearly") {
+        renderYearlyHistory(data);
+      } else {
+        renderMultiYearMonthly(data);
+      }
+      const granTabs = document.getElementById("granularity-tabs");
+      if (granTabs) granTabs.style.display = "";
+      // Swap the tab labels: yearly vs monthly (instead of daily vs monthly)
+      updateGranularityTabsForRange(range);
+      return;
+    }
+
     const useMonthly = isYear && state.yearGranularity === "monthly";
     const url = useMonthly
       ? "/api/history?range=year&granularity=monthly"
@@ -605,9 +716,94 @@ async function loadHistoryChart(range) {
 
     const granTabs = document.getElementById("granularity-tabs");
     if (granTabs) granTabs.style.display = isYear ? "" : "none";
+    if (isYear) updateGranularityTabsForRange("year");
   } catch (e) {
     console.error("loadHistoryChart:", e);
   }
+}
+
+// Swap the granularity tab labels and their data-gran attributes depending
+// on whether we're in "year" mode (daily/monthly) or "multiyear" (monthly/yearly).
+function updateGranularityTabsForRange(range) {
+  const tabs = document.querySelectorAll("#granularity-tabs .gran-tab");
+  if (tabs.length !== 2) return;
+  if (range === "multiyear") {
+    tabs[0].dataset.gran = "monthly";
+    tabs[0].textContent = window.i18n.t(state.lang, "chart.granMonthly");
+    tabs[1].dataset.gran = "yearly";
+    tabs[1].textContent = window.i18n.t(state.lang, "chart.granYearly");
+    // Reflect current selection
+    const active = state.multiYearGranularity || "monthly";
+    tabs.forEach(t => t.classList.toggle("active", t.dataset.gran === active));
+  } else {
+    tabs[0].dataset.gran = "daily";
+    tabs[0].textContent = window.i18n.t(state.lang, "chart.granDaily");
+    tabs[1].dataset.gran = "monthly";
+    tabs[1].textContent = window.i18n.t(state.lang, "chart.granMonthly");
+    const active = state.yearGranularity || "daily";
+    tabs.forEach(t => t.classList.toggle("active", t.dataset.gran === active));
+  }
+}
+
+function renderMultiYearMonthly(data) {
+  // Shape from API: { months: [{year, month, total_kwh, peak_w, days_with_data, ...}, ...] }
+  // Convert to the same label format renderMonthlyHistory expects (YYYY-MM keys),
+  // then delegate to it.
+  const months = (data.months || []).map(m => ({
+    month: `${m.year}-${String(m.month).padStart(2, "0")}`,
+    kwh: m.total_kwh,
+  }));
+  if (months.length === 0) {
+    // Edge case: no aggregates yet
+    if (historyChart) { historyChart.destroy(); historyChart = null; }
+    const ctx = document.getElementById("chart-history").getContext("2d");
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    return;
+  }
+  renderMonthlyHistory({ months });
+}
+
+function renderYearlyHistory(data) {
+  // Shape from API: { years: [{year, total_kwh, ...}, ...] }
+  const years = data.years || [];
+  const labels = years.map(y => String(y.year));
+  const series = years.map(y => y.total_kwh);
+  const thisYear = new Date().getFullYear();
+  const backgroundColors = labels.map(l =>
+    parseInt(l, 10) === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55"
+  );
+
+  if (historyChart) historyChart.destroy();
+  const ctx = document.getElementById("chart-history").getContext("2d");
+  historyChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "kWh",
+        data: series,
+        backgroundColor: backgroundColors,
+        borderColor: COLORS.accent,
+        borderWidth: 1,
+        borderRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltipStyle({
+          title: items => items[0].label,
+          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+        }),
+      },
+      scales: {
+        x: { ticks: { maxRotation: 0, autoSkip: false } },
+        y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
+      },
+    },
+  });
 }
 
 function renderDailyHistory(data, isYear) {
@@ -850,9 +1046,17 @@ document.querySelectorAll(".gran-tab").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".gran-tab").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    state.yearGranularity = btn.dataset.gran;
-    if (state.currentRange === "year") {
-      loadHistoryChart("year");
+    // Granularity tabs are reused between "year" (daily/monthly) and
+    // "multiyear" (monthly/yearly) modes — store the value in the right
+    // state slot depending on which range is active.
+    if (state.currentRange === "multiyear") {
+      state.multiYearGranularity = btn.dataset.gran;
+      loadHistoryChart("multiyear");
+    } else {
+      state.yearGranularity = btn.dataset.gran;
+      if (state.currentRange === "year") {
+        loadHistoryChart("year");
+      }
     }
   });
 });
