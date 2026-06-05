@@ -14,19 +14,26 @@ const state = {
   installKwp: 1.0,
   maxPowerW: 800,
   currentRange: "month",
-  yearGranularity: "daily",   // "daily" or "monthly"
+  yearGranularity: "daily",
   statusState: "noData",
   pollInterval: 60,
+  retentionDays: 730,
+  // Day picker state: null = today (live), Date object = historical view
+  viewedDay: null,
 };
 
 let todayChart, historyChart;
 let liveTimer, statsTimer, todayTimer, historyTimer;
+let dayPicker = null;  // flatpickr instance
 
 const fmt = {
   power: v => (v == null ? "—" : Math.round(Number(v)).toString()),
   kwh:   v => (v == null ? "—" : Number(v).toFixed(2)),
   pct:   v => (v == null ? "—" : Math.round(Number(v)).toString()),
   date:  ts => new Date(ts * 1000).toLocaleDateString(state.locale, {
+    weekday: "long", day: "2-digit", month: "long", year: "numeric"
+  }),
+  dateLong: d => d.toLocaleDateString(state.locale, {
     weekday: "long", day: "2-digit", month: "long", year: "numeric"
   }),
   time:  ts => new Date(ts * 1000).toLocaleTimeString(state.locale, {
@@ -67,13 +74,24 @@ const fmt = {
       month: "short", year: "2-digit"
     });
   },
+  isoDay: (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  },
 };
 
 function localDateKey(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return fmt.isoDay(date);
+}
+
+function isToday(d) {
+  if (!d) return false;
+  const today = new Date();
+  return d.getFullYear() === today.getFullYear()
+      && d.getMonth() === today.getMonth()
+      && d.getDate() === today.getDate();
 }
 
 const css = getComputedStyle(document.documentElement);
@@ -83,6 +101,7 @@ const COLORS = {
   text: css.getPropertyValue("--text-primary").trim() || "#f4ede0",
   muted: css.getPropertyValue("--text-muted").trim() || "#6f6353",
   border: css.getPropertyValue("--border").trim() || "#2a241c",
+  good: css.getPropertyValue("--good").trim() || "#4ade80",
 };
 
 Chart.defaults.color = COLORS.muted;
@@ -105,10 +124,8 @@ const yearBoundaryPlugin = {
     const bottom = chart.chartArea.bottom;
     ctx.save();
     boundaries.forEach(b => {
-      // Get the X coordinate corresponding to the label
       const xPos = xAxis.getPixelForValue(b.label);
       if (xPos < chart.chartArea.left || xPos > chart.chartArea.right) return;
-      // Dashed vertical line
       ctx.strokeStyle = COLORS.accentWarm + "aa";
       ctx.lineWidth = 1;
       ctx.setLineDash([5, 4]);
@@ -116,7 +133,6 @@ const yearBoundaryPlugin = {
       ctx.moveTo(xPos, top);
       ctx.lineTo(xPos, bottom);
       ctx.stroke();
-      // Year label
       ctx.setLineDash([]);
       ctx.fillStyle = COLORS.accentWarm;
       ctx.font = "bold 11px JetBrains Mono, monospace";
@@ -155,12 +171,19 @@ async function loadLive() {
       state.co2KgPerKwh = data.config.co2_kg_per_kwh || 0.38;
       state.installKwp = data.config.install_kwp || 1.0;
       state.pollInterval = data.config.poll_interval || 60;
+      state.retentionDays = data.config.retention_days || 730;
 
       window.i18n.applyTranslations(state.lang);
       updateDynamicLabels();
+      ensureDayPicker();   // Re-init picker with new locale if needed
+      updateDayPickerLabels();
 
       document.getElementById("footer-inverter").textContent =
         data.config.inverter_ip;
+      const versionEl = document.getElementById("footer-version");
+      if (versionEl && data.config.version) {
+        versionEl.textContent = `v${data.config.version}`;
+      }
     }
 
     if (data.device) {
@@ -197,7 +220,6 @@ async function loadLive() {
       document.getElementById("power-max").textContent =
         window.i18n.t(state.lang, "hero.maxPower", { max: state.maxPowerW });
       if (m.timestamp) {
-        document.getElementById("today-date").textContent = fmt.date(m.timestamp);
         document.getElementById("footer-last").textContent = fmt.time(m.timestamp);
       }
     }
@@ -240,26 +262,22 @@ async function loadStats() {
     const res = await fetch("/api/stats");
     const s = await res.json();
 
-    // Today
-    document.getElementById("stat-today").textContent = fmt.kwh(s.today_kwh);
+    document.getElementById("stat-today").textContent      = fmt.kwh(s.today_kwh);
     document.getElementById("stat-yesterday-until-now").textContent = fmt.kwh(s.yesterday_until_now_kwh);
-    document.getElementById("stat-yesterday-full").textContent = fmt.kwh(s.yesterday_full_kwh);
+    document.getElementById("stat-yesterday-full").textContent      = fmt.kwh(s.yesterday_full_kwh);
     renderCompare("stat-today-compare", s.today_kwh, s.yesterday_until_now_kwh);
 
-    // Week
     document.getElementById("stat-week").textContent = fmt.kwh(s.this_week_kwh);
     document.getElementById("stat-last-week-until-now").textContent = fmt.kwh(s.last_week_until_now_kwh);
-    document.getElementById("stat-last-week-full").textContent = fmt.kwh(s.last_week_full_kwh);
+    document.getElementById("stat-last-week-full").textContent      = fmt.kwh(s.last_week_full_kwh);
     renderCompare("stat-week-compare", s.this_week_kwh, s.last_week_until_now_kwh);
 
-    // Month
     document.getElementById("stat-month").textContent = fmt.kwh(s.this_month_kwh);
     document.getElementById("stat-last-month-until-progress").textContent = fmt.kwh(s.last_month_until_progress_kwh);
-    document.getElementById("stat-last-month-full").textContent = fmt.kwh(s.last_month_full_kwh);
+    document.getElementById("stat-last-month-full").textContent           = fmt.kwh(s.last_month_full_kwh);
     renderCompare("stat-month-compare", s.this_month_kwh, s.last_month_until_progress_kwh);
 
-    // Year-over-year on month card
-    document.getElementById("stat-same-month-ly").textContent = fmt.kwh(s.same_month_last_year_kwh);
+    document.getElementById("stat-same-month-ly").textContent       = fmt.kwh(s.same_month_last_year_kwh);
     document.getElementById("stat-same-month-ly-total").textContent = fmt.kwh(s.same_month_last_year_total_kwh);
     document.getElementById("stat-same-month-ly-label").textContent = fmt.monthYear(s.same_month_last_year_iso);
     renderCompare("stat-same-month-ly-compare", s.this_month_kwh, s.same_month_last_year_kwh);
@@ -268,15 +286,18 @@ async function loadStats() {
       totalRow.style.display = (s.same_month_last_year_total_kwh > 0) ? "" : "none";
     }
 
-    // Year
     document.getElementById("stat-year").textContent = fmt.kwh(s.this_year_kwh);
     document.getElementById("stat-last-year-ytd").textContent = fmt.kwh(s.last_year_ytd_kwh);
+    document.getElementById("stat-last-year-full").textContent = fmt.kwh(s.last_year_full_kwh);
+    // Hide the "last year total" anchor row if we have no full-year data yet
+    const lyFullRow = document.getElementById("stat-last-year-full-row");
+    if (lyFullRow) {
+      lyFullRow.style.display = (s.last_year_full_kwh > 0) ? "" : "none";
+    }
     renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
 
-    // Hero
     document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
 
-    // Lifetime
     document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
     document.getElementById("lifetime-co2").textContent = (s.co2_saved_kg || 0).toFixed(1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
@@ -301,15 +322,144 @@ function renderCompare(elementId, current, previous) {
 }
 
 
+// --- Day picker -------------------------------------------------------
+
+function ensureDayPicker() {
+  if (typeof flatpickr === "undefined") return;
+
+  const input = document.getElementById("day-picker-input");
+  if (!input) return;
+
+  // Re-init if the locale changed (the input value can be updated below)
+  if (dayPicker) {
+    dayPicker.destroy();
+    dayPicker = null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const earliest = new Date(today);
+  earliest.setDate(earliest.getDate() - state.retentionDays);
+
+  // flatpickr locale: "de" for German, default English otherwise
+  const fpLocale = (state.lang === "de" && flatpickr.l10ns && flatpickr.l10ns.de)
+    ? flatpickr.l10ns.de
+    : "default";
+
+  dayPicker = flatpickr(input, {
+    locale: fpLocale,
+    dateFormat: "Y-m-d",          // internal value
+    altInput: true,
+    altFormat: state.lang === "de" ? "l, d. F Y" : "l, F j, Y",
+    maxDate: today,
+    minDate: earliest,
+    defaultDate: state.viewedDay || today,
+    onChange: function (selectedDates) {
+      if (!selectedDates.length) return;
+      const picked = selectedDates[0];
+      setViewedDay(isToday(picked) ? null : picked);
+    },
+  });
+}
+
+function updateDayPickerLabels() {
+  const prevBtn = document.getElementById("day-prev");
+  const nextBtn = document.getElementById("day-next");
+  if (prevBtn) {
+    const label = window.i18n.t(state.lang, "chart.previousDay");
+    prevBtn.title = label;
+    prevBtn.setAttribute("aria-label", label);
+  }
+  if (nextBtn) {
+    const label = window.i18n.t(state.lang, "chart.nextDay");
+    nextBtn.title = label;
+    nextBtn.setAttribute("aria-label", label);
+  }
+}
+
+function setViewedDay(date) {
+  // date: null = today (live), Date = historical
+  state.viewedDay = date;
+
+  // Update picker UI
+  if (dayPicker) {
+    const target = date || new Date();
+    dayPicker.setDate(target, false);  // don't trigger onChange
+  }
+
+  // Update next/prev button enabled state
+  const nextBtn = document.getElementById("day-next");
+  if (nextBtn) {
+    nextBtn.disabled = (date === null);
+  }
+  const prevBtn = document.getElementById("day-prev");
+  if (prevBtn) {
+    const earliest = new Date();
+    earliest.setDate(earliest.getDate() - state.retentionDays);
+    earliest.setHours(0, 0, 0, 0);
+    const current = date || new Date();
+    prevBtn.disabled = (current <= earliest);
+  }
+
+  // Show/hide Today button
+  const todayBtn = document.getElementById("day-today");
+  if (todayBtn) {
+    todayBtn.style.display = (date === null) ? "none" : "";
+  }
+
+  // Reload the chart for the new day
+  loadTodayChart();
+
+  // Reschedule timers: live refresh only for today
+  scheduleTimers();
+
+  // Re-render history chart to reflect the highlighted day (if applicable)
+  if (historyChart) {
+    loadHistoryChart(state.currentRange);
+  }
+}
+
+function shiftViewedDay(deltaDays) {
+  const base = state.viewedDay ? new Date(state.viewedDay) : new Date();
+  base.setHours(0, 0, 0, 0);
+  base.setDate(base.getDate() + deltaDays);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (base > today) {
+    setViewedDay(null);  // clamp to today (live mode)
+    return;
+  }
+  const earliest = new Date();
+  earliest.setDate(earliest.getDate() - state.retentionDays);
+  earliest.setHours(0, 0, 0, 0);
+  if (base < earliest) return;  // already at limit
+
+  setViewedDay(isToday(base) ? null : base);
+}
+
+
 // --- Today chart ------------------------------------------------------
 
 async function loadTodayChart() {
   try {
-    const res = await fetch("/api/history?range=day");
+    const dateParam = state.viewedDay
+      ? `&date=${fmt.isoDay(state.viewedDay)}`
+      : "";
+    const res = await fetch(`/api/history?range=day${dateParam}`);
     const data = await res.json();
     const points = (data.points || []).filter(p => p.online);
     const labels = points.map(p => p.timestamp * 1000);
     const series = points.map(p => (p.p1 || 0) + (p.p2 || 0));
+
+    // Empty-state overlay
+    const empty = document.getElementById("chart-today-empty");
+    if (empty) {
+      empty.style.display = (points.length === 0) ? "" : "none";
+    }
+
+    // Update card title meta with chosen day (if not today)
+    // (We re-use the meta slot via the day-picker, so nothing extra here)
 
     if (todayChart) todayChart.destroy();
     const ctx = document.getElementById("chart-today").getContext("2d");
@@ -362,7 +512,6 @@ async function loadHistoryChart(range) {
       renderDailyHistory(data, isYear);
     }
 
-    // Show/hide the granularity tabs based on current range
     const granTabs = document.getElementById("granularity-tabs");
     if (granTabs) granTabs.style.display = isYear ? "" : "none";
   } catch (e) {
@@ -386,16 +535,20 @@ function renderDailyHistory(data, isYear) {
   const labels = days.map(([k]) => k);
   const series = days.map(([_, v]) => v.max);
 
-  // For the year view: dim previous-year bars and find year boundaries
+  // Year-view dimming and boundaries
   const thisYear = new Date().getFullYear();
   const boundaries = [];
   let backgroundColors;
+  let borderColors;
+  let borderWidths;
+
+  const viewedDayKey = state.viewedDay ? fmt.isoDay(state.viewedDay) : null;
+
   if (isYear && labels.length > 0) {
     backgroundColors = labels.map(label => {
       const y = parseInt(label.substring(0, 4), 10);
       return y === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55";
     });
-    // Find every Jan 1 within the visible range
     let previousYear = null;
     labels.forEach(label => {
       const y = parseInt(label.substring(0, 4), 10);
@@ -405,8 +558,12 @@ function renderDailyHistory(data, isYear) {
       previousYear = y;
     });
   } else {
-    backgroundColors = COLORS.accent + "cc";
+    backgroundColors = labels.map(() => COLORS.accent + "cc");
   }
+
+  // Drill-down: highlight the day currently shown in the Today chart
+  borderColors = labels.map(l => (l === viewedDayKey) ? COLORS.good : COLORS.accent);
+  borderWidths = labels.map(l => (l === viewedDayKey) ? 2 : 1);
 
   if (historyChart) historyChart.destroy();
   const ctx = document.getElementById("chart-history").getContext("2d");
@@ -419,14 +576,28 @@ function renderDailyHistory(data, isYear) {
         label: "kWh",
         data: series,
         backgroundColor: backgroundColors,
-        borderColor: COLORS.accent,
-        borderWidth: 1,
+        borderColor: borderColors,
+        borderWidth: borderWidths,
         borderRadius: 3,
       }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onHover: (event, elements) => {
+        event.native.target.style.cursor = elements.length > 0 ? "pointer" : "default";
+      },
+      onClick: (_event, elements) => {
+        if (!elements.length) return;
+        const idx = elements[0].index;
+        const label = labels[idx];
+        const [y, m, d] = label.split("-").map(Number);
+        const picked = new Date(y, m - 1, d);
+        setViewedDay(isToday(picked) ? null : picked);
+        // Smooth scroll to today chart card
+        const card = document.getElementById("today-chart-card");
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+      },
       plugins: {
         legend: { display: false },
         tooltip: tooltipStyle({
@@ -434,6 +605,7 @@ function renderDailyHistory(data, isYear) {
             weekday: "short", day: "2-digit", month: "short", year: "numeric",
           }),
           label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          afterLabel: () => window.i18n.t(state.lang, "chart.clickForDayDetail"),
         }),
         yearBoundary: { boundaries },
       },
@@ -462,17 +634,15 @@ function renderDailyHistory(data, isYear) {
 
 function renderMonthlyHistory(data) {
   const months = data.months || [];
-  const labels = months.map(m => m.month);  // "2026-06"
+  const labels = months.map(m => m.month);
   const series = months.map(m => m.kwh);
 
-  // Dim months from previous year
   const thisYear = new Date().getFullYear();
   const backgroundColors = labels.map(label => {
     const y = parseInt(label.substring(0, 4), 10);
     return y === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55";
   });
 
-  // Find year boundaries (Jan of current year, etc.)
   const boundaries = [];
   let previousYear = null;
   labels.forEach(label => {
@@ -572,7 +742,7 @@ function tooltipStyle(callbacks) {
 }
 
 
-// --- Range + granularity tabs -----------------------------------------
+// --- Range, granularity, day-picker controls -------------------------
 
 document.querySelectorAll(".range-tab").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -594,26 +764,37 @@ document.querySelectorAll(".gran-tab").forEach(btn => {
   });
 });
 
+document.getElementById("day-prev")?.addEventListener("click", () => shiftViewedDay(-1));
+document.getElementById("day-next")?.addEventListener("click", () => shiftViewedDay(+1));
+document.getElementById("day-today")?.addEventListener("click", () => setViewedDay(null));
+
 
 function scheduleTimers() {
   const active = state.statusState === "online";
+  // Live refresh only when viewing today (otherwise data is historical = static)
+  const liveOk = state.viewedDay === null;
   const liveInterval = active ? REFRESH_LIVE_ACTIVE : REFRESH_LIVE_IDLE;
   const histInterval = active ? REFRESH_HIST_ACTIVE : REFRESH_HIST_IDLE;
 
-  if (liveTimer) clearInterval(liveTimer);
-  if (statsTimer) clearInterval(statsTimer);
-  if (todayTimer) clearInterval(todayTimer);
+  if (liveTimer)    clearInterval(liveTimer);
+  if (statsTimer)   clearInterval(statsTimer);
+  if (todayTimer)   clearInterval(todayTimer);
   if (historyTimer) clearInterval(historyTimer);
 
   liveTimer    = setInterval(loadLive, liveInterval);
   statsTimer   = setInterval(loadStats, histInterval);
-  todayTimer   = setInterval(loadTodayChart, histInterval);
+  if (liveOk) {
+    todayTimer = setInterval(loadTodayChart, histInterval);
+  }
   historyTimer = setInterval(() => loadHistoryChart(state.currentRange), histInterval * 5);
 }
 
 
 async function init() {
   await loadLive();
+  ensureDayPicker();
+  updateDayPickerLabels();
+  setViewedDay(null);  // initialize today button visibility and labels
   await loadStats();
   await loadTodayChart();
   await loadHistoryChart(state.currentRange);

@@ -164,6 +164,8 @@ main {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .card-header h2 {
@@ -335,6 +337,71 @@ main {
   letter-spacing: 0.15em;
   text-transform: uppercase;
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Info icon + hover/focus tooltip */
+.info-tooltip {
+  position: relative;
+  display: inline-flex;
+  outline: none;
+}
+.info-icon {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: help;
+  line-height: 1;
+  transition: color 0.15s;
+  user-select: none;
+}
+.info-tooltip:hover .info-icon,
+.info-tooltip:focus .info-icon {
+  color: var(--accent);
+}
+.info-tooltip-content {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  width: 260px;
+  padding: 12px 14px;
+  background: var(--bg-card-2);
+  border: 1px solid var(--border-bright);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.01em;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+  pointer-events: none;
+}
+.info-tooltip-content strong {
+  display: block;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.info-tooltip:hover .info-tooltip-content,
+.info-tooltip:focus .info-tooltip-content {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* For the last card in the row, anchor the tooltip to the right edge
+   so it doesn't overflow past the card's right side. */
+.comparison-grid > .stat-card:last-child .info-tooltip-content {
+  left: auto;
+  right: 0;
 }
 
 /* Inline row: main value (left) + compare indicator (right) */
@@ -405,6 +472,141 @@ main {
 
 /* The month card naturally grows taller because it has more content */
 .stat-card-tall { /* placeholder, grid handles the rest */ }
+
+/* ------------------------- Day picker ------------------------- */
+.day-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+}
+
+.day-nav-btn {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.day-nav-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-bright);
+  background: var(--bg-card);
+}
+.day-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.day-picker-input {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 180px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+.day-picker-input:hover {
+  border-color: var(--border-bright);
+  background: var(--bg-card);
+}
+.day-picker-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.day-today-btn {
+  background: var(--accent);
+  color: #15120e;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.day-today-btn:hover {
+  background: var(--accent-warm);
+}
+
+/* ------------------------- Chart empty-state ------------------------- */
+.chart-wrap {
+  position: relative;
+}
+.chart-empty-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+  letter-spacing: 0.05em;
+}
+
+/* ------------------------- Flatpickr dark-theme polish ------------------------- */
+/* The flatpickr dark.css ships a default look that's a bit too cool for our
+   warm amber palette. Override key tokens to fit the theme. */
+.flatpickr-calendar {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-bright) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+  font-family: var(--font-mono) !important;
+}
+.flatpickr-calendar.arrowTop:before,
+.flatpickr-calendar.arrowTop:after {
+  border-bottom-color: var(--border-bright) !important;
+}
+.flatpickr-months .flatpickr-month,
+.flatpickr-current-month,
+.flatpickr-weekday {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+  background: transparent !important;
+}
+.flatpickr-day {
+  color: var(--text-secondary) !important;
+}
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: var(--bg-card-2) !important;
+  border-color: var(--border-bright) !important;
+}
+.flatpickr-day.today {
+  border-color: var(--accent) !important;
+  color: var(--text-primary) !important;
+}
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #15120e !important;
+  font-weight: 700;
+}
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover {
+  color: var(--text-muted) !important;
+  opacity: 0.3 !important;
+}
 
 /* ------------------------- Range + Granularity tabs ------------------------- */
 .chart-controls {
@@ -512,6 +714,11 @@ footer {
   flex-wrap: wrap;
 }
 .dot-sep { opacity: 0.4; }
+.footer-version {
+  opacity: 0.65;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
 
 /* ------------------------- Responsive ------------------------- */
 @media (max-width: 1024px) {

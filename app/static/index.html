@@ -4,13 +4,30 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EZ1 Monitor</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/static/icon.png?v=1.2.0" />
+
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css" />
+
+  <!-- Own styles (cache-busted) -->
+  <link rel="stylesheet" href="/static/style.css?v=1.2.0" />
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-  <script src="/static/i18n.js"></script>
+
+  <!-- Flatpickr (day picker) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/de.js"></script>
+
+  <!-- Own scripts (cache-busted) -->
+  <script src="/static/i18n.js?v=1.2.0"></script>
 </head>
 <body>
 <div class="grain"></div>
@@ -65,50 +82,85 @@
     </div>
   </section>
 
-  <!-- Today chart -->
-  <section class="card chart-card">
+  <!-- Today chart with day picker -->
+  <section class="card chart-card" id="today-chart-card">
     <div class="card-header">
       <h2 data-i18n="chart.todayTitle">Today's Curve</h2>
-      <span class="card-meta" id="today-date"></span>
+      <div class="day-picker">
+        <button class="day-nav-btn" id="day-prev" title="" aria-label="">‹</button>
+        <input type="text" class="day-picker-input" id="day-picker-input" readonly />
+        <button class="day-nav-btn" id="day-next" title="" aria-label="">›</button>
+        <button class="day-today-btn" id="day-today" data-i18n="chart.todayButton">Today</button>
+      </div>
     </div>
     <div class="chart-wrap">
       <canvas id="chart-today"></canvas>
+      <div class="chart-empty-overlay" id="chart-today-empty" style="display: none;">
+        <span data-i18n="chart.noDataForDay">No data for this day</span>
+      </div>
     </div>
   </section>
 
-  <!-- Comparison cards: all four have the same structure now -->
+  <!-- Comparison cards -->
   <section class="comparison-grid">
 
     <!-- TODAY -->
     <div class="card stat-card stat-card-tall">
-      <div class="stat-title" data-i18n="stats.today">Today</div>
+      <div class="stat-title">
+        <span data-i18n="stats.today">Today</span>
+        <span class="info-tooltip" tabindex="0">
+          <span class="info-icon" aria-label="info">ⓘ</span>
+          <span class="info-tooltip-content">
+            <strong data-i18n="stats.infoTodayTitle">How is this compared?</strong>
+            <span data-i18n="stats.infoToday"></span>
+          </span>
+        </span>
+      </div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-today">—</span> <span class="stat-unit">kWh</span></span>
         <span class="stat-compare" id="stat-today-compare"></span>
       </div>
-      <div class="stat-sub"><span data-i18n="stats.yesterdayUntilNow">yesterday until now</span>: <span id="stat-yesterday-until-now">—</span> kWh</div>
+      <div class="stat-sub"><span data-i18n="stats.yesterdayUntilNow">same period yesterday</span>: <span id="stat-yesterday-until-now">—</span> kWh</div>
       <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.yesterdayFull">yesterday total</span>: <span id="stat-yesterday-full">—</span> kWh</div>
     </div>
 
     <!-- WEEK -->
     <div class="card stat-card stat-card-tall">
-      <div class="stat-title" data-i18n="stats.week">This Week</div>
+      <div class="stat-title">
+        <span data-i18n="stats.week">This Week</span>
+        <span class="info-tooltip" tabindex="0">
+          <span class="info-icon" aria-label="info">ⓘ</span>
+          <span class="info-tooltip-content">
+            <strong data-i18n="stats.infoTodayTitle">How is this compared?</strong>
+            <span data-i18n="stats.infoWeek"></span>
+          </span>
+        </span>
+      </div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-week">—</span> <span class="stat-unit">kWh</span></span>
         <span class="stat-compare" id="stat-week-compare"></span>
       </div>
-      <div class="stat-sub"><span data-i18n="stats.lastWeekUntilNow">last week until now</span>: <span id="stat-last-week-until-now">—</span> kWh</div>
+      <div class="stat-sub"><span data-i18n="stats.lastWeekUntilNow">same period last week</span>: <span id="stat-last-week-until-now">—</span> kWh</div>
       <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.lastWeekFull">last week total</span>: <span id="stat-last-week-full">—</span> kWh</div>
     </div>
 
-    <!-- MONTH (also has YoY block) -->
+    <!-- MONTH (with YoY block) -->
     <div class="card stat-card stat-card-tall">
-      <div class="stat-title" data-i18n="stats.month">This Month</div>
+      <div class="stat-title">
+        <span data-i18n="stats.month">This Month</span>
+        <span class="info-tooltip" tabindex="0">
+          <span class="info-icon" aria-label="info">ⓘ</span>
+          <span class="info-tooltip-content">
+            <strong data-i18n="stats.infoTodayTitle">How is this compared?</strong>
+            <span data-i18n="stats.infoMonth"></span>
+          </span>
+        </span>
+      </div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-month">—</span> <span class="stat-unit">kWh</span></span>
         <span class="stat-compare" id="stat-month-compare"></span>
       </div>
-      <div class="stat-sub"><span data-i18n="stats.lastMonthUntilProgress">last month until same day</span>: <span id="stat-last-month-until-progress">—</span> kWh</div>
+      <div class="stat-sub"><span data-i18n="stats.lastMonthUntilProgress">same period last month</span>: <span id="stat-last-month-until-progress">—</span> kWh</div>
       <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.lastMonthFull">last month total</span>: <span id="stat-last-month-full">—</span> kWh</div>
       <div class="stat-sub stat-sub-yoy">
         <span class="stat-value-row">
@@ -123,17 +175,27 @@
 
     <!-- YEAR -->
     <div class="card stat-card stat-card-tall">
-      <div class="stat-title" data-i18n="stats.year">This Year</div>
+      <div class="stat-title">
+        <span data-i18n="stats.year">This Year</span>
+        <span class="info-tooltip" tabindex="0">
+          <span class="info-icon" aria-label="info">ⓘ</span>
+          <span class="info-tooltip-content">
+            <strong data-i18n="stats.infoTodayTitle">How is this compared?</strong>
+            <span data-i18n="stats.infoYear"></span>
+          </span>
+        </span>
+      </div>
       <div class="stat-value-row">
         <span class="stat-value-num"><span id="stat-year">—</span> <span class="stat-unit">kWh</span></span>
         <span class="stat-compare" id="stat-year-compare"></span>
       </div>
-      <div class="stat-sub"><span data-i18n="stats.lastYearYtd">last year YTD</span>: <span id="stat-last-year-ytd">—</span> kWh</div>
+      <div class="stat-sub"><span data-i18n="stats.lastYearYtd">same period last year</span>: <span id="stat-last-year-ytd">—</span> kWh</div>
+      <div class="stat-sub stat-sub-anchor" id="stat-last-year-full-row"><span data-i18n="stats.lastYearFull">last year total</span>: <span id="stat-last-year-full">—</span> kWh</div>
     </div>
 
   </section>
 
-  <!-- Historical chart with range tabs + (when year) granularity tabs -->
+  <!-- Historical chart with range + granularity tabs -->
   <section class="card chart-card">
     <div class="card-header">
       <h2 data-i18n="chart.historyTitle">History</h2>
@@ -185,6 +247,7 @@
 
 <footer>
   <span>EZ1 Monitor</span>
+  <span id="footer-version" class="footer-version">v—</span>
   <span class="dot-sep">·</span>
   <span id="footer-inverter">—</span>
   <span class="dot-sep">·</span>
@@ -193,6 +256,6 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=1.2.0"></script>
 </body>
 </html>
