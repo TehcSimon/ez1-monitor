@@ -27,11 +27,20 @@ No cloud, no account, no telemetry. Localized for English and German.
     plus full last-year-month as anchor)
   - Year history with **toggleable daily/monthly granularity**, dashed year
     boundary line, and dimmed previous-year bars
+  - **Day picker** for browsing any past day in the Today's Curve chart
+    (arrow keys, calendar picker, or drill-down from history)
+  - **Light, dark, and system themes** with one-click toggle
   - Lifetime totals: energy, CO₂ avoided, money saved
+- **Long-term aggregates** — monthly and yearly totals are stored separately
+  from the detail measurements, so cross-year comparisons survive even after
+  the raw data has been pruned by retention
+- **Prometheus `/metrics` endpoint** for Grafana, Home Assistant, or any
+  other monitoring stack
 - **Smart status indicator** with dusk/standby detection (no false alarms at night)
 - **Adaptive polling** — slows down 10× when the inverter is offline
 - **UID-agnostic non-root container** — runs on Docker, Kubernetes, and OpenShift
   with any UID assignment
+- **Lean Alpine image** (~80 MB) with multi-stage build
 - UI in German or English (auto-detected from browser, can be forced via env)
 - Configurable currency (EUR / USD) and electricity price
 - Configurable data retention (default 2 years for year-over-year comparisons)
@@ -226,6 +235,61 @@ The history chart's "Jahr"/"Year" range has a toggle between two views:
 
 The toggle appears only when "Year" is the active range.
 
+## Long-term aggregates
+
+Detail measurements are pruned after `RETENTION_DAYS` (default 730 = 2 years),
+but their summaries are kept indefinitely in two separate tables:
+
+- `monthly_aggregates`: total kWh, peak W, days with data — per (year, month)
+- `yearly_aggregates`: same fields rolled up per year
+
+These are populated automatically on every container start (backfill from
+existing measurements), then kept current by a background task that refreshes
+the current month's aggregate every hour.
+
+Read via:
+
+```
+GET /api/aggregates              -> { "yearly": [...] }
+GET /api/aggregates?year=2026    -> { "year": 2026, "monthly": [...] }
+```
+
+This lets you compare yields across many years even after the high-resolution
+data has been pruned — useful when comparing e.g. summer 2026 vs summer 2030.
+
+## Prometheus metrics
+
+The container exposes Prometheus-format metrics at `/metrics` for integration
+with Grafana, Home Assistant, VictoriaMetrics, etc.
+
+```
+ez1_current_power_watts
+ez1_pv1_power_watts, ez1_pv2_power_watts
+ez1_today_kwh, ez1_pv1_today_kwh, ez1_pv2_today_kwh
+ez1_this_week_kwh, ez1_this_month_kwh, ez1_this_year_kwh
+ez1_peak_today_watts
+ez1_lifetime_kwh_total
+ez1_co2_saved_kg_total
+ez1_status{state="online|standby|error|noData"}
+ez1_info{device_id="...", serial_number="...", version="..."}
+```
+
+The endpoint has no authentication. Since the container is intended to run
+in a LAN-only context, this is fine; if you want to expose it publicly, put
+it behind your reverse proxy with auth.
+
+## Themes
+
+The dashboard ships with three theme modes accessible via the toggle button
+in the top bar:
+
+- **System** (default): follows the OS color scheme via `prefers-color-scheme`
+- **Light**: warm off-white background with darker amber accent
+- **Dark**: deep brown background with bright amber accent
+
+The choice persists in `localStorage`. Switching between system/light/dark
+re-renders the charts with the new theme colors.
+
 ## API Endpoints
 
 For integrations and scripts:
@@ -235,8 +299,12 @@ For integrations and scripts:
 | `GET /health` | Container health check |
 | `GET /api/live` | Latest measurement + device info + status + runtime config |
 | `GET /api/history?range=day\|week\|month\|year` | Historical data points |
+| `GET /api/history?range=day&date=YYYY-MM-DD` | Specific day's intraday curve |
 | `GET /api/history?range=year&granularity=monthly` | Year view aggregated by month |
 | `GET /api/stats` | Aggregated statistics with stichtag and YoY comparisons |
+| `GET /api/aggregates` | Long-term yearly aggregates (survives retention) |
+| `GET /api/aggregates?year=YYYY` | Monthly aggregates for a specific year |
+| `GET /metrics` | Prometheus-format metrics |
 
 All endpoints return JSON.
 
