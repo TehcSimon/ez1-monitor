@@ -27,6 +27,26 @@ CREATE TABLE IF NOT EXISTS device_info (
     max_power     INTEGER,
     last_seen     INTEGER
 );
+
+-- Long-term aggregates: survive detail-data retention so users can compare
+-- across years even after raw measurements have been pruned.
+CREATE TABLE IF NOT EXISTS monthly_aggregates (
+    year            INTEGER NOT NULL,
+    month           INTEGER NOT NULL,
+    total_kwh       REAL NOT NULL DEFAULT 0,
+    peak_w          INTEGER NOT NULL DEFAULT 0,
+    days_with_data  INTEGER NOT NULL DEFAULT 0,
+    last_updated    INTEGER NOT NULL,
+    PRIMARY KEY (year, month)
+);
+
+CREATE TABLE IF NOT EXISTS yearly_aggregates (
+    year            INTEGER PRIMARY KEY,
+    total_kwh       REAL NOT NULL DEFAULT 0,
+    peak_w          INTEGER NOT NULL DEFAULT 0,
+    days_with_data  INTEGER NOT NULL DEFAULT 0,
+    last_updated    INTEGER NOT NULL
+);
 """
 
 
@@ -228,3 +248,139 @@ class Database:
             cur = await db.execute("SELECT COUNT(*) FROM measurements")
             row = await cur.fetchone()
             return row[0] if row else 0
+
+    # --- Long-term aggregates ----------------------------------------
+
+    async def get_measurements_date_range(self) -> tuple[Optional[int], Optional[int]]:
+        """Return (earliest_ts, latest_ts) from online measurements, or
+        (None, None) if no data."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                "SELECT MIN(timestamp), MAX(timestamp) FROM measurements WHERE online = 1"
+            )
+            row = await cur.fetchone()
+            if not row or row[0] is None:
+                return (None, None)
+            return (row[0], row[1])
+
+    async def recompute_month_aggregate(self, year: int, month: int) -> dict:
+        """Recompute and upsert the aggregate for a single (year, month).
+
+        Uses the same daily-MAX(e1+e2) logic as get_monthly_totals so the
+        values are consistent with what the History chart shows. Returns
+        the computed aggregate as a dict.
+
+        Idempotent: safe to call repeatedly. Replaces the existing row.
+        """
+        start = datetime(year, month, 1)
+        end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+        start_ts = int(start.timestamp())
+        end_ts = int(end.timestamp())
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # Per-day totals (daily counters reset at midnight, MAX = day total)
+            cur = await db.execute(
+                """SELECT
+                      date(timestamp, 'unixepoch', 'localtime') AS day,
+                      MAX(COALESCE(e1, 0) + COALESCE(e2, 0)) AS day_kwh,
+                      MAX(COALESCE(p1, 0) + COALESCE(p2, 0)) AS day_peak
+                   FROM measurements
+                   WHERE timestamp >= ? AND timestamp < ? AND online = 1
+                   GROUP BY day""",
+                (start_ts, end_ts),
+            )
+            rows = await cur.fetchall()
+
+            total_kwh = sum((r["day_kwh"] or 0.0) for r in rows)
+            peak_w = max((r["day_peak"] or 0) for r in rows) if rows else 0
+            days_with_data = sum(1 for r in rows if (r["day_kwh"] or 0) > 0)
+            now_ts = int(datetime.now().timestamp())
+
+            await db.execute(
+                """INSERT OR REPLACE INTO monthly_aggregates
+                   (year, month, total_kwh, peak_w, days_with_data, last_updated)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (year, month, round(total_kwh, 3), int(peak_w), days_with_data, now_ts),
+            )
+            await db.commit()
+
+            return {
+                "year": year,
+                "month": month,
+                "total_kwh": round(total_kwh, 3),
+                "peak_w": int(peak_w),
+                "days_with_data": days_with_data,
+            }
+
+    async def recompute_year_aggregate(self, year: int) -> dict:
+        """Recompute and upsert the yearly aggregate from its monthly rows.
+
+        Should be called after recompute_month_aggregate() for any month
+        in the same year.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT
+                      COALESCE(SUM(total_kwh), 0)       AS total_kwh,
+                      COALESCE(MAX(peak_w), 0)          AS peak_w,
+                      COALESCE(SUM(days_with_data), 0)  AS days_with_data
+                   FROM monthly_aggregates
+                   WHERE year = ?""",
+                (year,),
+            )
+            row = await cur.fetchone()
+
+            total_kwh = row["total_kwh"] if row else 0.0
+            peak_w = row["peak_w"] if row else 0
+            days_with_data = row["days_with_data"] if row else 0
+            now_ts = int(datetime.now().timestamp())
+
+            await db.execute(
+                """INSERT OR REPLACE INTO yearly_aggregates
+                   (year, total_kwh, peak_w, days_with_data, last_updated)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (year, round(total_kwh, 3), int(peak_w), days_with_data, now_ts),
+            )
+            await db.commit()
+
+            return {
+                "year": year,
+                "total_kwh": round(total_kwh, 3),
+                "peak_w": int(peak_w),
+                "days_with_data": days_with_data,
+            }
+
+    async def get_monthly_aggregates(self, year: Optional[int] = None) -> list[dict]:
+        """Read monthly_aggregates, optionally filtered to a single year."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if year is not None:
+                cur = await db.execute(
+                    """SELECT year, month, total_kwh, peak_w, days_with_data
+                       FROM monthly_aggregates
+                       WHERE year = ?
+                       ORDER BY month ASC""",
+                    (year,),
+                )
+            else:
+                cur = await db.execute(
+                    """SELECT year, month, total_kwh, peak_w, days_with_data
+                       FROM monthly_aggregates
+                       ORDER BY year ASC, month ASC"""
+                )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+    async def get_yearly_aggregates(self) -> list[dict]:
+        """Read all yearly_aggregates ordered by year."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT year, total_kwh, peak_w, days_with_data
+                   FROM yearly_aggregates
+                   ORDER BY year ASC"""
+            )
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
