@@ -322,8 +322,18 @@ main {
 .hero-value .unit {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 24px;
-  color: var(--text-secondary);
+  /* Bumped from 24px → 48px (≈50% of the 96px main number) so the unit
+     no longer feels lost next to the big number. Bricolage (display) and
+     JetBrains Mono have different visual heights at the same pixel size,
+     so 48px reads a bit smaller than the math suggests — which is the
+     right hierarchy: prominent enough to belong, still subordinate to
+     the number. */
+  font-size: 48px;
+  /* Match the number's color but dim it slightly so the eye still lands
+     on the digits first. Works the same in dark and light themes since
+     --accent is theme-aware (bright amber in dark, deeper orange in light). */
+  color: var(--accent);
+  opacity: 0.55;
   text-shadow: none;
   letter-spacing: 0;
 }
@@ -1055,6 +1065,7 @@ html[data-theme="light"] .info-tooltip-content {
   .stat-value-num { font-size: 22px; }
   .hero-side { grid-template-columns: 1fr; }
   .hero-value { font-size: 48px; }
+  .hero-value .unit { font-size: 24px; }   /* keep ~50% ratio of main number */
 
   /* Day picker: stack vertically on very narrow screens */
   .day-picker {

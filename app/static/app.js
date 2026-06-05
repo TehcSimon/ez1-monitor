@@ -128,7 +128,12 @@ function refreshChartColors() {
   Chart.defaults.scale.grid.tickColor = COLORS.border;
 }
 
-refreshChartColors();
+// COLORS is populated from CSS variables. Re-call refreshChartColors() after
+// any theme change to pick up new values. NOTE: do NOT call this at module
+// load time — the explicit theme override (data-theme attribute) is set
+// later by applyStoredTheme(), and reading CSS vars before that may pick
+// up the wrong theme's colors. The first call happens at the end of the
+// file, immediately after applyStoredTheme().
 
 
 // --- Custom Chart.js plugin: dashed line + label at year boundary ---
@@ -344,16 +349,20 @@ function renderCompare(elementId, current, previous) {
 // --- Day picker -------------------------------------------------------
 
 function getDayPickerFormat() {
-  // Compact format on narrow screens, full format on wider screens.
-  // The viewport check is run again on every ensureDayPicker() call, so
-  // window resize → next re-init picks it up (resize event handler below).
-  const narrow = window.matchMedia("(max-width: 640px)").matches;
+  // Three-tier format depending on viewport width, gracefully degrading
+  // from fully spelled-out names on desktop to compact abbreviations on
+  // phones. The mid-tier (tablet/phablet) keeps the month spelled out
+  // (which is what makes the date feel "real") but drops the full
+  // weekday name to save horizontal space.
+  const w = window.innerWidth || document.documentElement.clientWidth || 1200;
   if (state.lang === "de") {
-    // Full: "Freitag, 05. Juni 2026"  Mobile: "Fr, 05. Jun 2026"
-    return narrow ? "D, d. M Y" : "l, d. F Y";
+    if (w <= 640)  return "D, d. M Y";   // "Fr, 05. Jun 2026"   — mobile
+    if (w <= 1024) return "D, d. F Y";   // "Fr, 05. Juni 2026"  — tablet
+    return "l, d. F Y";                  // "Freitag, 05. Juni 2026" — desktop
   }
-  // Full: "Friday, June 5, 2026"  Mobile: "Fri, Jun 5, 2026"
-  return narrow ? "D, M j, Y" : "l, F j, Y";
+  if (w <= 640)  return "D, M j, Y";     // "Fri, Jun 5, 2026"
+  if (w <= 1024) return "D, F j, Y";     // "Fri, June 5, 2026"
+  return "l, F j, Y";                    // "Friday, June 5, 2026"
 }
 
 function ensureDayPicker() {
@@ -362,7 +371,6 @@ function ensureDayPicker() {
   const input = document.getElementById("day-picker-input");
   if (!input) return;
 
-  // Re-init if the locale or format changed (the input value can be updated below)
   if (dayPicker) {
     dayPicker.destroy();
     dayPicker = null;
@@ -373,14 +381,13 @@ function ensureDayPicker() {
   const earliest = new Date(today);
   earliest.setDate(earliest.getDate() - state.retentionDays);
 
-  // flatpickr locale: "de" for German, default English otherwise
   const fpLocale = (state.lang === "de" && flatpickr.l10ns && flatpickr.l10ns.de)
     ? flatpickr.l10ns.de
     : "default";
 
   dayPicker = flatpickr(input, {
     locale: fpLocale,
-    dateFormat: "Y-m-d",          // internal value
+    dateFormat: "Y-m-d",
     altInput: true,
     altFormat: getDayPickerFormat(),
     maxDate: today,
@@ -394,13 +401,36 @@ function ensureDayPicker() {
   });
 }
 
-// Re-init the picker on viewport size changes (so the date format updates)
+function applyResponsiveDayFormat() {
+  // Lightweight format switch on resize/orientation change — much cheaper
+  // than destroying and rebuilding the entire flatpickr instance. We just
+  // update the altFormat config and rewrite altInput.value manually.
+  if (!dayPicker || !dayPicker.config) return;
+  const newFormat = getDayPickerFormat();
+  if (dayPicker.config.altFormat === newFormat) return;  // no change
+
+  dayPicker.set("altFormat", newFormat);
+  // flatpickr's set() updates the config but doesn't always redraw altInput.
+  // Force it:
+  if (dayPicker.altInput) {
+    const target = state.viewedDay || new Date();
+    try {
+      dayPicker.altInput.value = flatpickr.formatDate(target, newFormat, dayPicker.l10n);
+    } catch (e) {
+      dayPicker.altInput.value = target.toLocaleDateString(state.locale);
+    }
+  }
+}
+
+// Debounced resize handler: switch format only, don't rebuild
 let _dayPickerResizeTimer = null;
 window.addEventListener("resize", () => {
   if (_dayPickerResizeTimer) clearTimeout(_dayPickerResizeTimer);
-  _dayPickerResizeTimer = setTimeout(() => {
-    ensureDayPicker();
-  }, 200);
+  _dayPickerResizeTimer = setTimeout(applyResponsiveDayFormat, 200);
+});
+// Also react to orientation changes on mobile (fires before resize on iOS)
+window.addEventListener("orientationchange", () => {
+  setTimeout(applyResponsiveDayFormat, 300);  // wait for viewport to settle
 });
 
 function updateDayPickerLabels() {
@@ -914,8 +944,12 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 
 document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
 
-// Apply stored theme immediately (before init) so there's no flash
+// Apply stored theme FIRST so the data-theme attribute is set on <html>,
+// THEN refresh chart colors so Chart.defaults reads the correct theme's
+// CSS variables (otherwise grid/border can render black in light theme
+// on the very first pageload, before any user interaction).
 applyStoredTheme();
+refreshChartColors();
 
 
 function scheduleTimers() {
