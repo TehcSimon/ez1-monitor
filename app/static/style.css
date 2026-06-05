@@ -1,4 +1,10 @@
 :root {
+  /* Shared (theme-independent) */
+  --font-display:   'Bricolage Grotesque', sans-serif;
+  --font-body:      'Inter', sans-serif;
+  --font-mono:      'JetBrains Mono', monospace;
+
+  /* Default to dark theme tokens (overridden below for light) */
   --bg-base:        #0c0a08;
   --bg-card:        #15120e;
   --bg-card-2:      #1c1812;
@@ -17,9 +23,98 @@
   --bad:            #f87171;
   --neutral:        #94a3b8;
 
-  --font-display:   'Bricolage Grotesque', sans-serif;
-  --font-body:      'Inter', sans-serif;
-  --font-mono:      'JetBrains Mono', monospace;
+  --tooltip-bg:     #000;
+  --grain-opacity:  0.04;
+  --button-text:    #15120e;     /* dark text on bright accent buttons */
+  --body-glow-1:    #2a1f0a44;
+  --body-glow-2:    #1a0f0044;
+  --topbar-bg:      #150e07;
+}
+
+/* Light theme — applied when user explicitly chose light, OR when the
+   user has no preference set and the OS prefers light. */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    --bg-base:        #faf8f3;
+    --bg-card:        #ffffff;
+    --bg-card-2:      #f3eee2;
+    --border:         #e5dccb;
+    --border-bright:  #d4c8b0;
+
+    --text-primary:   #1a1612;
+    --text-secondary: #4a4239;
+    --text-muted:     #8a7e6e;
+
+    --accent:         #d97706;
+    --accent-warm:    #ea580c;
+    --accent-glow:    #d9770633;
+
+    --good:           #16a34a;
+    --bad:            #dc2626;
+    --neutral:        #64748b;
+
+    --tooltip-bg:     #ffffff;
+    --grain-opacity:  0.025;
+    --button-text:    #ffffff;
+    --body-glow-1:    #fef3c722;
+    --body-glow-2:    #fed7aa22;
+    --topbar-bg:      #fffdf7;
+  }
+}
+
+html[data-theme="light"] {
+  --bg-base:        #faf8f3;
+  --bg-card:        #ffffff;
+  --bg-card-2:      #f3eee2;
+  --border:         #e5dccb;
+  --border-bright:  #d4c8b0;
+
+  --text-primary:   #1a1612;
+  --text-secondary: #4a4239;
+  --text-muted:     #8a7e6e;
+
+  --accent:         #d97706;
+  --accent-warm:    #ea580c;
+  --accent-glow:    #d9770633;
+
+  --good:           #16a34a;
+  --bad:            #dc2626;
+  --neutral:        #64748b;
+
+  --tooltip-bg:     #ffffff;
+  --grain-opacity:  0.025;
+  --button-text:    #ffffff;
+  --body-glow-1:    #fef3c722;
+  --body-glow-2:    #fed7aa22;
+  --topbar-bg:      #fffdf7;
+}
+
+/* Dark theme override (explicit user choice) — same as :root defaults */
+html[data-theme="dark"] {
+  --bg-base:        #0c0a08;
+  --bg-card:        #15120e;
+  --bg-card-2:      #1c1812;
+  --border:         #2a241c;
+  --border-bright:  #3a3226;
+
+  --text-primary:   #f4ede0;
+  --text-secondary: #b8a98c;
+  --text-muted:     #6f6353;
+
+  --accent:         #f59e0b;
+  --accent-warm:    #fb923c;
+  --accent-glow:    #f59e0b33;
+
+  --good:           #4ade80;
+  --bad:            #f87171;
+  --neutral:        #94a3b8;
+
+  --tooltip-bg:     #000;
+  --grain-opacity:  0.04;
+  --button-text:    #15120e;
+  --body-glow-1:    #2a1f0a44;
+  --body-glow-2:    #1a0f0044;
+  --topbar-bg:      #150e07;
 }
 
 * { box-sizing: border-box; }
@@ -28,8 +123,8 @@ html, body { margin: 0; padding: 0; }
 body {
   background-color: var(--bg-base);
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, #2a1f0a44, transparent),
-    radial-gradient(ellipse 60% 40% at 100% 100%, #1a0f0044, transparent);
+    radial-gradient(ellipse 80% 50% at 50% -10%, var(--body-glow-1), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%, var(--body-glow-2), transparent);
   background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-body);
@@ -43,7 +138,7 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 100;
-  opacity: 0.04;
+  opacity: var(--grain-opacity);
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' /></filter><rect width='200' height='200' filter='url(%23n)' /></svg>");
 }
 
@@ -54,7 +149,7 @@ body {
   justify-content: space-between;
   padding: 24px 32px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, #150e07, transparent);
+  background: linear-gradient(180deg, var(--topbar-bg), transparent);
 }
 
 .brand { display: flex; align-items: center; gap: 16px; }
@@ -523,7 +618,7 @@ main {
 
 .day-today-btn {
   background: var(--accent);
-  color: #15120e;
+  color: var(--button-text);
   border: none;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -592,7 +687,7 @@ main {
 .flatpickr-day.selected:hover {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: #15120e !important;
+  color: var(--button-text) !important;
   font-weight: 700;
 }
 .flatpickr-day.flatpickr-disabled,
@@ -633,7 +728,7 @@ main {
 .range-tab:hover, .gran-tab:hover { color: var(--text-secondary); }
 .range-tab.active, .gran-tab.active {
   background: var(--accent);
-  color: #15120e;
+  color: var(--button-text);
   font-weight: 700;
 }
 
@@ -713,7 +808,156 @@ footer {
   letter-spacing: 0.08em;
 }
 
-/* ------------------------- Responsive ------------------------- */
+/* ------------------------- Topbar controls (theme toggle + status) ------------------------- */
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-toggle {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--border-bright);
+  background: var(--bg-card);
+}
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.theme-icon {
+  display: block;
+}
+
+/* ------------------------- Light-theme overrides ------------------------- */
+/* Most styles are already theme-aware via CSS variables. These are the
+   places that need explicit light-theme treatment. */
+
+html[data-theme="light"] .card,
+html:not([data-theme]) .card {
+  /* Soft shadow on light surfaces, none on dark */
+}
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) .card {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+}
+html[data-theme="light"] .card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* The logo-mark uses a hardcoded inset shadow that looks wrong on light. */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) .logo-mark {
+    box-shadow: 0 0 20px var(--accent-glow), inset 0 -2px 6px rgba(0, 0, 0, 0.2);
+  }
+}
+html[data-theme="light"] .logo-mark {
+  box-shadow: 0 0 20px var(--accent-glow), inset 0 -2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Logo-mark inner border: bright on dark, dark on light */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) .logo-mark::after {
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+}
+html[data-theme="light"] .logo-mark::after {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* Flatpickr calendar: rebuild on top of our CSS variables */
+.flatpickr-calendar {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-bright) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
+  font-family: var(--font-mono) !important;
+  color: var(--text-primary) !important;
+}
+.flatpickr-calendar.arrowTop:before,
+.flatpickr-calendar.arrowTop:after {
+  border-bottom-color: var(--border-bright) !important;
+}
+.flatpickr-months .flatpickr-month {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+.flatpickr-current-month input.cur-year,
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+  color: var(--text-primary) !important;
+  background: transparent !important;
+}
+.flatpickr-weekdays { background: transparent !important; }
+.flatpickr-weekday {
+  color: var(--text-muted) !important;
+  background: transparent !important;
+}
+.flatpickr-day {
+  color: var(--text-secondary) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+}
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: var(--bg-card-2) !important;
+  border-color: var(--border-bright) !important;
+}
+.flatpickr-day.today {
+  border-color: var(--accent) !important;
+  color: var(--text-primary) !important;
+  background: transparent !important;
+}
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--button-text) !important;
+  font-weight: 700;
+}
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover {
+  color: var(--text-muted) !important;
+  opacity: 0.3 !important;
+  background: transparent !important;
+}
+.flatpickr-prev-month,
+.flatpickr-next-month {
+  fill: var(--text-secondary) !important;
+  color: var(--text-secondary) !important;
+}
+.flatpickr-prev-month:hover,
+.flatpickr-next-month:hover {
+  fill: var(--accent) !important;
+}
+
+/* Info tooltip background must be theme-aware */
+.info-tooltip-content {
+  background: var(--bg-card-2);
+  border-color: var(--border-bright);
+}
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) .info-tooltip-content {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+}
+html[data-theme="light"] .info-tooltip-content {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* ------------------------- Mobile polish ------------------------- */
 @media (max-width: 1024px) {
   .hero { grid-template-columns: 1fr; }
   .hero-side { flex-direction: row; }
@@ -723,17 +967,77 @@ footer {
 }
 
 @media (max-width: 640px) {
-  main { padding: 16px; gap: 16px; }
-  .topbar { padding: 16px; }
-  .hero { padding: 24px; }
-  .hero-value { font-size: 64px; }
-  .hero-side { flex-direction: column; }
-  .comparison-grid { grid-template-columns: 1fr; }
-  .stat-value-num { font-size: 22px; }
-  /* On very narrow screens, stack value and compare instead of side-by-side */
-  .stat-value-row {
+  /* Stat cards: tighter padding, smaller text, single column */
+  .comparison-grid { grid-template-columns: 1fr; gap: 10px; }
+  .stat-card { padding: 14px 16px; }
+  .stat-card-tall { min-height: auto; }
+  .stat-value-num { font-size: 26px; }
+  .stat-title { font-size: 10px; }
+  .stat-sub { font-size: 11px; }
+
+  /* Topbar: vertical stack, control row right-aligned */
+  .topbar {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    gap: 12px;
+    align-items: stretch;
   }
+  .topbar-controls {
+    justify-content: flex-end;
+  }
+
+  /* Day picker: touch-friendly buttons, narrower input */
+  .day-picker { gap: 4px; flex-wrap: wrap; }
+  .day-nav-btn { width: 36px; height: 36px; font-size: 18px; }
+  .day-picker-input { min-width: 140px; padding: 8px; font-size: 11px; }
+  .day-today-btn { padding: 8px 10px; }
+
+  /* Charts shorter on small screens */
+  .chart-wrap { height: 240px; }
+
+  /* Hero PV side cards 2-up on tablets/large phones */
+  .hero-side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex-direction: row; }
+
+  /* Info tooltip: position-fixed so it never escapes the viewport */
+  .info-tooltip-content {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    top: auto;
+    width: auto;
+    max-width: none;
+    z-index: 200;
+  }
+  .comparison-grid > .stat-card:last-child .info-tooltip-content {
+    /* Override the desktop right-anchor */
+    left: 16px;
+    right: 16px;
+  }
+
+  /* Lifetime cards: single column */
+  .lifetime-grid { grid-template-columns: 1fr; }
+
+  /* Footer allow wrapping */
+  footer { flex-wrap: wrap; font-size: 10px; gap: 6px; }
+
+  /* Card-header (chart cards) stack instead of squeeze */
+  .card-header { gap: 8px; }
+
+  /* Theme toggle smaller on mobile to save space */
+  .theme-toggle { width: 32px; height: 32px; }
+}
+
+@media (max-width: 380px) {
+  /* Extra compact on small phones */
+  .stat-card { padding: 12px 14px; }
+  .stat-value-num { font-size: 22px; }
+  .hero-side { grid-template-columns: 1fr; }
+  .hero-value { font-size: 48px; }
+
+  /* Day picker: stack vertically on very narrow screens */
+  .day-picker {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .day-picker-input { flex: 1; min-width: 0; }
 }
