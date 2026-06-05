@@ -5,9 +5,22 @@ const REFRESH_LIVE_IDLE   = 60_000;
 const REFRESH_HIST_ACTIVE = 60_000;
 const REFRESH_HIST_IDLE   = 300_000;
 
+// Pre-detect language from navigator so the day picker can initialize
+// with the right locale immediately — before the first /api/live response
+// arrives. The backend's DEFAULT_LANG env (if set) overrides this once
+// loadLive() runs, but for the common case (user's browser language matches
+// the inverter location) this avoids the brief en → de flash on first load.
+function detectInitialLang() {
+  const supported = ["de", "en"];
+  const browserLang = (navigator.language || "en").substring(0, 2).toLowerCase();
+  return supported.includes(browserLang) ? browserLang : "en";
+}
+
+const initialLang = detectInitialLang();
+
 const state = {
-  lang: "en",
-  locale: "en-US",
+  lang: initialLang,
+  locale: initialLang === "de" ? "de-DE" : "en-US",
   currency: "USD",
   pricePerKwh: 0.35,
   co2KgPerKwh: 0.38,
@@ -377,6 +390,27 @@ function updateDayPickerLabels() {
   }
 }
 
+function updateDayPickerButtons() {
+  // Update the visibility/disabled state of day-picker controls without
+  // triggering any data fetches. Call after state.viewedDay changes.
+  const nextBtn = document.getElementById("day-next");
+  if (nextBtn) {
+    nextBtn.disabled = (state.viewedDay === null);
+  }
+  const prevBtn = document.getElementById("day-prev");
+  if (prevBtn) {
+    const earliest = new Date();
+    earliest.setDate(earliest.getDate() - state.retentionDays);
+    earliest.setHours(0, 0, 0, 0);
+    const current = state.viewedDay || new Date();
+    prevBtn.disabled = (current <= earliest);
+  }
+  const todayBtn = document.getElementById("day-today");
+  if (todayBtn) {
+    todayBtn.style.display = (state.viewedDay === null) ? "none" : "";
+  }
+}
+
 function setViewedDay(date) {
   // date: null = today (live), Date = historical
   state.viewedDay = date;
@@ -387,25 +421,7 @@ function setViewedDay(date) {
     dayPicker.setDate(target, false);  // don't trigger onChange
   }
 
-  // Update next/prev button enabled state
-  const nextBtn = document.getElementById("day-next");
-  if (nextBtn) {
-    nextBtn.disabled = (date === null);
-  }
-  const prevBtn = document.getElementById("day-prev");
-  if (prevBtn) {
-    const earliest = new Date();
-    earliest.setDate(earliest.getDate() - state.retentionDays);
-    earliest.setHours(0, 0, 0, 0);
-    const current = date || new Date();
-    prevBtn.disabled = (current <= earliest);
-  }
-
-  // Show/hide Today button
-  const todayBtn = document.getElementById("day-today");
-  if (todayBtn) {
-    todayBtn.style.display = (date === null) ? "none" : "";
-  }
+  updateDayPickerButtons();
 
   // Reload the chart for the new day
   loadTodayChart();
@@ -791,10 +807,17 @@ function scheduleTimers() {
 
 
 async function init() {
-  await loadLive();
+  // Translate static UI text and initialize the day picker BEFORE the first
+  // backend roundtrip. Without this, the day picker input would stay empty
+  // until /api/live returned. Both are re-applied inside loadLive() in case
+  // the backend's DEFAULT_LANG env forces a different language than the
+  // browser one we guessed.
+  window.i18n.applyTranslations(state.lang);
   ensureDayPicker();
   updateDayPickerLabels();
-  setViewedDay(null);  // initialize today button visibility and labels
+  updateDayPickerButtons();   // UI-only, no fetches yet
+
+  await loadLive();
   await loadStats();
   await loadTodayChart();
   await loadHistoryChart(state.currentRange);

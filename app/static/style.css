@@ -177,13 +177,6 @@ main {
   letter-spacing: -0.01em;
 }
 
-.card-meta {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.05em;
-}
-
 /* ------------------------- Hero ------------------------- */
 .hero {
   display: grid;
