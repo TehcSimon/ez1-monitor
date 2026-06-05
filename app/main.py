@@ -77,6 +77,14 @@ CURRENCY = os.getenv("CURRENCY", "EUR").upper()
 PRICE_PER_KWH = float(os.getenv("PRICE_PER_KWH", "0.35"))
 CO2_KG_PER_KWH = float(os.getenv("CO2_KG_PER_KWH", "0.38"))
 
+# Electricity Maps integration (optional)
+ELECTRICITY_MAPS_TOKEN = os.getenv("ELECTRICITY_MAPS_TOKEN", "").strip()
+# Note: The Home-Assistant-tier API doesn't take a zone parameter — the zone
+# is bound to the token in the Electricity Maps portal. We still expose this
+# env var for the UI display and for future endpoints, but it has no effect
+# on the actual API call.
+ELECTRICITY_MAPS_ZONE = os.getenv("ELECTRICITY_MAPS_ZONE", "DE").upper().strip()
+
 ONLINE_FRESH_SECONDS = 300
 DUSK_WINDOW_SECONDS = 300
 DUSK_THRESHOLD_W = 5.0
@@ -85,7 +93,18 @@ DUSK_THRESHOLD_W = 5.0
 STATIC_DIR = Path(__file__).parent / "static"
 
 db = Database(DB_PATH)
-poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db)
+
+# Carbon-intensity state and resolver. Used by both the poller (stamps each
+# measurement with the active factor) and the /api/live endpoint (reports
+# the current factor and its provenance to the UI).
+from .co2 import CarbonState, resolve_current, poll_loop  # noqa: E402
+
+carbon_state = CarbonState(
+    token=ELECTRICITY_MAPS_TOKEN,
+    static_g_per_kwh=CO2_KG_PER_KWH * 1000.0,  # env is kg, internal is g
+)
+
+poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db, carbon_state)
 
 
 def detect_language(request: Request) -> str:
@@ -197,21 +216,29 @@ async def aggregate_refresh_task():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tz_name = os.environ.get("TZ", "system default")
+    em_status = (
+        f"Electricity Maps: enabled (zone {ELECTRICITY_MAPS_ZONE})"
+        if ELECTRICITY_MAPS_TOKEN else
+        f"Electricity Maps: disabled (static {CO2_KG_PER_KWH * 1000:.0f} g/kWh)"
+    )
     logger.info(
         f"Starting EZ1 Monitor v{__version__} — inverter at {INVERTER_IP}:{INVERTER_PORT}, "
         f"poll every {POLL_INTERVAL}s, currency={CURRENCY}, "
-        f"price={PRICE_PER_KWH}/kWh, timezone={tz_name}, retention={RETENTION_DAYS}d"
+        f"price={PRICE_PER_KWH}/kWh, timezone={tz_name}, retention={RETENTION_DAYS}d, "
+        f"{em_status}"
     )
     await db.init()
     await backfill_aggregates()
     await poller.start()
     retention_handle = asyncio.create_task(retention_task())
     aggregate_handle = asyncio.create_task(aggregate_refresh_task())
+    # CO2 polling task — runs forever, no-op when token isn't set
+    carbon_handle = asyncio.create_task(poll_loop(carbon_state))
     try:
         yield
     finally:
         logger.info("Shutting down ...")
-        for handle in (retention_handle, aggregate_handle):
+        for handle in (retention_handle, aggregate_handle, carbon_handle):
             handle.cancel()
             try:
                 await handle
@@ -235,10 +262,29 @@ async def get_live(request: Request):
     latest = await db.get_latest()
     info = await db.get_device_info()
     status = await compute_status()
+    # Resolve current carbon-intensity factor + provenance for the UI.
+    # The UI uses this to render the CO2-card subtitle (live/stale/avg/static).
+    co2 = resolve_current(carbon_state)
     return {
         "latest": latest,
         "device": info,
         "status": status,
+        "carbon": {
+            "g_per_kwh": round(co2.g_per_kwh, 1),
+            "source": co2.source,
+            "datetime": co2.datetime,
+            "fossil_pct": co2.fossil_pct,
+            "country_code": co2.country_code,
+            "age_seconds": co2.age_seconds,
+            # Always echo back the static fallback so the UI can show it
+            # in tooltips even when source="live"
+            "static_g_per_kwh": carbon_state.static_g_per_kwh,
+            # Echo configured zone for the UI label
+            "configured_zone": ELECTRICITY_MAPS_ZONE if ELECTRICITY_MAPS_TOKEN else None,
+            # How many successful polls have contributed to the rolling
+            # average so far. Shown in the subtitle when source="avg".
+            "rolling_count": carbon_state.rolling_count,
+        },
         "config": {
             "version": __version__,
             "inverter_ip": INVERTER_IP,
@@ -256,20 +302,45 @@ async def get_live(request: Request):
 
 @app.get("/api/history")
 async def get_history(
-    range: str = Query("day", pattern="^(day|week|month|year)$"),
-    granularity: str = Query("auto", pattern="^(auto|daily|monthly)$"),
+    range: str = Query("day", pattern="^(day|week|month|year|multiyear)$"),
+    granularity: str = Query("auto", pattern="^(auto|daily|monthly|yearly)$"),
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     """Historical data for the requested time range.
 
     Parameters:
-    - range:       day | week | month | year
-    - granularity: only used with range=year; daily (default) or monthly
+    - range:       day | week | month | year | multiyear
+    - granularity: only used with range=year (auto, daily, monthly) or
+                   range=multiyear (monthly, yearly)
     - date:        only used with range=day; YYYY-MM-DD for a specific day
-                   (default: today). Must not be in the future and not older
-                   than RETENTION_DAYS.
+
+    Multi-year range pulls from the long-term aggregates tables, so it
+    survives the RETENTION_DAYS pruning of detail measurements. Years
+    where the inverter hasn't produced anything are auto-excluded by the
+    underlying query.
     """
     now = datetime.now()
+
+    # Multi-year view: aggregate tables (survives retention pruning)
+    if range == "multiyear":
+        if granularity == "yearly":
+            # One bar per year
+            yearly = await db.get_yearly_aggregates()
+            return {
+                "range": "multiyear",
+                "granularity": "yearly",
+                "years": yearly,
+            }
+        else:
+            # Default: monthly granularity across all years with data.
+            # The UI renders this as a continuous bar chart with year
+            # boundary markers.
+            monthly = await db.get_monthly_aggregates()
+            return {
+                "range": "multiyear",
+                "granularity": "monthly",
+                "months": monthly,
+            }
 
     # Special path: rolling 12-month aggregate for the year view
     if range == "year" and granularity == "monthly":
@@ -387,7 +458,20 @@ async def get_stats():
     same_month_ly_total_kwh = await energy_between(same_month_ly_start, same_month_ly_full_end)
 
     total_kwh = await db.get_total_energy()
-    co2_kg = total_kwh * CO2_KG_PER_KWH
+
+    # CO2 saved: when per-measurement CO2 factors are available (from
+    # Electricity Maps polling), use them for a historically accurate value.
+    # Each measurement was stamped with the grid intensity at its time, so
+    # a sunny midday with low-CO2 grid gets correctly weighted vs. a cloudy
+    # evening with coal-heavy grid.
+    # Falls back to total_kwh × static factor if no live data was ever
+    # collected (e.g. token never configured, fresh install).
+    lifetime_co2_g = await db.get_lifetime_co2_g()
+    if lifetime_co2_g is not None and lifetime_co2_g > 0:
+        co2_kg = lifetime_co2_g / 1000.0
+    else:
+        co2_kg = total_kwh * CO2_KG_PER_KWH
+
     money_saved = total_kwh * PRICE_PER_KWH
     peak_w_today = await db.get_peak_today()
 
@@ -469,6 +553,12 @@ _m_co2_saved_kg    = Gauge("ez1_co2_saved_kg_total", "Lifetime CO2 avoided in ki
 _m_status          = Gauge("ez1_status", "Inverter status (1 = active state)", ["state"], registry=_metrics_registry)
 _m_info            = Info("ez1", "Inverter and monitor metadata", registry=_metrics_registry)
 
+# Carbon-intensity gauges. Always exported, but the values are static
+# (CO2_KG_PER_KWH × 1000) when no Electricity Maps token is configured.
+_m_co2_intensity   = Gauge("ez1_carbon_intensity_g_per_kwh", "Current grid carbon intensity in gCO2eq/kWh", registry=_metrics_registry)
+_m_co2_fossil_pct  = Gauge("ez1_carbon_fossil_percentage", "Percentage of grid electricity from fossil fuels", registry=_metrics_registry)
+_m_co2_source      = Gauge("ez1_carbon_source", "Carbon intensity data source (1 = active)", ["source"], registry=_metrics_registry)
+
 
 async def _populate_metrics() -> None:
     """Refresh all Prometheus gauges from current state. Called on every
@@ -501,6 +591,14 @@ async def _populate_metrics() -> None:
     _m_peak_today_w.set(stats.get("peak_w_today") or 0)
     _m_lifetime_kwh.set(stats.get("total_kwh") or 0)
     _m_co2_saved_kg.set(stats.get("co2_saved_kg") or 0)
+
+    # Carbon intensity metrics
+    co2 = resolve_current(carbon_state)
+    _m_co2_intensity.set(co2.g_per_kwh)
+    if co2.fossil_pct is not None:
+        _m_co2_fossil_pct.set(co2.fossil_pct)
+    for src in ("live", "stale", "avg", "static"):
+        _m_co2_source.labels(source=src).set(1 if co2.source == src else 0)
 
     info = await db.get_device_info()
     if info:
