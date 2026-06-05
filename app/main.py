@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .database import Database
 from .poller import Poller
+from . import __version__
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -177,6 +178,7 @@ async def get_live(request: Request):
         "device": info,
         "status": status,
         "config": {
+            "version": __version__,
             "inverter_ip": INVERTER_IP,
             "poll_interval": POLL_INTERVAL,
             "install_kwp": INSTALL_KWP,
@@ -194,12 +196,16 @@ async def get_live(request: Request):
 async def get_history(
     range: str = Query("day", pattern="^(day|week|month|year)$"),
     granularity: str = Query("auto", pattern="^(auto|daily|monthly)$"),
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     """Historical data for the requested time range.
 
-    For range=year, the optional granularity parameter switches between:
-    - "daily"   (default): per-day points covering the last 365 days
-    - "monthly": per-month totals covering the last 12 months
+    Parameters:
+    - range:       day | week | month | year
+    - granularity: only used with range=year; daily (default) or monthly
+    - date:        only used with range=day; YYYY-MM-DD for a specific day
+                   (default: today). Must not be in the future and not older
+                   than RETENTION_DAYS.
     """
     now = datetime.now()
 
@@ -209,23 +215,47 @@ async def get_history(
         return {"range": "year", "granularity": "monthly", "months": monthly}
 
     if range == "day":
-        start = datetime.combine(now.date(), time.min)
+        # Optional ?date=YYYY-MM-DD for historical day lookups
+        used_date = None
+        if date:
+            try:
+                target_date = datetime.strptime(date, "%Y-%m-%d").date()
+            except ValueError:
+                target_date = now.date()
+            # Clamp to valid window: not in the future, not before retention
+            today = now.date()
+            if target_date > today:
+                target_date = today
+            if RETENTION_DAYS > 0:
+                earliest = (now - timedelta(days=RETENTION_DAYS)).date()
+                if target_date < earliest:
+                    target_date = earliest
+            start = datetime.combine(target_date, time.min)
+            end = start + timedelta(days=1)
+            used_date = target_date.strftime("%Y-%m-%d")
+        else:
+            start = datetime.combine(now.date(), time.min)
+            end = now
         bucket = 0
     elif range == "week":
         start = now - timedelta(days=7)
+        end = now
         bucket = 600
     elif range == "month":
         start = now - timedelta(days=30)
+        end = now
         bucket = 3600
     else:  # year, daily
         start = now - timedelta(days=365)
+        end = now
         bucket = 86400
 
-    points = await db.get_range(int(start.timestamp()), int(now.timestamp()), bucket)
+    points = await db.get_range(int(start.timestamp()), int(end.timestamp()), bucket)
     return {
         "range": range,
         "granularity": "daily" if range == "year" else "auto",
         "bucket_seconds": bucket,
+        "date": used_date if range == "day" else None,
         "points": points,
     }
 
@@ -287,6 +317,8 @@ async def get_stats():
     # Year
     this_year_kwh = await energy_between(this_year_start, now)
     last_year_ytd_kwh = await energy_between(last_year_start, last_year_until_today)
+    # End of last year = start of this year (exclusive boundary)
+    last_year_full_kwh = await energy_between(last_year_start, this_year_start)
 
     # Year-over-year on month card
     same_month_ly_kwh = await energy_between(same_month_ly_start, same_month_ly_until_today)
@@ -316,6 +348,7 @@ async def get_stats():
         # Year
         "this_year_kwh": round(this_year_kwh, 3),
         "last_year_ytd_kwh": round(last_year_ytd_kwh, 3),
+        "last_year_full_kwh": round(last_year_full_kwh, 3),
 
         # Year-over-year (month card)
         "same_month_last_year_kwh": round(same_month_ly_kwh, 3),
