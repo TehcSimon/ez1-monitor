@@ -7,6 +7,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, time
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse
@@ -135,26 +136,87 @@ async def retention_task():
         await asyncio.sleep(86400)
 
 
+async def backfill_aggregates() -> None:
+    """One-time backfill of monthly and yearly aggregates from existing
+    measurements. Idempotent — overwrites existing aggregate rows with
+    freshly recomputed values.
+
+    Walks from the earliest measurement to the current month, computing
+    each month's aggregate. Then recomputes each year's aggregate from
+    its monthly rows.
+    """
+    earliest, latest = await db.get_measurements_date_range()
+    if earliest is None:
+        logger.info("Aggregate backfill: no measurements yet, skipping.")
+        return
+
+    start_date = datetime.fromtimestamp(earliest).date()
+    end_date = datetime.fromtimestamp(latest).date()
+    logger.info(
+        f"Aggregate backfill: recomputing months from {start_date.isoformat()} "
+        f"to {end_date.isoformat()}"
+    )
+
+    current_year = start_date.year
+    current_month = start_date.month
+    years_touched = set()
+    months_done = 0
+    while (current_year, current_month) <= (end_date.year, end_date.month):
+        await db.recompute_month_aggregate(current_year, current_month)
+        years_touched.add(current_year)
+        months_done += 1
+        if current_month == 12:
+            current_month = 1
+            current_year += 1
+        else:
+            current_month += 1
+
+    for year in sorted(years_touched):
+        await db.recompute_year_aggregate(year)
+
+    logger.info(
+        f"Aggregate backfill: {months_done} months, {len(years_touched)} years updated."
+    )
+
+
+async def aggregate_refresh_task():
+    """Background task that refreshes the current month's aggregate every
+    hour. Past months stay frozen unless the container is restarted and the
+    backfill picks them up again."""
+    await asyncio.sleep(300)  # let initial poll fill in first
+    while True:
+        try:
+            now = datetime.now()
+            await db.recompute_month_aggregate(now.year, now.month)
+            await db.recompute_year_aggregate(now.year)
+        except Exception as e:
+            logger.warning(f"Aggregate refresh task failed: {e}")
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tz_name = os.environ.get("TZ", "system default")
     logger.info(
-        f"Starting EZ1 Monitor — inverter at {INVERTER_IP}:{INVERTER_PORT}, "
+        f"Starting EZ1 Monitor v{__version__} — inverter at {INVERTER_IP}:{INVERTER_PORT}, "
         f"poll every {POLL_INTERVAL}s, currency={CURRENCY}, "
         f"price={PRICE_PER_KWH}/kWh, timezone={tz_name}, retention={RETENTION_DAYS}d"
     )
     await db.init()
+    await backfill_aggregates()
     await poller.start()
     retention_handle = asyncio.create_task(retention_task())
+    aggregate_handle = asyncio.create_task(aggregate_refresh_task())
     try:
         yield
     finally:
         logger.info("Shutting down ...")
-        retention_handle.cancel()
-        try:
-            await retention_handle
-        except asyncio.CancelledError:
-            pass
+        for handle in (retention_handle, aggregate_handle):
+            handle.cancel()
+            try:
+                await handle
+            except asyncio.CancelledError:
+                pass
         await poller.stop()
 
 
@@ -361,6 +423,103 @@ async def get_stats():
         "co2_saved_kg": round(co2_kg, 2),
         "money_saved": round(money_saved, 2),
     }
+
+
+# ---------------------------- Aggregates --------------------------------
+
+@app.get("/api/aggregates")
+async def get_aggregates(
+    year: Optional[int] = Query(None, ge=2000, le=2999),
+):
+    """Long-term aggregate data that survives detail-data retention.
+
+    Without parameters: returns all yearly aggregates.
+    With year=YYYY:    returns monthly aggregates for that year.
+    """
+    if year is not None:
+        monthly = await db.get_monthly_aggregates(year=year)
+        return {"year": year, "monthly": monthly}
+    yearly = await db.get_yearly_aggregates()
+    return {"yearly": yearly}
+
+
+# ---------------------------- Prometheus --------------------------------
+
+from prometheus_client import (
+    CollectorRegistry, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST,
+)
+from fastapi.responses import Response
+
+# Use a custom registry so we don't pollute the default global one
+# (which would inherit Python's process metrics — irrelevant here).
+_metrics_registry = CollectorRegistry()
+
+_m_current_power_w = Gauge("ez1_current_power_watts", "Current total power output", registry=_metrics_registry)
+_m_pv1_power_w     = Gauge("ez1_pv1_power_watts", "PV1 current power", registry=_metrics_registry)
+_m_pv2_power_w     = Gauge("ez1_pv2_power_watts", "PV2 current power", registry=_metrics_registry)
+_m_today_kwh       = Gauge("ez1_today_kwh", "Energy produced today", registry=_metrics_registry)
+_m_pv1_today_kwh   = Gauge("ez1_pv1_today_kwh", "PV1 energy today", registry=_metrics_registry)
+_m_pv2_today_kwh   = Gauge("ez1_pv2_today_kwh", "PV2 energy today", registry=_metrics_registry)
+_m_this_week_kwh   = Gauge("ez1_this_week_kwh", "Energy produced this week", registry=_metrics_registry)
+_m_this_month_kwh  = Gauge("ez1_this_month_kwh", "Energy produced this month", registry=_metrics_registry)
+_m_this_year_kwh   = Gauge("ez1_this_year_kwh", "Energy produced this year", registry=_metrics_registry)
+_m_peak_today_w    = Gauge("ez1_peak_today_watts", "Peak power output today", registry=_metrics_registry)
+_m_lifetime_kwh    = Gauge("ez1_lifetime_kwh_total", "Lifetime total energy", registry=_metrics_registry)
+_m_co2_saved_kg    = Gauge("ez1_co2_saved_kg_total", "Lifetime CO2 avoided in kilograms", registry=_metrics_registry)
+_m_status          = Gauge("ez1_status", "Inverter status (1 = active state)", ["state"], registry=_metrics_registry)
+_m_info            = Info("ez1", "Inverter and monitor metadata", registry=_metrics_registry)
+
+
+async def _populate_metrics() -> None:
+    """Refresh all Prometheus gauges from current state. Called on every
+    scrape so we always serve the freshest values without needing a
+    background updater."""
+    latest = await db.get_latest()
+    if latest:
+        if latest.get("online"):
+            p1 = latest.get("p1") or 0
+            p2 = latest.get("p2") or 0
+            _m_current_power_w.set(p1 + p2)
+            _m_pv1_power_w.set(p1)
+            _m_pv2_power_w.set(p2)
+            _m_pv1_today_kwh.set(latest.get("e1") or 0)
+            _m_pv2_today_kwh.set(latest.get("e2") or 0)
+        else:
+            _m_current_power_w.set(0)
+            _m_pv1_power_w.set(0)
+            _m_pv2_power_w.set(0)
+
+    status = await compute_status()
+    for state in ("online", "standby", "error", "noData"):
+        _m_status.labels(state=state).set(1 if status["state"] == state else 0)
+
+    stats = await get_stats()
+    _m_today_kwh.set(stats.get("today_kwh") or 0)
+    _m_this_week_kwh.set(stats.get("this_week_kwh") or 0)
+    _m_this_month_kwh.set(stats.get("this_month_kwh") or 0)
+    _m_this_year_kwh.set(stats.get("this_year_kwh") or 0)
+    _m_peak_today_w.set(stats.get("peak_w_today") or 0)
+    _m_lifetime_kwh.set(stats.get("total_kwh") or 0)
+    _m_co2_saved_kg.set(stats.get("co2_saved_kg") or 0)
+
+    info = await db.get_device_info()
+    if info:
+        _m_info.info({
+            "device_id": str(info.get("device_id") or ""),
+            "serial_number": str(info.get("serial_number") or ""),
+            "max_power": str(info.get("max_power") or ""),
+            "version": __version__,
+        })
+    else:
+        _m_info.info({"version": __version__})
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus scrape endpoint. No authentication; expected to be
+    accessed from within the LAN only."""
+    await _populate_metrics()
+    return Response(generate_latest(_metrics_registry), media_type=CONTENT_TYPE_LATEST)
 
 
 # ---------------------------- Static frontend ----------------------------
