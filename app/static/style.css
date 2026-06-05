@@ -30,6 +30,7 @@
   --body-glow-2:    #1a0f0044;
   --topbar-bg:      #150e07;
   --accent-card-glow: #3a2810;   /* warm dark glow inside accent lifetime card */
+  --hero-glow: #2a1c0a;          /* radial gradient center inside the hero card */
   --hero-text-shadow: 0 0 40px var(--accent-glow);  /* warm aura behind big numbers */
 }
 
@@ -62,6 +63,7 @@
     --body-glow-2:    #fed7aa22;
     --topbar-bg:      #f0e8d5;
     --accent-card-glow: #fef3c7;
+    --hero-glow: #fef3c7;
     --hero-text-shadow: none;
   }
 }
@@ -92,6 +94,7 @@ html[data-theme="light"] {
   --body-glow-2:    #fed7aa22;
   --topbar-bg:      #f0e8d5;
   --accent-card-glow: #fef3c7;
+  --hero-glow: #fef3c7;
   --hero-text-shadow: none;
 }
 
@@ -122,6 +125,7 @@ html[data-theme="dark"] {
   --body-glow-2:    #1a0f0044;
   --topbar-bg:      #150e07;
   --accent-card-glow: #3a2810;
+  --hero-glow: #2a1c0a;
   --hero-text-shadow: 0 0 40px var(--accent-glow);
 }
 
@@ -287,7 +291,7 @@ main {
   gap: 32px;
   padding: 32px;
   background:
-    radial-gradient(ellipse 60% 80% at 30% 50%, #2a1c0a, var(--bg-card) 70%),
+    radial-gradient(ellipse 60% 80% at 30% 50%, var(--hero-glow), var(--bg-card) 70%),
     var(--bg-card);
   border-color: var(--border-bright);
 }
