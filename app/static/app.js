@@ -343,13 +343,26 @@ function renderCompare(elementId, current, previous) {
 
 // --- Day picker -------------------------------------------------------
 
+function getDayPickerFormat() {
+  // Compact format on narrow screens, full format on wider screens.
+  // The viewport check is run again on every ensureDayPicker() call, so
+  // window resize → next re-init picks it up (resize event handler below).
+  const narrow = window.matchMedia("(max-width: 640px)").matches;
+  if (state.lang === "de") {
+    // Full: "Freitag, 05. Juni 2026"  Mobile: "Fr, 05. Jun 2026"
+    return narrow ? "D, d. M Y" : "l, d. F Y";
+  }
+  // Full: "Friday, June 5, 2026"  Mobile: "Fri, Jun 5, 2026"
+  return narrow ? "D, M j, Y" : "l, F j, Y";
+}
+
 function ensureDayPicker() {
   if (typeof flatpickr === "undefined") return;
 
   const input = document.getElementById("day-picker-input");
   if (!input) return;
 
-  // Re-init if the locale changed (the input value can be updated below)
+  // Re-init if the locale or format changed (the input value can be updated below)
   if (dayPicker) {
     dayPicker.destroy();
     dayPicker = null;
@@ -369,7 +382,7 @@ function ensureDayPicker() {
     locale: fpLocale,
     dateFormat: "Y-m-d",          // internal value
     altInput: true,
-    altFormat: state.lang === "de" ? "l, d. F Y" : "l, F j, Y",
+    altFormat: getDayPickerFormat(),
     maxDate: today,
     minDate: earliest,
     defaultDate: state.viewedDay || today,
@@ -380,6 +393,15 @@ function ensureDayPicker() {
     },
   });
 }
+
+// Re-init the picker on viewport size changes (so the date format updates)
+let _dayPickerResizeTimer = null;
+window.addEventListener("resize", () => {
+  if (_dayPickerResizeTimer) clearTimeout(_dayPickerResizeTimer);
+  _dayPickerResizeTimer = setTimeout(() => {
+    ensureDayPicker();
+  }, 200);
+});
 
 function updateDayPickerLabels() {
   const prevBtn = document.getElementById("day-prev");
@@ -425,6 +447,23 @@ function setViewedDay(date) {
   if (dayPicker) {
     const target = date || new Date();
     dayPicker.setDate(target, false);  // don't trigger onChange
+    // Explicitly sync the altInput — flatpickr's setDate(d, false) sets the
+    // internal value but does NOT always redraw the visible altInput in
+    // v4.6.13. Setting altInput.value manually guarantees the user sees
+    // the new date immediately, with no 10-second delay until next poll.
+    if (dayPicker.altInput && dayPicker.config) {
+      try {
+        dayPicker.altInput.value = flatpickr.formatDate(
+          target,
+          dayPicker.config.altFormat,
+          dayPicker.l10n
+        );
+      } catch (e) {
+        // Defensive — if formatDate fails for any reason, fall back to a
+        // simple toLocaleDateString rather than leaving the field blank.
+        dayPicker.altInput.value = target.toLocaleDateString(state.locale);
+      }
+    }
   }
 
   updateDayPickerButtons();
@@ -793,49 +832,67 @@ document.getElementById("day-next")?.addEventListener("click", () => shiftViewed
 document.getElementById("day-today")?.addEventListener("click", () => setViewedDay(null));
 
 
-// --- Theme management (system / light / dark) -----------------------
+// --- Theme management (smart toggle: system default, click toggles light/dark) ---
+//
+// State model:
+// - Initial:  localStorage empty → follows OS via prefers-color-scheme
+// - Click:    sets explicit "light" or "dark" — whichever is the OPPOSITE
+//             of what's currently being rendered
+// - Icon:     shows the target of the next click. Currently rendered dark?
+//             show a Sun (click → light). Currently light? show a Moon.
+//
+// There is intentionally no UI path back to "system" — that mode is only
+// the silent default for first-time visitors. Clearing the override would
+// require a manual localStorage.removeItem in dev tools, which is fine
+// for the small audience that cares.
 
 const THEME_KEY = "ez1-theme";
-const THEME_STATES = ["system", "light", "dark"];
 
-function getStoredTheme() {
+function getStoredOverride() {
   const stored = localStorage.getItem(THEME_KEY);
-  return THEME_STATES.includes(stored) ? stored : "system";
+  return stored === "light" || stored === "dark" ? stored : null;
+}
+
+function getResolvedTheme() {
+  // What's actually being rendered right now?
+  const stored = getStoredOverride();
+  if (stored) return stored;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function applyStoredTheme() {
-  const theme = getStoredTheme();
-  if (theme === "system") {
-    document.documentElement.removeAttribute("data-theme");
+  const stored = getStoredOverride();
+  if (stored) {
+    document.documentElement.setAttribute("data-theme", stored);
   } else {
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.removeAttribute("data-theme");
   }
   updateThemeToggleIcon();
 }
 
 function updateThemeToggleIcon() {
-  const theme = getStoredTheme();
+  const resolved = getResolvedTheme();
+  // Icon shows what you'll GET after clicking. In dark → show sun (light target).
+  // In light → show moon (dark target).
+  const targetIcon = resolved === "dark" ? "light" : "dark";
   document.querySelectorAll(".theme-icon").forEach(el => {
-    el.style.display = (el.dataset.icon === theme) ? "" : "none";
+    el.style.display = (el.dataset.icon === targetIcon) ? "" : "none";
   });
   const btn = document.getElementById("theme-toggle");
   if (btn) {
-    const label = window.i18n.t(state.lang, "theme." + theme);
+    const labelKey = resolved === "dark" ? "theme.switchToLight" : "theme.switchToDark";
+    const label = window.i18n.t(state.lang, labelKey);
     btn.title = label;
     btn.setAttribute("aria-label", label);
   }
 }
 
-function cycleTheme() {
-  const current = getStoredTheme();
-  const next = THEME_STATES[(THEME_STATES.indexOf(current) + 1) % THEME_STATES.length];
-  if (next === "system") {
-    localStorage.removeItem(THEME_KEY);
-  } else {
-    localStorage.setItem(THEME_KEY, next);
-  }
+function toggleTheme() {
+  // Toggle to the opposite of what's currently rendered (whether that came
+  // from system or an explicit override)
+  const next = getResolvedTheme() === "dark" ? "light" : "dark";
+  localStorage.setItem(THEME_KEY, next);
   applyStoredTheme();
-  // Charts must be re-rendered with new colors
   refreshChartColors();
   if (todayChart || historyChart) {
     loadTodayChart();
@@ -843,9 +900,10 @@ function cycleTheme() {
   }
 }
 
-// React to OS theme changes while user is on "system"
+// React to OS theme changes while user has no explicit override
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (getStoredTheme() === "system") {
+  if (!getStoredOverride()) {
+    updateThemeToggleIcon();
     refreshChartColors();
     if (todayChart || historyChart) {
       loadTodayChart();
@@ -854,7 +912,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
   }
 });
 
-document.getElementById("theme-toggle")?.addEventListener("click", cycleTheme);
+document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
 
 // Apply stored theme immediately (before init) so there's no flash
 applyStoredTheme();
