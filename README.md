@@ -191,6 +191,29 @@ All four comparison cards (Today / Week / Month / Year) show a fair
 The month card additionally shows year-over-year (same month last year), with
 both the same calendar window and the full last-year month total.
 
+## Day picker for the Today chart
+
+The "Today's Curve" chart can browse any day within the data retention
+window (default 2 years). Three ways to navigate:
+
+- **Arrow buttons** `‹` and `›` jump one day backward / forward
+- **Click the date label** to open a calendar picker for arbitrary jumps
+- **Click any bar in the History chart** (Daily granularity) to drill down
+  into that day's intraday curve
+
+When viewing a historical day, live polling pauses for the Today chart
+(historical data doesn't change anyway). The **"Today"** button next to
+the picker returns you to live mode.
+
+## Info tooltips on comparison cards
+
+Each comparison card (Today / Week / Month / Year) has a small ⓘ icon next
+to its title. Hover (or focus via keyboard) to see a brief explanation of
+how the comparison is calculated. This is especially useful for understanding
+the "short months effect" on the month card: when the previous month was
+shorter than the current one (e.g. February → March), the comparison window
+is clamped to the last day of the shorter month.
+
 ## Year history granularity
 
 The history chart's "Jahr"/"Year" range has a toggle between two views:
