@@ -37,6 +37,26 @@ services:
       # --- Economic / environmental factors ---
       - PRICE_PER_KWH=0.35               # local electricity price per kWh
       - CO2_KG_PER_KWH=0.38              # grid CO2 intensity (kg CO2/kWh)
+                                         # Used as fallback when Electricity
+                                         # Maps integration is disabled or
+                                         # unavailable.
+
+      # --- Optional: Electricity Maps live grid CO2 integration ---
+      # When ELECTRICITY_MAPS_TOKEN is set, the container fetches live
+      # carbon-intensity values for your grid zone once per hour and
+      # stamps each measurement with the active factor. The lifetime CO2
+      # calculation then becomes historically accurate — daytime polls
+      # use the (typically lower) sunny-grid factor, nighttime polls use
+      # the (typically higher) coal/gas-heavy factor. Falls back through
+      # last-known-value (up to 48h) → rolling average → CO2_KG_PER_KWH
+      # if the API is unavailable.
+      #
+      # Sign up at https://www.electricitymaps.com/free-tier-api (use the
+      # "Home Assistant" path for free permanent access). The zone is
+      # bound to the token in the portal, so ELECTRICITY_MAPS_ZONE is for
+      # the UI display label only.
+      # - ELECTRICITY_MAPS_TOKEN=your_token_here
+      # - ELECTRICITY_MAPS_ZONE=DE
 
       # --- Logging ---
       - LOG_LEVEL=INFO

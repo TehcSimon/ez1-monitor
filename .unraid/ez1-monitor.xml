@@ -57,7 +57,11 @@
 
   <Config Name="Installed peak power (kWp)" Target="INSTALL_KWP" Default="1.0" Mode="" Description="Installed module peak power in kWp. Used for optional comparisons." Type="Variable" Display="advanced" Required="false" Mask="false">1.0</Config>
 
-  <Config Name="Grid CO2 intensity (kg/kWh)" Target="CO2_KG_PER_KWH" Default="0.38" Mode="" Description="Grid CO2 intensity in kg CO2 per kWh. Default 0.38 reflects the recent German grid mix. Use a lower value for greener grids, higher for fossil-heavy grids." Type="Variable" Display="advanced" Required="false" Mask="false">0.38</Config>
+  <Config Name="Grid CO2 intensity (kg/kWh)" Target="CO2_KG_PER_KWH" Default="0.38" Mode="" Description="Grid CO2 intensity in kg CO2 per kWh. Default 0.38 reflects the recent German grid mix. Used as fallback when the optional Electricity Maps integration is disabled or unavailable." Type="Variable" Display="advanced" Required="false" Mask="false">0.38</Config>
+
+  <Config Name="Electricity Maps API token (optional)" Target="ELECTRICITY_MAPS_TOKEN" Default="" Mode="" Description="Optional. When set, the container fetches live grid carbon intensity once per hour from electricitymaps.com and stamps each measurement with the active factor. The lifetime CO2 calculation then becomes historically accurate. Get a free token at https://www.electricitymaps.com/free-tier-api (use the 'Home Assistant' path for permanent free access)." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <Config Name="Electricity Maps zone label" Target="ELECTRICITY_MAPS_ZONE" Default="DE" Mode="" Description="ISO country code (DE, AT, CH, FR, ...) for the UI display label. The actual zone is bound to the token in the Electricity Maps portal — this env var is for the UI only." Type="Variable" Display="advanced" Required="false" Mask="false">DE</Config>
 
   <Config Name="Log level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="Python log level: DEBUG, INFO, WARNING, ERROR" Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
 </Container>

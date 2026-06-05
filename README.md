@@ -27,10 +27,18 @@ No cloud, no account, no telemetry. Localized for English and German.
     plus full last-year-month as anchor)
   - Year history with **toggleable daily/monthly granularity**, dashed year
     boundary line, and dimmed previous-year bars
+  - **Multi-year history** view (v1.4.0) — browse every year you've collected
+    data for, with monthly or yearly granularity, served from a separate
+    aggregate table that **survives the retention pruning** of the raw data
   - **Day picker** for browsing any past day in the Today's Curve chart
     (arrow keys, calendar picker, or drill-down from history)
   - **Light, dark, and system themes** with one-click toggle
   - Lifetime totals: energy, CO₂ avoided, money saved
+- **Live grid CO₂ intensity** (v1.4.0, optional) via Electricity Maps API —
+  every measurement is stamped with the grid factor that was active at that
+  moment, so the lifetime CO₂ value is historically accurate instead of
+  using a single static guess. Falls back through last-known-value → rolling
+  average → static when the API is unavailable.
 - **Long-term aggregates** — monthly and yearly totals are stored separately
   from the detail measurements, so cross-year comparisons survive even after
   the raw data has been pruned by retention
@@ -40,7 +48,10 @@ No cloud, no account, no telemetry. Localized for English and German.
 - **Adaptive polling** — slows down 10× when the inverter is offline
 - **UID-agnostic non-root container** — runs on Docker, Kubernetes, and OpenShift
   with any UID assignment
-- **Lean Alpine image** (~80 MB) with multi-stage build
+- **Lean Alpine image** (~140 MB) with multi-stage build
+- **iOS / Android home-screen support** (v1.4.0) — proper Apple touch icons
+  plus a Web App Manifest, so "Add to Home Screen" gives the sun-with-shades
+  branding instead of a generic letter
 - UI in German or English (auto-detected from browser, can be forced via env)
 - Configurable currency (EUR / USD) and electricity price
 - Configurable data retention (default 2 years for year-over-year comparisons)
@@ -149,6 +160,24 @@ sudo chmod -R g=u   /mnt/user/appdata/ez1-monitor
 
 After this one-time fix, future updates will work transparently.
 
+## Upgrading from v1.3.x to v1.4.0
+
+No manual steps required. On first start the container:
+
+- Adds three columns via `ALTER TABLE` to the existing database
+  (`measurements.co2_g_per_kwh`, `monthly_aggregates.avg_co2_g_per_kwh`,
+  `yearly_aggregates.avg_co2_g_per_kwh`). All migrations are idempotent and
+  safe to re-run.
+- Backfills the new aggregate average columns from existing measurement
+  rows. The CO₂ averages will be `NULL` for any rows that pre-date the
+  Electricity Maps integration — that's fine, the lifetime CO₂ calculation
+  uses these values where available and falls back to the static factor
+  otherwise.
+
+To enable the optional Electricity Maps live integration, see the
+[Live grid CO₂ intensity](#live-grid-co2-intensity-electricity-maps-integration)
+section below.
+
 ## Configuration
 
 All configuration is done via environment variables.
@@ -163,7 +192,9 @@ All configuration is done via environment variables.
 | `DEFAULT_LANG` | *(empty)* | `""` = auto-detect from browser, or force `de`/`en` |
 | `CURRENCY` | `EUR` | `EUR` or `USD` |
 | `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh |
-| `CO2_KG_PER_KWH` | `0.38` | Grid CO₂ intensity (kg CO₂ per kWh) |
+| `CO2_KG_PER_KWH` | `0.38` | Grid CO₂ intensity (kg CO₂ per kWh). Used as fallback when the Electricity Maps integration is off or unavailable. |
+| `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Optional. When set, the container fetches live grid CO₂ intensity once per hour. See the [Live grid CO₂ intensity](#live-grid-co2-intensity-electricity-maps-integration) section for setup. |
+| `ELECTRICITY_MAPS_ZONE` | `DE` | ISO country code shown as the zone label in the UI. The actual zone is bound to the token in the Electricity Maps portal. |
 | `TZ` | `Etc/UTC` | IANA timezone identifier (e.g. `Europe/Berlin`) |
 | `RETENTION_DAYS` | `730` | Days to keep raw measurements. 0 = disable pruning. |
 | `LOG_LEVEL` | `INFO` | Python log level (DEBUG, INFO, WARNING) |
@@ -240,7 +271,8 @@ The toggle appears only when "Year" is the active range.
 Detail measurements are pruned after `RETENTION_DAYS` (default 730 = 2 years),
 but their summaries are kept indefinitely in two separate tables:
 
-- `monthly_aggregates`: total kWh, peak W, days with data — per (year, month)
+- `monthly_aggregates`: total kWh, peak W, days with data, energy-weighted
+  avg CO₂ factor — per (year, month)
 - `yearly_aggregates`: same fields rolled up per year
 
 These are populated automatically on every container start (backfill from
@@ -254,8 +286,73 @@ GET /api/aggregates              -> { "yearly": [...] }
 GET /api/aggregates?year=2026    -> { "year": 2026, "monthly": [...] }
 ```
 
-This lets you compare yields across many years even after the high-resolution
-data has been pruned — useful when comparing e.g. summer 2026 vs summer 2030.
+The History chart's **Multi-year** tab pulls from these tables so it shows
+every year you've collected data for, all the way back to the inverter's
+first reading, even when those raw measurements have long since been pruned.
+
+## Live grid CO₂ intensity (Electricity Maps integration)
+
+By default the CO₂-avoided counter uses a static factor (`CO2_KG_PER_KWH`,
+default 0.38 kg/kWh for Germany). That's a rough yearly average and tends
+to overstate emissions because solar panels produce energy precisely when
+the grid is cleanest (sunny, wind-rich daylight hours).
+
+With the optional Electricity Maps integration the container fetches the
+**live grid carbon intensity** for your zone once per hour and **stamps each
+inverter measurement** with the factor that was active at that moment. The
+lifetime CO₂ calculation is then a sum over all stamped measurements, which
+gives Solar production its correctly low-CO₂ profile automatically — no
+heuristics, just real grid data.
+
+### Setup
+
+1. Go to https://www.electricitymaps.com/free-tier-api and sign up.
+2. During onboarding, choose the **Home Assistant** path. This is the free
+   tier that gives permanent (non-trial) API access. Despite the name, the
+   API key works with any HTTP client — Home Assistant is just how
+   Electricity Maps markets the free tier.
+3. Select your grid zone (e.g. `DE` for Germany). The zone is **locked for
+   30 days** after first selection, so pick correctly.
+4. Copy the API key shown on the Developer Hub page.
+5. Set the env var on your container:
+
+   ```
+   ELECTRICITY_MAPS_TOKEN=your_api_key_here
+   ELECTRICITY_MAPS_ZONE=DE
+   ```
+
+   The zone env var is for the UI display label only — the actual zone is
+   bound to your token server-side.
+
+### Fallback cascade
+
+When the API returns useful data, the value is fresh and the source is
+labeled `live`. If the API becomes unavailable, the resolver walks down a
+three-tier cascade so the CO₂ display stays sensible:
+
+| Time since last successful poll | Source     | UI label                                 |
+|---------------------------------|------------|------------------------------------------|
+| 0 – 6 hours                     | `live`     | "Live (DE) · 117 g/kWh · 22:00"          |
+| 6 – 48 hours                    | `stale`    | "Last value (DE) · 117 g/kWh · 12 h ago" |
+| > 48 hours                      | `avg`      | "Average (DE) · 248 g/kWh · over N polls" |
+| no token / no data ever         | `static`   | "Static · 380 g/kWh"                     |
+
+The rolling average is built from every successful poll since container
+start, so it naturally reflects the mix of times the API was up.
+
+### Endpoint used
+
+Free Home-Assistant tier endpoint (no `zone` parameter — zone is bound to
+the token in the portal):
+
+```
+GET https://api.electricitymap.org/v3/home-assistant
+    -H "auth-token: <TOKEN>"
+```
+
+Returns `data.carbonIntensity` in gCO₂eq/kWh plus `data.fossilFuelPercentage`
+and the `countryCode` of the zone. Rate-limited to 50 req/hour, the
+container polls once per hour so you have 50× headroom.
 
 ## Prometheus metrics
 
@@ -301,6 +398,8 @@ For integrations and scripts:
 | `GET /api/history?range=day\|week\|month\|year` | Historical data points |
 | `GET /api/history?range=day&date=YYYY-MM-DD` | Specific day's intraday curve |
 | `GET /api/history?range=year&granularity=monthly` | Year view aggregated by month |
+| `GET /api/history?range=multiyear&granularity=monthly` | All years, monthly bars |
+| `GET /api/history?range=multiyear&granularity=yearly` | All years, one bar per year |
 | `GET /api/stats` | Aggregated statistics with stichtag and YoY comparisons |
 | `GET /api/aggregates` | Long-term yearly aggregates (survives retention) |
 | `GET /api/aggregates?year=YYYY` | Monthly aggregates for a specific year |
