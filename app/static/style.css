@@ -36,65 +36,72 @@
 
 /* Light theme — applied when user explicitly chose light, OR when the
    user has no preference set and the OS prefers light. */
+/* Light theme — cool / neutral / electric blue.
+   Deliberately contrasted with the dark theme's warm amber Solar mood.
+   Light theme leans into "Strom" (electricity), dark theme leans into
+   "Sonne" (sun) — two valid identities, one project, user picks per
+   personal preference. */
+
 @media (prefers-color-scheme: light) {
   html:not([data-theme]) {
-    --bg-base:        #faf8f3;
+    --bg-base:        #f8fafc;       /* slate-50 — cool neutral white */
     --bg-card:        #ffffff;
-    --bg-card-2:      #f3eee2;
-    --border:         #e5dccb;
-    --border-bright:  #d4c8b0;
+    --bg-card-2:      #f1f5f9;       /* slate-100 */
+    --border:         #e2e8f0;       /* slate-200 */
+    --border-bright:  #cbd5e1;       /* slate-300 */
 
-    --text-primary:   #1a1612;
-    --text-secondary: #4a4239;
-    --text-muted:     #8a7e6e;
+    --text-primary:   #0f172a;       /* slate-900 */
+    --text-secondary: #334155;       /* slate-700 */
+    --text-muted:     #64748b;       /* slate-500 */
 
-    --accent:         #d97706;
-    --accent-warm:    #ea580c;
-    --accent-glow:    #d9770633;
+    --accent:         #2563eb;       /* blue-600 — electric blue */
+    --accent-warm:    #1d4ed8;       /* blue-700 — slightly deeper for warm-emphasis */
+    --accent-glow:    #2563eb33;
 
     --good:           #16a34a;
     --bad:            #dc2626;
     --neutral:        #64748b;
 
     --tooltip-bg:     #ffffff;
-    --grain-opacity:  0.025;
+    --grain-opacity:  0.02;
     --button-text:    #ffffff;
-    --body-glow-1:    #fef3c722;
-    --body-glow-2:    #fed7aa22;
-    --topbar-bg:      #f0e8d5;
-    --accent-card-glow: #fef3c7;
-    --hero-glow: #fef3c7;
+    /* Subtle blue-tinted body glow instead of warm amber */
+    --body-glow-1:    #dbeafe22;     /* blue-100 fade */
+    --body-glow-2:    #bfdbfe22;     /* blue-200 fade */
+    --topbar-bg:      #eef2f7;       /* slate-100 + tiny blue cast */
+    --accent-card-glow: #dbeafe;     /* blue-100 — pale sky on the accent card */
+    --hero-glow: #dbeafe;            /* same gentle blue wash in the hero card */
     --hero-text-shadow: none;
   }
 }
 
 html[data-theme="light"] {
-  --bg-base:        #faf8f3;
+  --bg-base:        #f8fafc;
   --bg-card:        #ffffff;
-  --bg-card-2:      #f3eee2;
-  --border:         #e5dccb;
-  --border-bright:  #d4c8b0;
+  --bg-card-2:      #f1f5f9;
+  --border:         #e2e8f0;
+  --border-bright:  #cbd5e1;
 
-  --text-primary:   #1a1612;
-  --text-secondary: #4a4239;
-  --text-muted:     #8a7e6e;
+  --text-primary:   #0f172a;
+  --text-secondary: #334155;
+  --text-muted:     #64748b;
 
-  --accent:         #d97706;
-  --accent-warm:    #ea580c;
-  --accent-glow:    #d9770633;
+  --accent:         #2563eb;
+  --accent-warm:    #1d4ed8;
+  --accent-glow:    #2563eb33;
 
   --good:           #16a34a;
   --bad:            #dc2626;
   --neutral:        #64748b;
 
   --tooltip-bg:     #ffffff;
-  --grain-opacity:  0.025;
+  --grain-opacity:  0.02;
   --button-text:    #ffffff;
-  --body-glow-1:    #fef3c722;
-  --body-glow-2:    #fed7aa22;
-  --topbar-bg:      #f0e8d5;
-  --accent-card-glow: #fef3c7;
-  --hero-glow: #fef3c7;
+  --body-glow-1:    #dbeafe22;
+  --body-glow-2:    #bfdbfe22;
+  --topbar-bg:      #eef2f7;
+  --accent-card-glow: #dbeafe;
+  --hero-glow: #dbeafe;
   --hero-text-shadow: none;
 }
 
@@ -322,18 +329,13 @@ main {
 .hero-value .unit {
   font-family: var(--font-mono);
   font-weight: 500;
-  /* Bumped from 24px → 48px (≈50% of the 96px main number) so the unit
-     no longer feels lost next to the big number. Bricolage (display) and
-     JetBrains Mono have different visual heights at the same pixel size,
-     so 48px reads a bit smaller than the math suggests — which is the
-     right hierarchy: prominent enough to belong, still subordinate to
-     the number. */
+  /* Size hierarchy: ~50% of the number (96 → 48). The unit and the number
+     belong together semantically (both are about Watts), so they share the
+     same color and full saturation. The size difference alone establishes
+     "the digits are the answer, the unit gives them meaning" without
+     needing a color or opacity gap. Holds in both light and dark themes. */
   font-size: 48px;
-  /* Match the number's color but dim it slightly so the eye still lands
-     on the digits first. Works the same in dark and light themes since
-     --accent is theme-aware (bright amber in dark, deeper orange in light). */
   color: var(--accent);
-  opacity: 0.55;
   text-shadow: none;
   letter-spacing: 0;
 }
@@ -625,13 +627,11 @@ main {
   cursor: not-allowed;
 }
 
-/* Apply to both: the original .day-picker-input and flatpickr's altInput
-   (which it generates as the visible input when altInput: true). The alt
-   input is a sibling of the original input with class .flatpickr-alt-input
-   in older versions, or inherits the original's classes in newer ones. */
-.day-picker-input,
-.day-picker-input ~ .flatpickr-alt-input,
-input.day-picker-input + input {
+/* v1.4.1+: the visible day-picker element is a <button> we control directly
+   (no more flatpickr altInput in the middle), which sidesteps an iOS Safari
+   repaint quirk where input.value updates didn't reliably show. The
+   hidden <input> is bound to flatpickr internally for calendar logic. */
+button.day-picker-input {
   background: var(--bg-card-2);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -641,20 +641,36 @@ input.day-picker-input + input {
   border-radius: 6px;
   cursor: pointer;
   min-width: 180px;
+  min-height: 28px;
   text-align: center;
   letter-spacing: 0.02em;
+  /* Match a generic readonly text input as closely as possible */
+  appearance: none;
+  -webkit-appearance: none;
+  line-height: 1.2;
 }
-.day-picker-input:hover,
-.day-picker-input ~ .flatpickr-alt-input:hover,
-input.day-picker-input + input:hover {
+button.day-picker-input:hover {
   border-color: var(--border-bright);
   background: var(--bg-card);
 }
-.day-picker-input:focus,
-.day-picker-input ~ .flatpickr-alt-input:focus,
-input.day-picker-input + input:focus {
+button.day-picker-input:focus-visible {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+/* Hidden flatpickr-bound input — kept in the DOM so flatpickr can read/write
+   the internal Y-m-d value, but absolutely positioned off-screen so it
+   never paints. We do NOT use display:none because that breaks flatpickr's
+   positioning math for the popup. */
+.day-picker-hidden-input {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .day-today-btn {
@@ -830,13 +846,11 @@ input.day-picker-input + input:focus {
 }
 
 /* Secondary subtitle line — used for the grid-mix details on the CO2 card.
-   Slightly dimmer than the primary sub so the eye still reads top-to-bottom
-   in the right hierarchy. Hidden when empty (no live data) via :empty. */
-.lifetime-sub-secondary {
-  font-size: 10px;
-  opacity: 0.75;
-  letter-spacing: 0.02em;
-}
+   Visually identical to .lifetime-sub above because the two lines belong
+   together (both are live-grid context for the value above). The earlier
+   v1.4.0 implementation dimmed this line; v1.4.1 keeps it on the same
+   weight per user feedback. Empty content collapses via :empty so we
+   don't waste vertical space in static mode. */
 .lifetime-sub-secondary:empty {
   display: none;
 }
