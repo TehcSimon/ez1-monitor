@@ -472,49 +472,67 @@ class Database:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
-    async def get_lifetime_co2_g(self) -> Optional[float]:
-        """Sum of CO2 emissions (in grams) that would have been emitted by
-        the grid for the energy this inverter produced. Calculated from
-        the per-measurement values to be historically accurate — older
-        measurements use the CO2 factor that was active at their time.
+    async def get_lifetime_co2_split(self) -> dict:
+        """Returns the breakdown of lifetime energy production into a part
+        that has live carbon-intensity data attached, and a part that
+        doesn't. The caller combines them with the static fallback factor
+        for the unmeasured portion.
 
-        Returns None if no measurements have a recorded CO2 factor (the
-        caller can then fall back to total_kwh * static_factor).
+        Why this split is needed: when a container has been running since
+        before v1.4.0, the early measurements have NULL co2_g_per_kwh
+        because the column didn't exist. Plain "SUM only where co2 IS NOT
+        NULL" would lose those kWh entirely from the lifetime CO2 estimate,
+        making it look comically low ("0.1 kg" while the inverter has
+        produced 7 kWh). With the split, the caller can do:
+
+            unmeasured_kwh = total_kwh - measured_kwh
+            total_co2_g    = measured_co2_g + unmeasured_kwh * static_factor
+
+        Over time the unmeasured portion shrinks to zero as live data
+        accumulates, so the result naturally migrates from "static
+        guess" to "fully accurate" without any backfill.
+
+        The measured part uses per-day energy weighting (same as
+        recompute_month_aggregate) so high-production days correctly
+        dominate the calculation.
         """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            # We weight each measurement's CO2 factor by its power output,
-            # then integrate using the measurement interval. Since the
-            # interval can vary (adaptive polling), we approximate with
-            # the energy delta from the per-day MAX, scaled by the
-            # production-weighted CO2 average for that day.
-            #
-            # Concretely, per day:
-            #   day_kwh         = MAX(e1+e2)
-            #   day_avg_co2     = SUM(co2 * power) / SUM(power)
-            #   day_co2_g       = day_kwh * day_avg_co2
-            # And lifetime = SUM(day_co2_g) over all days that have CO2 data.
             cur = await db.execute(
                 """WITH days AS (
                        SELECT
                            date(timestamp, 'unixepoch', 'localtime') AS day,
-                           MAX(COALESCE(e1, 0) + COALESCE(e2, 0)) AS day_kwh,
+                           MAX(COALESCE(e1, 0) + COALESCE(e2, 0))    AS day_kwh,
                            SUM(co2_g_per_kwh * (COALESCE(p1, 0) + COALESCE(p2, 0)))
                                AS weighted_sum,
-                           SUM(COALESCE(p1, 0) + COALESCE(p2, 0)) AS power_sum
+                           SUM(COALESCE(p1, 0) + COALESCE(p2, 0))    AS power_sum
                        FROM measurements
                        WHERE online = 1
                          AND co2_g_per_kwh IS NOT NULL
                          AND (COALESCE(p1, 0) + COALESCE(p2, 0)) > 0
                        GROUP BY day
                    )
-                   SELECT COALESCE(SUM(
-                       day_kwh * (weighted_sum / power_sum)
-                   ), 0) AS lifetime_co2_g
+                   SELECT
+                       COALESCE(SUM(day_kwh), 0) AS measured_kwh,
+                       COALESCE(SUM(
+                           day_kwh * (weighted_sum / power_sum)
+                       ), 0) AS measured_co2_g
                    FROM days
                    WHERE power_sum > 0"""
             )
             row = await cur.fetchone()
-            if not row or not row["lifetime_co2_g"]:
-                return None
-            return float(row["lifetime_co2_g"])
+            return {
+                "measured_kwh":   float(row["measured_kwh"] or 0),
+                "measured_co2_g": float(row["measured_co2_g"] or 0),
+            }
+
+    async def get_lifetime_co2_g(self) -> Optional[float]:
+        """Legacy wrapper kept for tests / external callers. Returns just
+        the measured portion's CO2 in grams, or None when there are no
+        measured rows yet. Most callers should use get_lifetime_co2_split()
+        and the static-fallback combination in main.py instead.
+        """
+        split = await self.get_lifetime_co2_split()
+        if split["measured_kwh"] <= 0:
+            return None
+        return split["measured_co2_g"]

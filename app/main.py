@@ -459,18 +459,18 @@ async def get_stats():
 
     total_kwh = await db.get_total_energy()
 
-    # CO2 saved: when per-measurement CO2 factors are available (from
-    # Electricity Maps polling), use them for a historically accurate value.
-    # Each measurement was stamped with the grid intensity at its time, so
-    # a sunny midday with low-CO2 grid gets correctly weighted vs. a cloudy
-    # evening with coal-heavy grid.
-    # Falls back to total_kwh × static factor if no live data was ever
-    # collected (e.g. token never configured, fresh install).
-    lifetime_co2_g = await db.get_lifetime_co2_g()
-    if lifetime_co2_g is not None and lifetime_co2_g > 0:
-        co2_kg = lifetime_co2_g / 1000.0
-    else:
-        co2_kg = total_kwh * CO2_KG_PER_KWH
+    # CO2 saved: hybrid calculation that combines historically-accurate
+    # per-measurement live values with a static-factor fallback for the
+    # portion of lifetime energy that predates the live integration (or
+    # came in during API outages). Over time the "measured" share grows
+    # and the "unmeasured" share shrinks, so the total naturally migrates
+    # from "single static guess" to "fully accurate".
+    co2_split = await db.get_lifetime_co2_split()
+    measured_kwh = co2_split["measured_kwh"]
+    measured_co2_kg = co2_split["measured_co2_g"] / 1000.0
+    unmeasured_kwh = max(0.0, total_kwh - measured_kwh)
+    unmeasured_co2_kg = unmeasured_kwh * CO2_KG_PER_KWH
+    co2_kg = measured_co2_kg + unmeasured_co2_kg
 
     money_saved = total_kwh * PRICE_PER_KWH
     peak_w_today = await db.get_peak_today()
