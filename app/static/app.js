@@ -53,6 +53,11 @@ const fmt = {
   time:  ts => new Date(ts * 1000).toLocaleTimeString(state.locale, {
     hour: "2-digit", minute: "2-digit", second: "2-digit"
   }),
+  // HH:MM only — used for the CO2 card subtitle where seconds add noise
+  // without any useful info (the CO2 source updates hourly anyway).
+  timeShort: ts => new Date(ts * 1000).toLocaleTimeString(state.locale, {
+    hour: "2-digit", minute: "2-digit"
+  }),
   money: v => new Intl.NumberFormat(state.locale, {
     style: "currency",
     currency: state.currency,
@@ -309,7 +314,7 @@ function renderCarbonSubtitles() {
   const zone = c.country_code || c.configured_zone || "—";
 
   if (c.source === "live") {
-    const time = c.datetime ? fmt.time(Math.floor(new Date(c.datetime).getTime() / 1000)) : "";
+    const time = c.datetime ? fmt.timeShort(Math.floor(new Date(c.datetime).getTime() / 1000)) : "";
     sub1.textContent = window.i18n.t(state.lang, "lifetime.co2Live", {
       zone, g, time,
     });
@@ -408,29 +413,71 @@ function renderCompare(elementId, current, previous) {
 
 
 // --- Day picker -------------------------------------------------------
+//
+// Architecture note (changed in v1.4.1):
+//
+// We previously used flatpickr's altInput: true feature, which generates a
+// second visible <input> alongside the hidden real one. On iOS Safari this
+// had a recurring quirk where setting input.value via JS didn't reliably
+// paint inside flex/grid containers — the date would appear blank for up
+// to 10 seconds until something else triggered a repaint.
+//
+// v1.4.1 takes full control: the visible element is now a <button> we
+// render textContent into directly, and flatpickr binds to a hidden
+// off-screen <input> for its internal Y-m-d state. Buttons repaint
+// reliably on every browser, so the date appears instantly on every
+// switch.
 
 function getDayPickerFormat() {
   // Three-tier format depending on viewport width, gracefully degrading
   // from fully spelled-out names on desktop to compact abbreviations on
-  // phones. The mid-tier (tablet/phablet) keeps the month spelled out
-  // (which is what makes the date feel "real") but drops the full
-  // weekday name to save horizontal space.
+  // phones.
   const w = window.innerWidth || document.documentElement.clientWidth || 1200;
   if (state.lang === "de") {
     if (w <= 640)  return "D, d. M Y";   // "Fr, 05. Jun 2026"   — mobile
     if (w <= 1024) return "D, d. F Y";   // "Fr, 05. Juni 2026"  — tablet
     return "l, d. F Y";                  // "Freitag, 05. Juni 2026" — desktop
   }
-  if (w <= 640)  return "D, M j, Y";     // "Fri, Jun 5, 2026"
-  if (w <= 1024) return "D, F j, Y";     // "Fri, June 5, 2026"
-  return "l, F j, Y";                    // "Friday, June 5, 2026"
+  if (w <= 640)  return "D, M j, Y";
+  if (w <= 1024) return "D, F j, Y";
+  return "l, F j, Y";
+}
+
+function renderDayPickerDisplay(date) {
+  // Single source of truth for what's shown in the visible button.
+  // Called whenever the date changes (programmatically or via picker).
+  const btn = document.getElementById("day-picker-display");
+  if (!btn) return;
+  const target = date || new Date();
+  let text;
+  try {
+    // If flatpickr is loaded use its localized formatter — otherwise fall
+    // back to the browser's locale-aware toLocaleDateString.
+    if (typeof flatpickr !== "undefined" && flatpickr.formatDate) {
+      const fmt = getDayPickerFormat();
+      const locale = (dayPicker && dayPicker.l10n)
+        ? dayPicker.l10n
+        : flatpickr.l10ns.default;
+      text = flatpickr.formatDate(target, fmt, locale);
+    } else {
+      text = target.toLocaleDateString(state.locale, {
+        weekday: "short", day: "2-digit", month: "short", year: "numeric"
+      });
+    }
+  } catch (e) {
+    text = target.toLocaleDateString(state.locale);
+  }
+  // textContent paints reliably on iOS Safari (unlike input.value)
+  btn.textContent = text;
+  btn.setAttribute("aria-label", text);
 }
 
 function ensureDayPicker() {
   if (typeof flatpickr === "undefined") return;
 
   const input = document.getElementById("day-picker-input");
-  if (!input) return;
+  const displayBtn = document.getElementById("day-picker-display");
+  if (!input || !displayBtn) return;
 
   if (dayPicker) {
     dayPicker.destroy();
@@ -446,52 +493,52 @@ function ensureDayPicker() {
     ? flatpickr.l10ns.de
     : "default";
 
+  // No altInput — we render the display ourselves into displayBtn. The
+  // bound input is hidden via CSS but still in the DOM so flatpickr can
+  // position its popup relative to it.
   dayPicker = flatpickr(input, {
     locale: fpLocale,
     dateFormat: "Y-m-d",
-    altInput: true,
-    altFormat: getDayPickerFormat(),
+    altInput: false,
+    clickOpens: false,             // we open via displayBtn click
     maxDate: today,
     minDate: earliest,
     defaultDate: state.viewedDay || today,
+    // Position the popup near the display button instead of the hidden input
+    positionElement: displayBtn,
     onChange: function (selectedDates) {
       if (!selectedDates.length) return;
       const picked = selectedDates[0];
       setViewedDay(isToday(picked) ? null : picked);
     },
   });
+
+  // Render the initial display
+  renderDayPickerDisplay(state.viewedDay || today);
+
+  // Re-bind the open-on-click handler. Using onclick (not addEventListener)
+  // ensures we don't pile up listeners across multiple ensureDayPicker()
+  // calls (e.g. on language change).
+  displayBtn.onclick = (e) => {
+    e.preventDefault();
+    if (dayPicker) dayPicker.open();
+  };
 }
 
 function applyResponsiveDayFormat() {
-  // Lightweight format switch on resize/orientation change — much cheaper
-  // than destroying and rebuilding the entire flatpickr instance. We just
-  // update the altFormat config and rewrite altInput.value manually.
-  if (!dayPicker || !dayPicker.config) return;
-  const newFormat = getDayPickerFormat();
-  if (dayPicker.config.altFormat === newFormat) return;  // no change
-
-  dayPicker.set("altFormat", newFormat);
-  // flatpickr's set() updates the config but doesn't always redraw altInput.
-  // Force it:
-  if (dayPicker.altInput) {
-    const target = state.viewedDay || new Date();
-    try {
-      dayPicker.altInput.value = flatpickr.formatDate(target, newFormat, dayPicker.l10n);
-    } catch (e) {
-      dayPicker.altInput.value = target.toLocaleDateString(state.locale);
-    }
-  }
+  // On viewport resize, just re-render the display text with the new
+  // format. No flatpickr config change needed — getDayPickerFormat() is
+  // re-evaluated on every renderDayPickerDisplay() call.
+  renderDayPickerDisplay(state.viewedDay);
 }
 
-// Debounced resize handler: switch format only, don't rebuild
 let _dayPickerResizeTimer = null;
 window.addEventListener("resize", () => {
   if (_dayPickerResizeTimer) clearTimeout(_dayPickerResizeTimer);
   _dayPickerResizeTimer = setTimeout(applyResponsiveDayFormat, 200);
 });
-// Also react to orientation changes on mobile (fires before resize on iOS)
 window.addEventListener("orientationchange", () => {
-  setTimeout(applyResponsiveDayFormat, 300);  // wait for viewport to settle
+  setTimeout(applyResponsiveDayFormat, 300);
 });
 
 function updateDayPickerLabels() {
@@ -534,55 +581,15 @@ function setViewedDay(date) {
   // date: null = today (live), Date = historical
   state.viewedDay = date;
 
-  // Update picker UI
+  // Update picker internal state (silently — no onChange trigger)
   if (dayPicker) {
     const target = date || new Date();
-    dayPicker.setDate(target, false);  // don't trigger onChange
-    // Explicitly sync the altInput — flatpickr's setDate(d, false) sets the
-    // internal value but does NOT always redraw the visible altInput in
-    // v4.6.13. Setting altInput.value manually guarantees the user sees
-    // the new date immediately, with no 10-second delay until next poll.
-    if (dayPicker.altInput && dayPicker.config) {
-      try {
-        const formatted = flatpickr.formatDate(
-          target,
-          dayPicker.config.altFormat,
-          dayPicker.l10n
-        );
-        dayPicker.altInput.value = formatted;
-
-        // iOS Safari quirk: setting input.value via JS does not always
-        // trigger a repaint of text inputs that are positioned inside
-        // a flex/grid container, especially right after the field was
-        // empty. Three things together coax the browser to paint:
-        //
-        //   1) Force a synchronous reflow by reading offsetHeight (a
-        //      well-known web-perf trick — JavaScript blocks until the
-        //      browser has computed layout, which forces it to commit
-        //      pending DOM mutations including the new value).
-        //   2) Dispatch a synthetic 'input' event so any listeners (and
-        //      iOS's own UI-update machinery) are notified.
-        //   3) Schedule a second value-set in the next animation frame
-        //      as a safety net — if the first one was somehow lost in
-        //      a transition or event-queue race, this catches it.
-        //
-        // The combination is overkill on desktop browsers, but cheap.
-        // Net effect: snappy date updates on iOS Safari mobile.
-        void dayPicker.altInput.offsetHeight;
-        dayPicker.altInput.dispatchEvent(new Event("input", { bubbles: true }));
-        requestAnimationFrame(() => {
-          if (dayPicker && dayPicker.altInput &&
-              dayPicker.altInput.value !== formatted) {
-            dayPicker.altInput.value = formatted;
-          }
-        });
-      } catch (e) {
-        // Defensive — if formatDate fails for any reason, fall back to a
-        // simple toLocaleDateString rather than leaving the field blank.
-        dayPicker.altInput.value = target.toLocaleDateString(state.locale);
-      }
-    }
+    dayPicker.setDate(target, false);
   }
+
+  // Render the visible display. With the v1.4.1 custom-button architecture
+  // this is a simple textContent write — no iOS Safari quirks possible.
+  renderDayPickerDisplay(date);
 
   updateDayPickerButtons();
 

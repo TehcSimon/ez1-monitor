@@ -7,16 +7,16 @@
 
   <!-- Favicons (multi-size for various browser contexts) -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.4.0" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.4.0" />
-  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.4.0" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.4.1" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.4.1" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.4.1" />
 
   <!-- Apple home-screen icons. When the user adds the page to their iOS
        home screen, iOS picks the closest size match. The 180px one is the
        modern standard, 167 is for iPad Pro, 152 for older iPads. -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.4.0" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.4.0" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.4.0" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.4.1" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.4.1" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.4.1" />
 
   <!-- iOS standalone-mode tweaks. When the user "Add to Home Screen"s the
        site and opens it from there, iOS strips its browser chrome. The
@@ -40,7 +40,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
   <!-- Own styles (cache-busted) -->
-  <link rel="stylesheet" href="/static/style.css?v=1.4.0" />
+  <link rel="stylesheet" href="/static/style.css?v=1.4.1" />
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -52,7 +52,7 @@
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/de.js"></script>
 
   <!-- Own scripts (cache-busted) -->
-  <script src="/static/i18n.js?v=1.4.0"></script>
+  <script src="/static/i18n.js?v=1.4.1"></script>
 </head>
 <body>
 <div class="grain"></div>
@@ -133,7 +133,14 @@
       <h2 data-i18n="chart.todayTitle">Today's Curve</h2>
       <div class="day-picker">
         <button class="day-nav-btn" id="day-prev" title="" aria-label="">‹</button>
-        <input type="text" class="day-picker-input" id="day-picker-input" readonly />
+        <!-- Visible custom display element. We render the date text into
+             this button directly via JS, bypassing flatpickr's altInput
+             which has a known iOS Safari quirk where input.value updates
+             don't reliably repaint inside flex/grid containers. A button
+             with textContent repaints reliably on every browser. The
+             hidden input below is what flatpickr binds to internally. -->
+        <button class="day-picker-input" id="day-picker-display" type="button" aria-label=""></button>
+        <input type="text" id="day-picker-input" class="day-picker-hidden-input" readonly tabindex="-1" aria-hidden="true" />
         <button class="day-nav-btn" id="day-next" title="" aria-label="">›</button>
         <button class="day-today-btn" id="day-today" data-i18n="chart.todayButton">Today</button>
       </div>
@@ -303,6 +310,6 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
-<script src="/static/app.js?v=1.4.0"></script>
+<script src="/static/app.js?v=1.4.1"></script>
 </body>
 </html>
