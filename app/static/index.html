@@ -133,15 +133,20 @@
       <h2 data-i18n="chart.todayTitle">Today's Curve</h2>
       <div class="day-picker">
         <button class="day-nav-btn" id="day-prev" title="" aria-label="">‹</button>
-        <!-- Visible custom display element. We render the date text into
-             this button directly via JS, bypassing flatpickr's altInput
-             which has a known iOS Safari quirk where input.value updates
-             don't reliably repaint inside flex/grid containers. A button
-             with textContent repaints reliably on every browser. The
-             hidden input below is what flatpickr binds to internally. -->
-        <button class="day-picker-input" id="day-picker-display" type="button" aria-label=""></button>
+        <!-- Date label is a non-interactive span. Picker opens via the
+             calendar icon button to its right. The hidden input below is
+             still flatpickr's anchor so its popup positions correctly. -->
+        <span class="day-picker-label" id="day-picker-display" aria-live="polite"></span>
         <input type="text" id="day-picker-input" class="day-picker-hidden-input" readonly tabindex="-1" aria-hidden="true" />
         <button class="day-nav-btn" id="day-next" title="" aria-label="">›</button>
+        <button class="day-nav-btn day-cal-btn" id="day-cal" title="" aria-label="">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="3.5" width="12" height="11" rx="1.5"></rect>
+            <line x1="2" y1="6.5" x2="14" y2="6.5"></line>
+            <line x1="5" y1="2" x2="5" y2="5"></line>
+            <line x1="11" y1="2" x2="11" y2="5"></line>
+          </svg>
+        </button>
         <button class="day-today-btn" id="day-today" data-i18n="chart.todayButton">Today</button>
       </div>
     </div>
@@ -220,7 +225,7 @@
           <span class="stat-compare" id="stat-same-month-ly-compare"></span>
         </span>
         <div class="stat-sub-yoy-total" id="stat-same-month-ly-total-row">
-          <span data-i18n="stats.fullMonth">full month</span>: <span id="stat-same-month-ly-total">—</span> kWh
+          <span id="stat-same-month-ly-total-label">—</span>: <span id="stat-same-month-ly-total">—</span> kWh
         </div>
       </div>
     </div>

@@ -627,11 +627,10 @@ main {
   cursor: not-allowed;
 }
 
-/* v1.4.1+: the visible day-picker element is a <button> we control directly
-   (no more flatpickr altInput in the middle), which sidesteps an iOS Safari
-   repaint quirk where input.value updates didn't reliably show. The
-   hidden <input> is bound to flatpickr internally for calendar logic. */
-button.day-picker-input {
+/* v1.4.2+: the visible date display is a non-interactive <span>. Opening the
+   calendar is now the explicit job of the calendar-icon button (.day-cal-btn).
+   The hidden <input> remains flatpickr's anchor for popup positioning. */
+.day-picker-label {
   background: var(--bg-card-2);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -639,26 +638,17 @@ button.day-picker-input {
   font-size: 11px;
   padding: 6px 10px;
   border-radius: 6px;
-  cursor: pointer;
   min-width: 180px;
   min-height: 28px;
   text-align: center;
   letter-spacing: 0.02em;
-  /* Match a generic readonly text input as closely as possible */
-  appearance: none;
-  -webkit-appearance: none;
-  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  box-sizing: border-box;
 }
-button.day-picker-input:hover {
-  border-color: var(--border-bright);
-  background: var(--bg-card);
-}
-button.day-picker-input:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-glow);
-}
-/* Hidden flatpickr-bound input — kept in the DOM so flatpickr can read/write
+  /* Hidden flatpickr-bound input — kept in the DOM so flatpickr can read/write
    the internal Y-m-d value, but absolutely positioned off-screen so it
    never paints. We do NOT use display:none because that breaks flatpickr's
    positioning math for the popup. */
@@ -671,6 +661,12 @@ button.day-picker-input:focus-visible {
   overflow: hidden;
   pointer-events: none;
   opacity: 0;
+}
+
+/* Calendar-icon button — same visual treatment as the prev/next arrows,
+   distinguished only by its SVG glyph. Inherits all .day-nav-btn styling. */
+.day-cal-btn svg {
+  display: block;
 }
 
 .day-today-btn {
@@ -1055,7 +1051,7 @@ html[data-theme="light"] .info-tooltip-content {
   /* Day picker: touch-friendly buttons, narrower input */
   .day-picker { gap: 4px; flex-wrap: wrap; }
   .day-nav-btn { width: 36px; height: 36px; font-size: 18px; }
-  .day-picker-input { min-width: 140px; padding: 8px; font-size: 11px; }
+  .day-picker-label { min-width: 140px; padding: 8px; font-size: 11px; }
   .day-today-btn { padding: 8px 10px; }
 
   /* Charts shorter on small screens */
@@ -1107,5 +1103,5 @@ html[data-theme="light"] .info-tooltip-content {
     width: 100%;
     justify-content: space-between;
   }
-  .day-picker-input { flex: 1; min-width: 0; }
+  .day-picker-label { flex: 1; min-width: 0; }
 }
