@@ -43,6 +43,11 @@ let dayPicker = null;  // flatpickr instance
 const fmt = {
   power: v => (v == null ? "—" : Math.round(Number(v)).toString()),
   kwh:   v => (v == null ? "—" : Number(v).toFixed(2)),
+  // Like kwh, but shows "—" for zero values too. Used for comparison fields
+  // (yesterday, last week, etc.) where 0 means "no data in that period",
+  // not "produced 0 kWh". Pairs with renderCompare()'s pill-hiding logic
+  // for the same condition.
+  kwhOrDash: v => (v == null || Number(v) === 0 ? "—" : Number(v).toFixed(2)),
   pct:   v => (v == null ? "—" : Math.round(Number(v)).toString()),
   date:  ts => new Date(ts * 1000).toLocaleDateString(state.locale, {
     weekday: "long", day: "2-digit", month: "long", year: "numeric"
@@ -353,37 +358,39 @@ async function loadStats() {
     const s = await res.json();
 
     document.getElementById("stat-today").textContent      = fmt.kwh(s.today_kwh);
-    document.getElementById("stat-yesterday-until-now").textContent = fmt.kwh(s.yesterday_until_now_kwh);
-    document.getElementById("stat-yesterday-full").textContent      = fmt.kwh(s.yesterday_full_kwh);
+    document.getElementById("stat-yesterday-until-now").textContent = fmt.kwhOrDash(s.yesterday_until_now_kwh);
+    document.getElementById("stat-yesterday-full").textContent      = fmt.kwhOrDash(s.yesterday_full_kwh);
     renderCompare("stat-today-compare", s.today_kwh, s.yesterday_until_now_kwh);
 
     document.getElementById("stat-week").textContent = fmt.kwh(s.this_week_kwh);
-    document.getElementById("stat-last-week-until-now").textContent = fmt.kwh(s.last_week_until_now_kwh);
-    document.getElementById("stat-last-week-full").textContent      = fmt.kwh(s.last_week_full_kwh);
+    document.getElementById("stat-last-week-until-now").textContent = fmt.kwhOrDash(s.last_week_until_now_kwh);
+    document.getElementById("stat-last-week-full").textContent      = fmt.kwhOrDash(s.last_week_full_kwh);
     renderCompare("stat-week-compare", s.this_week_kwh, s.last_week_until_now_kwh);
 
     document.getElementById("stat-month").textContent = fmt.kwh(s.this_month_kwh);
-    document.getElementById("stat-last-month-until-progress").textContent = fmt.kwh(s.last_month_until_progress_kwh);
-    document.getElementById("stat-last-month-full").textContent           = fmt.kwh(s.last_month_full_kwh);
+    document.getElementById("stat-last-month-until-progress").textContent = fmt.kwhOrDash(s.last_month_until_progress_kwh);
+    document.getElementById("stat-last-month-full").textContent           = fmt.kwhOrDash(s.last_month_full_kwh);
     renderCompare("stat-month-compare", s.this_month_kwh, s.last_month_until_progress_kwh);
 
-    document.getElementById("stat-same-month-ly").textContent       = fmt.kwh(s.same_month_last_year_kwh);
-    document.getElementById("stat-same-month-ly-total").textContent = fmt.kwh(s.same_month_last_year_total_kwh);
-    document.getElementById("stat-same-month-ly-label").textContent = fmt.monthYear(s.same_month_last_year_iso);
+    document.getElementById("stat-same-month-ly").textContent       = fmt.kwhOrDash(s.same_month_last_year_kwh);
+    document.getElementById("stat-same-month-ly-total").textContent = fmt.kwhOrDash(s.same_month_last_year_total_kwh);
+    // Build both YoY labels with the month name inlined ("Vergleichszeitraum
+    // Juni 2025" / "Juni 2025 gesamt") so the structure mirrors the rows
+    // above it ("Vergleichszeitraum letzter Monat" / "letzter Monat gesamt").
+    const lyMonthLabel = fmt.monthYear(s.same_month_last_year_iso);
+    document.getElementById("stat-same-month-ly-label").textContent =
+      window.i18n.t(state.lang, "stats.sameMonthLyStichtag", { month: lyMonthLabel });
+    document.getElementById("stat-same-month-ly-total-label").textContent =
+      window.i18n.t(state.lang, "stats.sameMonthLyTotal", { month: lyMonthLabel });
     renderCompare("stat-same-month-ly-compare", s.this_month_kwh, s.same_month_last_year_kwh);
-    const totalRow = document.getElementById("stat-same-month-ly-total-row");
-    if (totalRow) {
-      totalRow.style.display = (s.same_month_last_year_total_kwh > 0) ? "" : "none";
-    }
+    // v1.4.2: YoY "full month" row stays visible at all times for visual
+    // consistency with the other stat cards. Empty values are shown as "—".
 
     document.getElementById("stat-year").textContent = fmt.kwh(s.this_year_kwh);
-    document.getElementById("stat-last-year-ytd").textContent = fmt.kwh(s.last_year_ytd_kwh);
-    document.getElementById("stat-last-year-full").textContent = fmt.kwh(s.last_year_full_kwh);
-    // Hide the "last year total" anchor row if we have no full-year data yet
-    const lyFullRow = document.getElementById("stat-last-year-full-row");
-    if (lyFullRow) {
-      lyFullRow.style.display = (s.last_year_full_kwh > 0) ? "" : "none";
-    }
+    document.getElementById("stat-last-year-ytd").textContent = fmt.kwhOrDash(s.last_year_ytd_kwh);
+    document.getElementById("stat-last-year-full").textContent = fmt.kwhOrDash(s.last_year_full_kwh);
+    // v1.4.2: "last year total" row stays visible at all times for visual
+    // consistency with the other stat cards. Empty values are shown as "—".
     renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
 
     document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
@@ -444,10 +451,11 @@ function getDayPickerFormat() {
 }
 
 function renderDayPickerDisplay(date) {
-  // Single source of truth for what's shown in the visible button.
-  // Called whenever the date changes (programmatically or via picker).
-  const btn = document.getElementById("day-picker-display");
-  if (!btn) return;
+  // Single source of truth for what's shown in the visible label.
+  // v1.4.2: the target element is a <span> (non-interactive) — opening
+  // the picker is the job of the calendar-icon button next to it.
+  const el = document.getElementById("day-picker-display");
+  if (!el) return;
   const target = date || new Date();
   let text;
   try {
@@ -467,17 +475,18 @@ function renderDayPickerDisplay(date) {
   } catch (e) {
     text = target.toLocaleDateString(state.locale);
   }
-  // textContent paints reliably on iOS Safari (unlike input.value)
-  btn.textContent = text;
-  btn.setAttribute("aria-label", text);
+  // textContent paints reliably on iOS Safari (unlike input.value).
+  // The span carries aria-live="polite" so screen readers announce changes.
+  el.textContent = text;
 }
 
 function ensureDayPicker() {
   if (typeof flatpickr === "undefined") return;
 
   const input = document.getElementById("day-picker-input");
-  const displayBtn = document.getElementById("day-picker-display");
-  if (!input || !displayBtn) return;
+  const labelEl = document.getElementById("day-picker-display");
+  const calBtn = document.getElementById("day-cal");
+  if (!input || !labelEl || !calBtn) return;
 
   if (dayPicker) {
     dayPicker.destroy();
@@ -493,19 +502,20 @@ function ensureDayPicker() {
     ? flatpickr.l10ns.de
     : "default";
 
-  // No altInput — we render the display ourselves into displayBtn. The
+  // No altInput — we render the display ourselves into labelEl. The
   // bound input is hidden via CSS but still in the DOM so flatpickr can
   // position its popup relative to it.
   dayPicker = flatpickr(input, {
     locale: fpLocale,
     dateFormat: "Y-m-d",
     altInput: false,
-    clickOpens: false,             // we open via displayBtn click
+    clickOpens: false,             // we open via the calendar-icon button
     maxDate: today,
     minDate: earliest,
     defaultDate: state.viewedDay || today,
-    // Position the popup near the display button instead of the hidden input
-    positionElement: displayBtn,
+    // Anchor the popup to the visible date label so it appears under
+    // the date text, not under the hidden input.
+    positionElement: labelEl,
     onChange: function (selectedDates) {
       if (!selectedDates.length) return;
       const picked = selectedDates[0];
@@ -516,10 +526,10 @@ function ensureDayPicker() {
   // Render the initial display
   renderDayPickerDisplay(state.viewedDay || today);
 
-  // Re-bind the open-on-click handler. Using onclick (not addEventListener)
-  // ensures we don't pile up listeners across multiple ensureDayPicker()
-  // calls (e.g. on language change).
-  displayBtn.onclick = (e) => {
+  // Open-on-click handler lives on the calendar-icon button. Using onclick
+  // (not addEventListener) ensures we don't pile up listeners across
+  // repeated ensureDayPicker() calls (e.g. on language change).
+  calBtn.onclick = (e) => {
     e.preventDefault();
     if (dayPicker) dayPicker.open();
   };
@@ -544,6 +554,7 @@ window.addEventListener("orientationchange", () => {
 function updateDayPickerLabels() {
   const prevBtn = document.getElementById("day-prev");
   const nextBtn = document.getElementById("day-next");
+  const calBtn  = document.getElementById("day-cal");
   if (prevBtn) {
     const label = window.i18n.t(state.lang, "chart.previousDay");
     prevBtn.title = label;
@@ -553,6 +564,11 @@ function updateDayPickerLabels() {
     const label = window.i18n.t(state.lang, "chart.nextDay");
     nextBtn.title = label;
     nextBtn.setAttribute("aria-label", label);
+  }
+  if (calBtn) {
+    const label = window.i18n.t(state.lang, "chart.openCalendar");
+    calBtn.title = label;
+    calBtn.setAttribute("aria-label", label);
   }
 }
 
