@@ -510,6 +510,11 @@ function ensureDayPicker() {
     dateFormat: "Y-m-d",
     altInput: false,
     clickOpens: false,             // we open via the calendar-icon button
+    // Force flatpickr's own UI on touch devices too. Default behavior is
+    // to defer to the native iOS date picker, which here would anchor to
+    // our off-screen hidden input and end up unreachable. Our own popup
+    // anchors to the visible label and works identically on every platform.
+    disableMobile: true,
     maxDate: today,
     minDate: earliest,
     defaultDate: state.viewedDay || today,

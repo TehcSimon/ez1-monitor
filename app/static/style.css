@@ -661,6 +661,10 @@ main {
   overflow: hidden;
   pointer-events: none;
   opacity: 0;
+  /* iOS Safari auto-zooms when focusing an input whose font-size is below
+     16px. With disableMobile:true in flatpickr we shouldn't trigger focus
+     here at all, but keep this as belt-and-suspenders defense. */
+  font-size: 16px;
 }
 
 /* Calendar-icon button — same visual treatment as the prev/next arrows,
