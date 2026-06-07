@@ -10,11 +10,15 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import (
+    CollectorRegistry, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST,
+)
 
 from .database import Database
 from .poller import Poller
+from .co2 import CarbonState, resolve_current, poll_loop
 from . import __version__
 
 logging.basicConfig(
@@ -97,8 +101,6 @@ db = Database(DB_PATH)
 # Carbon-intensity state and resolver. Used by both the poller (stamps each
 # measurement with the active factor) and the /api/live endpoint (reports
 # the current factor and its provenance to the UI).
-from .co2 import CarbonState, resolve_current, poll_loop  # noqa: E402
-
 carbon_state = CarbonState(
     token=ELECTRICITY_MAPS_TOKEN,
     static_g_per_kwh=CO2_KG_PER_KWH * 1000.0,  # env is kg, internal is g
@@ -347,9 +349,10 @@ async def get_history(
         monthly = await db.get_monthly_totals(12)
         return {"range": "year", "granularity": "monthly", "months": monthly}
 
+    used_date: str | None = None
+
     if range == "day":
         # Optional ?date=YYYY-MM-DD for historical day lookups
-        used_date = None
         if date:
             try:
                 target_date = datetime.strptime(date, "%Y-%m-%d").date()
@@ -388,7 +391,7 @@ async def get_history(
         "range": range,
         "granularity": "daily" if range == "year" else "auto",
         "bucket_seconds": bucket,
-        "date": used_date if range == "day" else None,
+        "date": used_date,
         "points": points,
     }
 
@@ -411,9 +414,7 @@ async def get_stats():
     # Stichtag (same-progress) reference points
     yesterday_until_now = now - timedelta(days=1)
     last_week_until_now = now - timedelta(days=7)
-    last_month_until_progress = _shift_year(
-        last_month_start, 0
-    ) + (now - this_month_start)
+    last_month_until_progress = last_month_start + (now - this_month_start)
     # Edge case: last month may have fewer days than current progress
     last_month_end = _last_day_of_month(last_month_start)
     if last_month_until_progress > last_month_end:
@@ -528,11 +529,6 @@ async def get_aggregates(
 
 
 # ---------------------------- Prometheus --------------------------------
-
-from prometheus_client import (
-    CollectorRegistry, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST,
-)
-from fastapi.responses import Response
 
 # Use a custom registry so we don't pollute the default global one
 # (which would inherit Python's process metrics — irrelevant here).

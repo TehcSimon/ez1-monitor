@@ -120,9 +120,10 @@ class Poller:
         and return the next sleep interval."""
         if not self._offline_marker_written:
             try:
-                # Offline marker: no power data, but we still stamp the CO2
-                # factor in case the next online poll happens later — keeps
-                # the time-series consistent.
+                # Offline marker: no power data, and we leave co2_g_per_kwh
+                # unset because there's no production to attribute a factor
+                # to. The energy-weighted CO2 averages skip NULL rows anyway,
+                # so this keeps the lifetime calculation honest.
                 await self.db.insert_measurement(
                     ts, None, None, None, None, None, None,
                     online=False, co2_g_per_kwh=None,
