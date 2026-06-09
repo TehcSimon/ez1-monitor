@@ -204,9 +204,14 @@ class Database:
                     (start_ts, end_ts),
                 )
             else:
+                # bucket_seconds is bound as a parameter rather than
+                # interpolated into the SQL string. It's an internal int
+                # so injection isn't a real concern, but parameterized
+                # binding is the correct pattern and lets SQLite cache
+                # the prepared statement across different bucket sizes.
                 cur = await db.execute(
-                    f"""SELECT
-                          (timestamp / {bucket_seconds}) * {bucket_seconds} AS bucket_ts,
+                    """SELECT
+                          (timestamp / ?) * ? AS bucket_ts,
                           AVG(p1) AS p1,
                           AVG(p2) AS p2,
                           MAX(e1) AS e1,
@@ -218,7 +223,7 @@ class Database:
                        WHERE timestamp BETWEEN ? AND ?
                        GROUP BY bucket_ts
                        ORDER BY bucket_ts ASC""",
-                    (start_ts, end_ts),
+                    (bucket_seconds, bucket_seconds, start_ts, end_ts),
                 )
             rows = await cur.fetchall()
             if bucket_seconds > 0:
