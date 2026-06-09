@@ -53,7 +53,7 @@ const TRANSLATIONS = {
       lastMonthFull: "letzter Monat gesamt",
       lastYearYtd: "Vergleichszeitraum Vorjahr",
       lastYearFull: "Vorjahr gesamt",
-      sameMonthLyStichtag: "Vergleichszeitraum {month}",
+      sameMonthLySamePeriod: "Vergleichszeitraum {month}",
       sameMonthLyTotal: "{month} gesamt",
       fullMonth: "gesamt",
       infoTodayTitle: "Wie wird verglichen?",
@@ -67,7 +67,7 @@ const TRANSLATIONS = {
       sinceStart: "seit Inbetriebnahme",
       co2Avoided: "CO₂ gespart",
       co2BasedOn: "basierend auf {g} g/kWh",
-      // New CO2 source variants (v1.4.0)
+      // CO2 source variants
       co2Live: "Live ({zone}) · {g} g/kWh · {time} Uhr",
       co2Stale: "Letzter Wert ({zone}) · {g} g/kWh · vor {hours} h",
       co2Avg: "Mittelwert ({zone}) · {g} g/kWh · seit {count} Polls",
@@ -138,7 +138,7 @@ const TRANSLATIONS = {
       lastMonthFull: "last month total",
       lastYearYtd: "same period last year",
       lastYearFull: "last year total",
-      sameMonthLyStichtag: "same period {month}",
+      sameMonthLySamePeriod: "same period {month}",
       sameMonthLyTotal: "{month} total",
       fullMonth: "full month",
       infoTodayTitle: "How is this compared?",
@@ -152,7 +152,7 @@ const TRANSLATIONS = {
       sinceStart: "since commissioning",
       co2Avoided: "CO₂ Avoided",
       co2BasedOn: "based on {g} g/kWh",
-      // New CO2 source variants (v1.4.0)
+      // CO2 source variants
       co2Live: "Live ({zone}) · {g} g/kWh · {time}",
       co2Stale: "Last value ({zone}) · {g} g/kWh · {hours} h ago",
       co2Avg: "Average ({zone}) · {g} g/kWh · over {count} polls",

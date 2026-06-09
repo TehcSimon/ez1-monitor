@@ -4,7 +4,7 @@
 
 A lean, self-hosted monitoring dashboard for the **APsystems EZ1-M** microinverter.
 Polls the local API, stores all measurements in SQLite, and serves a web UI
-with live data, historical charts, stichtag and year-over-year comparisons,
+with live data, historical charts, same-period and year-over-year comparisons,
 and lifetime statistics.
 
 No cloud, no account, no telemetry. Localized for English and German.
@@ -19,7 +19,7 @@ No cloud, no account, no telemetry. Localized for English and German.
 - **Today's intraday curve** with a day picker for browsing any past day
   within the retention window (arrow navigation, calendar icon, or
   drill-down from the history chart)
-- **Stichtag (same-progress) comparisons** on all four time-range cards
+- **Same-period (calendar-aligned) comparisons** on all four time-range cards
   (Today / Week / Month / Year), plus year-over-year on the month card
 - **History chart**: Week / Month / Year (with daily↔monthly toggle) and
   Multi-year — the latter is served from long-term aggregate tables that
@@ -236,7 +236,7 @@ For integrations and scripts:
 | `GET /api/history?range=day&date=YYYY-MM-DD` | Specific day's intraday curve |
 | `GET /api/history?range=year&granularity=monthly` | Year view aggregated by month |
 | `GET /api/history?range=multiyear&granularity=monthly\|yearly` | All years |
-| `GET /api/stats` | Aggregated statistics with stichtag and YoY comparisons |
+| `GET /api/stats` | Aggregated statistics with same-period and YoY comparisons |
 | `GET /api/aggregates` | Long-term yearly aggregates (survives retention) |
 | `GET /api/aggregates?year=YYYY` | Monthly aggregates for a specific year |
 | `GET /metrics` | Prometheus-format metrics |
@@ -273,6 +273,13 @@ read-while-write). The Unraid appdata-backup plugin handles this
 automatically.
 
 ## Upgrading
+
+### From v1.4.x to v1.5.x
+
+No manual steps and no database migration. v1.5 is an internal cleanup
+release — backend query consolidation, language-detection caching, and
+the first round of unit tests. Behavior, API, and UI are unchanged from
+v1.4.3.
 
 ### From v1.3.x to v1.4.x
 
@@ -319,8 +326,20 @@ docker build --platform linux/amd64 -t ez1-monitor:local .
 docker run --rm -p 8080:8080 -e INVERTER_IP=<your-ip> ez1-monitor:local
 ```
 
-The GitHub Actions workflow builds multi-arch images (`linux/amd64`,
-`linux/arm64`) and pushes them to GHCR on every push to `main`.
+The GitHub Actions workflow runs the test suite and builds multi-arch
+images (`linux/amd64`, `linux/arm64`) on every push to `main`, pushing
+the result to GHCR.
+
+### Tests
+
+The date-math helpers in `app/date_helpers.py` have a unit-test suite
+covering leap years, month-end boundaries, and century-year edge cases.
+Run them locally with:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## License
 

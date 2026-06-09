@@ -228,9 +228,9 @@ async function loadLive() {
         `${deviceId} · max ${state.maxPowerW} W`;
     }
 
-    // Carbon block (v1.4.0): live grid intensity from Electricity Maps or
-    // fallback to static. Stored on state so updateDynamicLabels() can
-    // render the CO2 card subtitles with full provenance.
+    // Carbon block: live grid intensity from Electricity Maps or fallback
+    // to static. Stored on state so updateDynamicLabels() can render the
+    // CO2 card subtitles with full provenance.
     state.carbon = data.carbon || null;
     updateDynamicLabels();
 
@@ -306,7 +306,7 @@ function renderCarbonSubtitles() {
 
   const c = state.carbon;
   // No carbon block yet (very first request before /api/live resolved) →
-  // fall back to the v1.3.x behavior so the UI never shows "—"
+  // fall back to the static-factor display so the UI never shows "—"
   if (!c) {
     sub1.textContent = window.i18n.t(state.lang, "lifetime.co2BasedOn", {
       g: Math.round((state.co2KgPerKwh || 0.38) * 1000),
@@ -374,23 +374,23 @@ async function loadStats() {
 
     document.getElementById("stat-same-month-ly").textContent       = fmt.kwhOrDash(s.same_month_last_year_kwh);
     document.getElementById("stat-same-month-ly-total").textContent = fmt.kwhOrDash(s.same_month_last_year_total_kwh);
-    // Build both YoY labels with the month name inlined ("Vergleichszeitraum
-    // Juni 2025" / "Juni 2025 gesamt") so the structure mirrors the rows
-    // above it ("Vergleichszeitraum letzter Monat" / "letzter Monat gesamt").
+    // Build both YoY labels with the month name inlined ("same period
+    // June 2025" / "June 2025 total") so the structure mirrors the rows
+    // above it ("same period last month" / "last month total").
     const lyMonthLabel = fmt.monthYear(s.same_month_last_year_iso);
     document.getElementById("stat-same-month-ly-label").textContent =
-      window.i18n.t(state.lang, "stats.sameMonthLyStichtag", { month: lyMonthLabel });
+      window.i18n.t(state.lang, "stats.sameMonthLySamePeriod", { month: lyMonthLabel });
     document.getElementById("stat-same-month-ly-total-label").textContent =
       window.i18n.t(state.lang, "stats.sameMonthLyTotal", { month: lyMonthLabel });
     renderCompare("stat-same-month-ly-compare", s.this_month_kwh, s.same_month_last_year_kwh);
-    // v1.4.2: YoY "full month" row stays visible at all times for visual
-    // consistency with the other stat cards. Empty values are shown as "—".
+    // The YoY "full month" row stays visible at all times for visual
+    // consistency with the other stat cards. Empty values show as "—".
 
     document.getElementById("stat-year").textContent = fmt.kwh(s.this_year_kwh);
     document.getElementById("stat-last-year-ytd").textContent = fmt.kwhOrDash(s.last_year_ytd_kwh);
     document.getElementById("stat-last-year-full").textContent = fmt.kwhOrDash(s.last_year_full_kwh);
-    // v1.4.2: "last year total" row stays visible at all times for visual
-    // consistency with the other stat cards. Empty values are shown as "—".
+    // The "last year total" row stays visible at all times for visual
+    // consistency with the other stat cards. Empty values show as "—".
     renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
 
     document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
@@ -421,19 +421,16 @@ function renderCompare(elementId, current, previous) {
 
 // --- Day picker -------------------------------------------------------
 //
-// Architecture note (changed in v1.4.1):
+// The visible date is rendered into a <span> via textContent. flatpickr is
+// bound to a hidden off-screen <input> for its internal Y-m-d state and
+// for popup positioning. Opening the picker is the explicit job of the
+// calendar-icon button next to the date label.
 //
-// We previously used flatpickr's altInput: true feature, which generates a
-// second visible <input> alongside the hidden real one. On iOS Safari this
-// had a recurring quirk where setting input.value via JS didn't reliably
-// paint inside flex/grid containers — the date would appear blank for up
-// to 10 seconds until something else triggered a repaint.
-//
-// v1.4.1 takes full control: the visible element is now a <button> we
-// render textContent into directly, and flatpickr binds to a hidden
-// off-screen <input> for its internal Y-m-d state. Buttons repaint
-// reliably on every browser, so the date appears instantly on every
-// switch.
+// Why not flatpickr's altInput feature? altInput renders into a visible
+// <input>, and on iOS Safari setting input.value via JS doesn't reliably
+// repaint inside flex/grid containers — the date can appear blank until
+// something else triggers a repaint. textContent on a <span> or <button>
+// repaints reliably on every browser.
 
 function getDayPickerFormat() {
   // Three-tier format depending on viewport width, gracefully degrading
@@ -452,8 +449,8 @@ function getDayPickerFormat() {
 
 function renderDayPickerDisplay(date) {
   // Single source of truth for what's shown in the visible label.
-  // v1.4.2: the target element is a <span> (non-interactive) — opening
-  // the picker is the job of the calendar-icon button next to it.
+  // The target element is a <span> (non-interactive) — opening the
+  // picker is the job of the calendar-icon button next to it.
   const el = document.getElementById("day-picker-display");
   if (!el) return;
   const target = date || new Date();
@@ -608,8 +605,8 @@ function setViewedDay(date) {
     dayPicker.setDate(target, false);
   }
 
-  // Render the visible display. With the v1.4.1 custom-button architecture
-  // this is a simple textContent write — no iOS Safari quirks possible.
+  // Render the visible display. With the custom-span architecture this
+  // is a simple textContent write — no iOS Safari repaint quirks possible.
   renderDayPickerDisplay(date);
 
   updateDayPickerButtons();
