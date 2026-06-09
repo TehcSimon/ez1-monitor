@@ -567,7 +567,7 @@ main {
   margin-top: 8px;
 }
 
-/* Anker sub-text (lighter, italic — secondary reference value) */
+/* Anchor sub-text (slightly dimmer — secondary reference value) */
 .stat-sub-anchor {
   opacity: 0.75;
 }
@@ -588,7 +588,6 @@ main {
   font-size: 10px;
   color: var(--text-muted);
   margin-top: 3px;
-  font-style: italic;
 }
 
 /* The month card naturally grows taller because it has more content */
@@ -627,8 +626,8 @@ main {
   cursor: not-allowed;
 }
 
-/* v1.4.2+: the visible date display is a non-interactive <span>. Opening the
-   calendar is now the explicit job of the calendar-icon button (.day-cal-btn).
+/* The visible date display is a non-interactive <span>. Opening the
+   calendar is the explicit job of the calendar-icon button (.day-cal-btn).
    The hidden <input> remains flatpickr's anchor for popup positioning. */
 .day-picker-label {
   background: var(--bg-card-2);
@@ -847,10 +846,8 @@ main {
 
 /* Secondary subtitle line — used for the grid-mix details on the CO2 card.
    Visually identical to .lifetime-sub above because the two lines belong
-   together (both are live-grid context for the value above). The earlier
-   v1.4.0 implementation dimmed this line; v1.4.1 keeps it on the same
-   weight per user feedback. Empty content collapses via :empty so we
-   don't waste vertical space in static mode. */
+   together (both are live-grid context for the value above). Empty content
+   collapses via :empty so we don't waste vertical space in static mode. */
 .lifetime-sub-secondary:empty {
   display: none;
 }
