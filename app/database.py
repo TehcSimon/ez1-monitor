@@ -156,6 +156,42 @@ class Database:
             row = await cur.fetchone()
             return row[0] if row and row[0] is not None else None
 
+    async def get_energy_in_windows(
+        self, windows: list[tuple[int, int]]
+    ) -> list[float]:
+        """Compute the kWh produced in each (start_ts, end_ts) window.
+
+        All windows are queried in a single database connection, which is
+        substantially faster than calling get_range() per window because
+        we avoid the per-call connect overhead. Each window is still its
+        own query — that's fine since the timestamp index makes each
+        range scan O(log N).
+
+        The kWh value is the sum of per-day MAX(e1) + MAX(e2). The e1/e2
+        columns are the daily-resetting energy counters from the
+        inverter, so MAX-per-day yields each day's total production and
+        SUM across days yields the window total.
+        """
+        results: list[float] = []
+        async with aiosqlite.connect(self.db_path) as db:
+            for start_ts, end_ts in windows:
+                cur = await db.execute(
+                    """SELECT
+                          SUM(daily_e1) + SUM(daily_e2) AS kwh
+                       FROM (
+                         SELECT
+                           MAX(e1) AS daily_e1,
+                           MAX(e2) AS daily_e2
+                         FROM measurements
+                         WHERE timestamp BETWEEN ? AND ?
+                         GROUP BY (timestamp / 86400)
+                       )""",
+                    (start_ts, end_ts),
+                )
+                row = await cur.fetchone()
+                results.append(float(row[0] or 0))
+        return results
+
     async def get_range(self, start_ts: int, end_ts: int, bucket_seconds: int = 0) -> list[dict]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
