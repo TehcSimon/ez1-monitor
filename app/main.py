@@ -19,6 +19,7 @@ from prometheus_client import (
 from .database import Database
 from .poller import Poller
 from .co2 import CarbonState, resolve_current, poll_loop
+from .date_helpers import shift_year, last_day_of_month
 from . import __version__
 
 logging.basicConfig(
@@ -47,21 +48,6 @@ def _required_inverter_ip() -> str:
     raise RuntimeError(
         f"INVERTER_IP='{value}' is not a valid IP address or hostname."
     )
-
-
-def _shift_year(dt: datetime, years: int = -1) -> datetime:
-    try:
-        return dt.replace(year=dt.year + years)
-    except ValueError:
-        return dt.replace(year=dt.year + years, day=28)
-
-
-def _last_day_of_month(dt: datetime) -> datetime:
-    if dt.month == 12:
-        next_month = datetime(dt.year + 1, 1, 1)
-    else:
-        next_month = datetime(dt.year, dt.month + 1, 1)
-    return next_month - timedelta(microseconds=1)
 
 
 # --- Configuration (from environment) -------------------------------------
