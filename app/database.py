@@ -478,12 +478,13 @@ class Database:
         doesn't. The caller combines them with the static fallback factor
         for the unmeasured portion.
 
-        Why this split is needed: when a container has been running since
-        before v1.4.0, the early measurements have NULL co2_g_per_kwh
-        because the column didn't exist. Plain "SUM only where co2 IS NOT
-        NULL" would lose those kWh entirely from the lifetime CO2 estimate,
-        making it look comically low ("0.1 kg" while the inverter has
-        produced 7 kWh). With the split, the caller can do:
+        Why this split is needed: containers that ran before the CO2
+        integration was added have early measurements with NULL
+        co2_g_per_kwh because the column didn't exist. Plain "SUM only
+        where co2 IS NOT NULL" would lose those kWh entirely from the
+        lifetime CO2 estimate, making it look comically low ("0.1 kg"
+        while the inverter has produced 7 kWh). With the split, the
+        caller can do:
 
             unmeasured_kwh = total_kwh - measured_kwh
             total_co2_g    = measured_co2_g + unmeasured_kwh * static_factor
