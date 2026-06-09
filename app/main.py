@@ -396,7 +396,7 @@ async def get_history(
 
 @app.get("/api/stats")
 async def get_stats():
-    """Aggregated statistics with stichtag (same-progress) comparisons."""
+    """Aggregated statistics with same-period (calendar-aligned) comparisons."""
     now = datetime.now()
     today_start = datetime.combine(now.date(), time.min)
     yesterday_start = today_start - timedelta(days=1)
@@ -409,52 +409,64 @@ async def get_stats():
         last_month_start = datetime(now.year, now.month - 1, 1)
     this_year_start = datetime(now.year, 1, 1)
 
-    # Stichtag (same-progress) reference points
+    # Same-period (calendar-aligned) reference points
     yesterday_until_now = now - timedelta(days=1)
     last_week_until_now = now - timedelta(days=7)
     last_month_until_progress = last_month_start + (now - this_month_start)
     # Edge case: last month may have fewer days than current progress
-    last_month_end = _last_day_of_month(last_month_start)
+    last_month_end = last_day_of_month(last_month_start)
     if last_month_until_progress > last_month_end:
         last_month_until_progress = last_month_end
 
     # Year-over-year references
-    last_year_start = _shift_year(this_year_start, -1)
-    last_year_until_today = _shift_year(now, -1)
-    same_month_ly_start = _shift_year(this_month_start, -1)
-    same_month_ly_until_today = _shift_year(now, -1)
-    same_month_ly_full_end = _last_day_of_month(same_month_ly_start)
+    last_year_start = shift_year(this_year_start, -1)
+    last_year_until_today = shift_year(now, -1)
+    same_month_ly_start = shift_year(this_month_start, -1)
+    same_month_ly_until_today = shift_year(now, -1)
+    same_month_ly_full_end = last_day_of_month(same_month_ly_start)
 
-    async def energy_between(start: datetime, end: datetime) -> float:
-        daily = await db.get_range(int(start.timestamp()), int(end.timestamp()), 86400)
-        return sum(((d.get("e1") or 0) + (d.get("e2") or 0)) for d in daily)
+    # All energy windows we need for the four stat cards. Batched into a
+    # single DB connection so we pay the connect cost once instead of 14
+    # times. Order is significant — see the unpacking below.
+    windows = [
+        # Today card
+        (today_start, now),                                           # this period
+        (yesterday_start, yesterday_until_now),                       # same period yesterday
+        (yesterday_start, today_start),                               # yesterday total
+        # Week card
+        (this_week_start, now),                                       # this period
+        (last_week_start, last_week_until_now),                       # same period last week
+        (last_week_start, this_week_start),                           # last week total
+        # Month card (with year-over-year sub-block)
+        (this_month_start, now),                                      # this period
+        (last_month_start, last_month_until_progress),                # same period last month
+        (last_month_start, this_month_start),                         # last month total
+        (same_month_ly_start, same_month_ly_until_today),             # YoY same period
+        (same_month_ly_start, same_month_ly_full_end),                # YoY full month
+        # Year card
+        (this_year_start, now),                                       # this period
+        (last_year_start, last_year_until_today),                     # same period last year
+        (last_year_start, this_year_start),                           # last year total
+    ]
+    window_ts = [(int(s.timestamp()), int(e.timestamp())) for s, e in windows]
+    energies = await db.get_energy_in_windows(window_ts)
 
-    # Today / yesterday
-    today_kwh = await energy_between(today_start, now)
-    yesterday_until_now_kwh = await energy_between(yesterday_start, yesterday_until_now)
-    yesterday_full_kwh = await energy_between(yesterday_start, today_start)
-
-    # Week
-    this_week_kwh = await energy_between(this_week_start, now)
-    last_week_until_now_kwh = await energy_between(last_week_start, last_week_until_now)
-    last_week_full_kwh = await energy_between(last_week_start, this_week_start)
-
-    # Month (same calendar progress + full)
-    this_month_kwh = await energy_between(this_month_start, now)
-    last_month_until_progress_kwh = await energy_between(
-        last_month_start, last_month_until_progress
-    )
-    last_month_full_kwh = await energy_between(last_month_start, this_month_start)
-
-    # Year
-    this_year_kwh = await energy_between(this_year_start, now)
-    last_year_ytd_kwh = await energy_between(last_year_start, last_year_until_today)
-    # End of last year = start of this year (exclusive boundary)
-    last_year_full_kwh = await energy_between(last_year_start, this_year_start)
-
-    # Year-over-year on month card
-    same_month_ly_kwh = await energy_between(same_month_ly_start, same_month_ly_until_today)
-    same_month_ly_total_kwh = await energy_between(same_month_ly_start, same_month_ly_full_end)
+    (
+        today_kwh,
+        yesterday_until_now_kwh,
+        yesterday_full_kwh,
+        this_week_kwh,
+        last_week_until_now_kwh,
+        last_week_full_kwh,
+        this_month_kwh,
+        last_month_until_progress_kwh,
+        last_month_full_kwh,
+        same_month_ly_kwh,
+        same_month_ly_total_kwh,
+        this_year_kwh,
+        last_year_ytd_kwh,
+        last_year_full_kwh,
+    ) = energies
 
     total_kwh = await db.get_total_energy()
 
