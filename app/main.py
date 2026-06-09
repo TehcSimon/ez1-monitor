@@ -1,5 +1,6 @@
 """FastAPI app for EZ1 Monitor."""
 import asyncio
+import functools
 import ipaddress
 import logging
 import os
@@ -95,16 +96,27 @@ carbon_state = CarbonState(
 poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db, carbon_state)
 
 
-def detect_language(request: Request) -> str:
-    if DEFAULT_LANG in SUPPORTED_LANGS:
-        return DEFAULT_LANG
-    accept = request.headers.get("accept-language", "")
-    if accept:
-        first = accept.split(",")[0].split(";")[0].strip().lower()
+@functools.lru_cache(maxsize=128)
+def _resolve_language(accept_language: str) -> str:
+    """Map an Accept-Language header value to one of our supported langs.
+
+    Cached because each header value is processed identically every time.
+    The cache key is the raw header string, which is small and bounded
+    (browsers don't send pathological values here). 128 entries comfortably
+    covers any realistic user mix.
+    """
+    if accept_language:
+        first = accept_language.split(",")[0].split(";")[0].strip().lower()
         primary = first.split("-")[0]
         if primary in SUPPORTED_LANGS:
             return primary
     return "en"
+
+
+def detect_language(request: Request) -> str:
+    if DEFAULT_LANG in SUPPORTED_LANGS:
+        return DEFAULT_LANG
+    return _resolve_language(request.headers.get("accept-language", ""))
 
 
 async def compute_status() -> dict:
