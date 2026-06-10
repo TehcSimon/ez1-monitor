@@ -20,6 +20,7 @@ const TRANSLATIONS = {
       energyToday: "kWh heute",
       maxPower: "/ {max} W",
       peakToday: "Spitzenwert heute",
+      avgDuringProduction: "Ø",
     },
     chart: {
       todayTitle: "Tagesverlauf",
@@ -61,6 +62,14 @@ const TRANSLATIONS = {
       infoWeek: "Vergleicht die laufende Woche mit der Vorwoche bis zum gleichen Wochentag und zur gleichen Uhrzeit (Mittwoch 14 Uhr → letzten Mittwoch 14 Uhr).",
       infoMonth: "Vergleicht den aktuellen Monat mit dem gleichen Tag im Vormonat. Wenn der Vormonat kürzer ist (z. B. Februar mit 28 Tagen), wird auf den letzten Tag des Vormonats begrenzt — kurze Monate können dann den Vergleich rechnerisch leicht „benachteiligen“.",
       infoYear: "Vergleicht das laufende Jahr mit dem gleichen Tag im Vorjahr. „Vorjahr gesamt“ zeigt zusätzlich das komplette Vorjahr als Anker.",
+    },
+    hof: {
+      title: "Hall of Fame",
+      bestDay: "Bester Tag",
+      bestWeek: "Beste Woche",
+      bestMonth: "Bester Monat",
+      bestYear: "Bestes Jahr",
+      newBadge: "NEU",
     },
     lifetime: {
       totalGeneration: "Gesamterzeugung",
@@ -105,6 +114,7 @@ const TRANSLATIONS = {
       energyToday: "kWh today",
       maxPower: "/ {max} W",
       peakToday: "Peak today",
+      avgDuringProduction: "Ø",
     },
     chart: {
       todayTitle: "Today's Curve",
@@ -146,6 +156,14 @@ const TRANSLATIONS = {
       infoWeek: "Compares the current week to the previous week up to the same weekday and time (Wednesday 2 PM → last Wednesday 2 PM).",
       infoMonth: "Compares the current month to the same day in the previous month. If the previous month was shorter (e.g. February with 28 days), it's clamped to the last day of that month — short months can put the comparison at a slight numerical disadvantage.",
       infoYear: "Compares the current year to the same day last year. \"last year total\" shows the entire previous year as an anchor.",
+    },
+    hof: {
+      title: "Hall of Fame",
+      bestDay: "Best Day",
+      bestWeek: "Best Week",
+      bestMonth: "Best Month",
+      bestYear: "Best Year",
+      newBadge: "NEW",
     },
     lifetime: {
       totalGeneration: "Total Generation",
