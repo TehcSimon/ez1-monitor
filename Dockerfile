@@ -10,7 +10,7 @@
 # python:3.12-slim by changing both stages' base image.
 
 # --- Builder stage ----------------------------------------------------
-FROM python:3.12-alpine AS builder
+FROM python:3.14-alpine AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
 # --- Runtime stage ----------------------------------------------------
-FROM python:3.12-alpine
+FROM python:3.14-alpine
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
