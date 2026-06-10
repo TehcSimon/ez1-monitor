@@ -15,12 +15,18 @@ No cloud, no account, no telemetry. Localized for English and German.
 
 - Polls the EZ1-M every 60 s via the official `apsystems-ez1` library
 - Persists PV1/PV2 power, today's energy, lifetime energy, online status
-- **Live dashboard**: hero card with total + per-channel power and today's peak
+- **Live dashboard**: hero card with total + per-channel power, today's
+  peak (with timestamp), and average power during today's production window
 - **Today's intraday curve** with a day picker for browsing any past day
   within the retention window (arrow navigation, calendar icon, or
   drill-down from the history chart)
 - **Same-period (calendar-aligned) comparisons** on all four time-range cards
   (Today / Week / Month / Year), plus year-over-year on the month card
+- **Best-day-per-period highlights** on the Week / Month / Year cards
+  (best day this week, best day last week, etc.)
+- **Hall of Fame**: all-time best day / week / month / year with subtle
+  amber glow when records are fresh. Tier-unlocked so a new install
+  doesn't blink permanently while it accumulates comparison data
 - **History chart**: Week / Month / Year (with daily↔monthly toggle) and
   Multi-year — the latter is served from long-term aggregate tables that
   **survive retention pruning**
@@ -237,6 +243,7 @@ For integrations and scripts:
 | `GET /api/history?range=year&granularity=monthly` | Year view aggregated by month |
 | `GET /api/history?range=multiyear&granularity=monthly\|yearly` | All years |
 | `GET /api/stats` | Aggregated statistics with same-period and YoY comparisons |
+| `GET /api/highscores` | All-time best day/week/month/year with animation state |
 | `GET /api/aggregates` | Long-term yearly aggregates (survives retention) |
 | `GET /api/aggregates?year=YYYY` | Monthly aggregates for a specific year |
 | `GET /metrics` | Prometheus-format metrics |
@@ -273,6 +280,15 @@ read-while-write). The Unraid appdata-backup plugin handles this
 automatically.
 
 ## Upgrading
+
+### From v1.5.x to v1.6.x
+
+No manual steps. On first start the container creates the new
+`daily_aggregates` table and backfills it from existing measurements
+(typically 1-3 seconds, up to ~15 seconds on a fully populated 2-year
+install on a Raspberry Pi). Subsequent starts are instant. The new
+table powers the Hall of Fame card and the per-period "best day"
+references on the Week/Month/Year stat cards.
 
 ### From v1.4.x to v1.5.x
 
