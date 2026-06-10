@@ -150,16 +150,29 @@ function refreshChartColors() {
 // --- Custom Chart.js plugin: dashed line + label at year boundary ---
 const yearBoundaryPlugin = {
   id: "yearBoundary",
-  afterDatasetsDraw(chart, args, options) {
+  // Draw BEFORE the bars, so the dashed line appears behind them — even
+  // if the line happens to clip an adjacent bar edge by a pixel, the bar
+  // covers it cleanly instead of the line sitting on top.
+  beforeDatasetsDraw(chart, args, options) {
     const boundaries = options.boundaries || [];
     if (!boundaries.length) return;
     const ctx = chart.ctx;
     const xAxis = chart.scales.x;
+    if (!xAxis) return;
     const top = chart.chartArea.top;
     const bottom = chart.chartArea.bottom;
+    const labels = chart.data.labels || [];
     ctx.save();
     boundaries.forEach(b => {
-      const xPos = xAxis.getPixelForValue(b.label);
+      // Position the line at the midpoint between the last bar of the
+      // previous year and the first bar of the new year — not through the
+      // center of the new year's first bar (which is where
+      // getPixelForValue returns).
+      const idx = labels.indexOf(b.label);
+      if (idx <= 0) return;
+      const xCurr = xAxis.getPixelForValue(b.label);
+      const xPrev = xAxis.getPixelForValue(labels[idx - 1]);
+      const xPos = (xPrev + xCurr) / 2;
       if (xPos < chart.chartArea.left || xPos > chart.chartArea.right) return;
       ctx.strokeStyle = COLORS.accentWarm + "aa";
       ctx.lineWidth = 1;
@@ -395,6 +408,31 @@ async function loadStats() {
 
     document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
 
+    // Peak-today timestamp suffix
+    const peakTimeEl = document.getElementById("hero-peak-time");
+    if (peakTimeEl) {
+      if (s.peak_today_ts) {
+        const t = new Date(s.peak_today_ts * 1000);
+        const hh = String(t.getHours()).padStart(2, "0");
+        const mm = String(t.getMinutes()).padStart(2, "0");
+        peakTimeEl.textContent = `· ${hh}:${mm}`;
+      } else {
+        peakTimeEl.textContent = "";
+      }
+    }
+
+    // Average power during production window
+    const avgEl = document.getElementById("hero-avg-value");
+    const avgRow = document.getElementById("hero-avg-row");
+    if (avgEl && avgRow) {
+      if (s.avg_w_during_production != null) {
+        avgEl.textContent = fmt.power(s.avg_w_during_production);
+        avgRow.style.display = "";
+      } else {
+        avgEl.textContent = "—";
+      }
+    }
+
     document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
     document.getElementById("lifetime-co2").textContent = (s.co2_saved_kg || 0).toFixed(1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
@@ -402,6 +440,79 @@ async function loadStats() {
     console.error("loadStats:", e);
   }
 }
+
+// --- Hall of Fame -----------------------------------------------------
+
+async function loadHighscores() {
+  try {
+    const res = await fetch("/api/highscores");
+    if (!res.ok) return;
+    const data = await res.json();
+    renderHofSlot("hof-day", data.best_day, "day");
+    renderHofSlot("hof-week", data.best_week, "week");
+    renderHofSlot("hof-month", data.best_month, "month");
+    renderHofSlot("hof-year", data.best_year, "year");
+  } catch (e) {
+    console.error("loadHighscores:", e);
+  }
+}
+
+function renderHofSlot(slotId, entry, tier) {
+  const slot = document.getElementById(slotId);
+  if (!slot) return;
+  const dateEl = slot.querySelector(".hof-date");
+  const valueEl = slot.querySelector(".hof-value span");
+
+  if (!entry || !entry.value) {
+    if (dateEl) dateEl.textContent = "—";
+    if (valueEl) valueEl.textContent = "—";
+    slot.classList.remove("hof-fresh", "hof-recent");
+    return;
+  }
+
+  const v = entry.value;
+  let dateLabel = "—";
+  let kwhLabel = "—";
+
+  if (tier === "day" && v.date) {
+    const d = new Date(v.date + "T00:00:00");
+    dateLabel = d.toLocaleDateString(state.locale, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+    kwhLabel = Number(v.total_kwh).toFixed(2);
+  } else if (tier === "week" && v.iso_year && v.iso_week) {
+    // "KW 21 / 2026" (DE) or "Week 21 / 2026" (EN)
+    const weekWord = state.lang === "de" ? "KW" : "Week";
+    dateLabel = `${weekWord} ${v.iso_week} / ${v.iso_year}`;
+    kwhLabel = Number(v.total_kwh).toFixed(2);
+  } else if (tier === "month" && v.year && v.month) {
+    const d = new Date(v.year, v.month - 1, 1);
+    dateLabel = d.toLocaleDateString(state.locale, {
+      month: "long",
+      year: "numeric",
+    });
+    kwhLabel = Number(v.total_kwh).toFixed(1);
+  } else if (tier === "year" && v.year) {
+    dateLabel = String(v.year);
+    kwhLabel = Number(v.total_kwh).toFixed(0);
+  }
+
+  if (dateEl) dateEl.textContent = dateLabel;
+  if (valueEl) valueEl.textContent = kwhLabel;
+
+  // Apply animation state. "fresh" = endless pulse + NEW badge,
+  // "recent" = one-time pulse on page load (10 cycles via CSS),
+  // "settled" / "locked" = no animation.
+  slot.classList.remove("hof-fresh", "hof-recent");
+  if (entry.state === "fresh") {
+    slot.classList.add("hof-fresh");
+  } else if (entry.state === "recent") {
+    slot.classList.add("hof-recent");
+  }
+}
+
 
 function renderCompare(elementId, current, previous) {
   const el = document.getElementById(elementId);
@@ -925,11 +1036,26 @@ function renderDailyHistory(data, isYear) {
         x: {
           ticks: {
             maxRotation: 0,
-            autoSkip: true,
-            callback: function (val) {
-              const lbl = this.getLabelForValue(val);
+            autoSkip: false,  // we skip explicitly in the callback below
+            callback: function (val, idx) {
+              const labels = this.chart.data.labels;
+              const lbl = labels[idx];
+              if (!lbl) return "";
               const d = new Date(lbl);
-              if (isYear) return d.toLocaleDateString(state.locale, { month: "short" });
+              if (isYear) {
+                // 365 days would be a wall of "Jan Jan Jan…" — show only
+                // the first of each month.
+                if (!lbl.endsWith("-01")) return "";
+                return d.toLocaleDateString(state.locale, { month: "short" });
+              }
+              // Non-year ranges: week (7 days) renders all labels; month
+              // (~30 days) thins to roughly 10 labels so they don't
+              // overlap. Stride is computed from the actual label count.
+              const total = labels.length;
+              if (total > 12) {
+                const stride = Math.ceil(total / 10);
+                if (idx % stride !== 0) return "";
+              }
               return d.toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
             },
           },
@@ -996,10 +1122,18 @@ function renderMonthlyHistory(data) {
         x: {
           ticks: {
             maxRotation: 0,
-            autoSkip: false,
-            callback: function (val) {
-              const lbl = this.getLabelForValue(val);
-              return fmt.shortMonthYear(lbl);
+            autoSkip: false,  // we skip explicitly in the callback below
+            callback: function (val, idx) {
+              const labels = this.chart.data.labels;
+              const total = labels.length;
+              // Multi-year view (>15 months): show roughly every 3rd month
+              // so we get ~12 labels max for 36 months. Center the kept
+              // labels on indices that line up with Jan/Apr/Jul/Oct so the
+              // sampling looks intentional, not random.
+              if (total > 15) {
+                if (idx % 3 !== 0) return "";
+              }
+              return fmt.shortMonthYear(labels[idx]);
             },
           },
         },
@@ -1199,6 +1333,8 @@ function scheduleTimers() {
     todayTimer = setInterval(loadTodayChart, histInterval);
   }
   historyTimer = setInterval(() => loadHistoryChart(state.currentRange), histInterval * 5);
+  // Highscores change rarely; refresh on the slower history cadence
+  setInterval(loadHighscores, histInterval * 5);
 }
 
 
@@ -1215,6 +1351,7 @@ async function init() {
 
   await loadLive();
   await loadStats();
+  loadHighscores();
   await loadTodayChart();
   await loadHistoryChart(state.currentRange);
   scheduleTimers();
