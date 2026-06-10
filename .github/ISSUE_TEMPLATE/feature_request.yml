@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest an idea for this project
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Before submitting please skim the existing
+        issues — chances are someone else already wished for the same
+        thing and you can add to that thread instead of opening a new one.
+
+        Keep in mind the project's deliberate scope: a lean, local-only
+        monitoring dashboard. Features that turn this into a smart-home
+        control system or require a cloud account are unlikely to land.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you're trying to solve
+      description: Describe what you'd like to do that's currently hard or impossible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Your idea
+      description: What would the dashboard or container look like with this feature?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Workarounds you've tried, other tools that do this, etc.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+    validations:
+      required: false
