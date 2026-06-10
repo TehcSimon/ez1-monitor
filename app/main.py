@@ -193,21 +193,32 @@ async def backfill_aggregates() -> None:
     for year in sorted(years_touched):
         await db.recompute_year_aggregate(year)
 
+    # Daily aggregates feed the Hall of Fame "best day" highscore. Walks
+    # all measurements once and writes one row per calendar day. On a fresh
+    # install this is a no-op; on an existing install with 2 years of data
+    # it's a few thousand rows and finishes well under a second on a NAS.
+    daily_rows = await db.backfill_daily_aggregates()
+
     logger.info(
-        f"Aggregate backfill: {months_done} months, {len(years_touched)} years updated."
+        f"Aggregate backfill: {months_done} months, {len(years_touched)} years, "
+        f"{daily_rows} days updated."
     )
 
 
 async def aggregate_refresh_task():
-    """Background task that refreshes the current month's aggregate every
-    hour. Past months stay frozen unless the container is restarted and the
-    backfill picks them up again."""
+    """Background task that refreshes the current month's aggregate plus
+    today's daily aggregate every hour. Past months stay frozen unless the
+    container is restarted and the backfill picks them up again."""
     await asyncio.sleep(300)  # let initial poll fill in first
     while True:
         try:
             now = datetime.now()
             await db.recompute_month_aggregate(now.year, now.month)
             await db.recompute_year_aggregate(now.year)
+            # Refresh today's daily aggregate. The full-table backfill is
+            # idempotent and runs in <1s, so we just re-derive everything
+            # rather than maintain a separate one-day codepath.
+            await db.backfill_daily_aggregates()
         except Exception as e:
             logger.warning(f"Aggregate refresh task failed: {e}")
         await asyncio.sleep(3600)
@@ -484,7 +495,17 @@ async def get_stats():
     co2_kg = measured_co2_kg + unmeasured_co2_kg
 
     money_saved = total_kwh * PRICE_PER_KWH
-    peak_w_today = await db.get_peak_today()
+    peak_w_today, peak_today_ts = await db.get_peak_today_with_time()
+
+    # Average power during today's production window. Uses the time between
+    # first and last measurement with >=5 W output today. If there's no
+    # production yet today (early morning, night), both fields are null.
+    first_prod_ts, last_prod_ts = await db.get_today_production_window(threshold_w=5)
+    if first_prod_ts is not None and last_prod_ts is not None and last_prod_ts > first_prod_ts:
+        production_hours = (last_prod_ts - first_prod_ts) / 3600.0
+        avg_w_during_production = (today_kwh * 1000.0) / production_hours if production_hours > 0 else None
+    else:
+        avg_w_during_production = None
 
     return {
         # Today
@@ -515,8 +536,161 @@ async def get_stats():
         # Lifetime + peak
         "total_kwh": round(total_kwh, 3),
         "peak_w_today": round(peak_w_today, 1),
+        "peak_today_ts": peak_today_ts,
+        "avg_w_during_production": (
+            round(avg_w_during_production, 1)
+            if avg_w_during_production is not None else None
+        ),
         "co2_saved_kg": round(co2_kg, 2),
         "money_saved": round(money_saved, 2),
+    }
+
+
+# ---------------------------- Hall of Fame ------------------------------
+
+# Tier-unlock thresholds: how much comparison data we need before we
+# consider a record "earned" enough to highlight. Below these thresholds
+# the Hall of Fame still shows the current best value, but no animation
+# fires — prevents fresh installs from blinking permanently for the first
+# weeks while every new day is technically a record.
+TIER_UNLOCK = {
+    "day":   {"min_days": 14},                  # 2 weeks of comparison
+    "week":  {"min_completed_weeks": 4},        # 4 finished ISO weeks
+    "month": {"min_completed_months": 3},       # 3 finished months
+    "year":  {"min_completed_years": 2},        # 2 finished calendar years
+}
+
+# How many days the record-glow animation stays active. Day = set day + 2
+# following days, etc.
+TIER_GLOW_DAYS = {
+    "day":   2,
+    "week":  3,
+    "month": 5,
+    "year":  7,
+}
+
+
+@app.get("/api/highscores")
+async def get_highscores():
+    """All-time best day, week, month and year for the Hall of Fame card.
+
+    Each tier also carries a `state` field with one of:
+      - "locked"  → not enough data yet, UI shows value but no animation
+      - "fresh"   → record was set today, UI shows endless glow + NEW badge
+      - "recent"  → record set within the tier's glow window, UI shows
+                    one-time glow on page load
+      - "settled" → record is older than the glow window, UI shows ruhe
+    """
+    extent = await db.get_data_extent()
+    today = datetime.now().date()
+
+    best_day = await db.get_best_day()
+    best_week = await db.get_best_week()
+    best_month = await db.get_best_month()
+    best_year = await db.get_best_year()
+
+    def day_state(record_date_iso: str | None, tier: str,
+                  unlocked: bool) -> str:
+        if not unlocked or record_date_iso is None:
+            return "locked"
+        try:
+            record_date = datetime.strptime(record_date_iso, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return "settled"
+        days_since = (today - record_date).days
+        if days_since <= 0:
+            return "fresh"
+        if days_since <= TIER_GLOW_DAYS[tier]:
+            return "recent"
+        return "settled"
+
+    def week_state(week_start_iso: str | None, iso_year: int, iso_week: int,
+                   unlocked: bool) -> str:
+        # The "set date" of a week record is the last day of that ISO week
+        # (Sunday). We blink for tier_glow_days after the Sunday.
+        if not unlocked or week_start_iso is None:
+            return "locked"
+        try:
+            monday = datetime.strptime(week_start_iso, "%Y-%m-%d").date()
+        except ValueError:
+            return "settled"
+        sunday = monday + timedelta(days=6)
+        # Special case: if today is still inside the record week, "fresh"
+        current_iy, current_iw, _ = today.isocalendar()
+        if (current_iy, current_iw) == (iso_year, iso_week):
+            return "fresh"
+        days_since = (today - sunday).days
+        if days_since <= 0:
+            return "fresh"
+        if days_since <= TIER_GLOW_DAYS["week"]:
+            return "recent"
+        return "settled"
+
+    def month_state(year: int, month: int, unlocked: bool) -> str:
+        if not unlocked:
+            return "locked"
+        if (today.year, today.month) == (year, month):
+            return "fresh"
+        # End of that month = day 1 of next month, minus 1
+        if month == 12:
+            next_month = datetime(year + 1, 1, 1).date()
+        else:
+            next_month = datetime(year, month + 1, 1).date()
+        end_of_month = next_month - timedelta(days=1)
+        days_since = (today - end_of_month).days
+        if days_since <= 0:
+            return "fresh"
+        if days_since <= TIER_GLOW_DAYS["month"]:
+            return "recent"
+        return "settled"
+
+    def year_state(year: int, unlocked: bool) -> str:
+        if not unlocked:
+            return "locked"
+        if today.year == year:
+            return "fresh"
+        end_of_year = datetime(year, 12, 31).date()
+        days_since = (today - end_of_year).days
+        if days_since <= 0:
+            return "fresh"
+        if days_since <= TIER_GLOW_DAYS["year"]:
+            return "recent"
+        return "settled"
+
+    day_unlocked = extent["days_with_data"] >= TIER_UNLOCK["day"]["min_days"]
+    week_unlocked = extent["completed_weeks"] >= TIER_UNLOCK["week"]["min_completed_weeks"]
+    month_unlocked = extent["completed_months"] >= TIER_UNLOCK["month"]["min_completed_months"]
+    year_unlocked = extent["completed_years"] >= TIER_UNLOCK["year"]["min_completed_years"]
+
+    return {
+        "best_day": {
+            "value": best_day,
+            "state": day_state(best_day["date"] if best_day else None, "day",
+                               day_unlocked),
+        },
+        "best_week": {
+            "value": best_week,
+            "state": (
+                week_state(best_week["week_start"], best_week["iso_year"],
+                           best_week["iso_week"], week_unlocked)
+                if best_week else "locked"
+            ),
+        },
+        "best_month": {
+            "value": best_month,
+            "state": (
+                month_state(best_month["year"], best_month["month"],
+                            month_unlocked)
+                if best_month else "locked"
+            ),
+        },
+        "best_year": {
+            "value": best_year,
+            "state": (
+                year_state(best_year["year"], year_unlocked)
+                if best_year else "locked"
+            ),
+        },
     }
 
 
