@@ -7,16 +7,16 @@
 
   <!-- Favicons (multi-size for various browser contexts) -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.5.0" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.5.0" />
-  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.5.0" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.4.3" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.4.3" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.4.3" />
 
   <!-- Apple home-screen icons. When the user adds the page to their iOS
        home screen, iOS picks the closest size match. The 180px one is the
        modern standard, 167 is for iPad Pro, 152 for older iPads. -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.5.0" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.5.0" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.5.0" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.4.3" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.4.3" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.4.3" />
 
   <!-- iOS standalone-mode tweaks. When the user "Add to Home Screen"s the
        site and opens it from there, iOS strips its browser chrome. The
@@ -40,7 +40,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
   <!-- Own styles (cache-busted) -->
-  <link rel="stylesheet" href="/static/style.css?v=1.5.0" />
+  <link rel="stylesheet" href="/static/style.css?v=1.4.3" />
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -52,7 +52,7 @@
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/de.js"></script>
 
   <!-- Own scripts (cache-busted) -->
-  <script src="/static/i18n.js?v=1.5.0"></script>
+  <script src="/static/i18n.js?v=1.4.3"></script>
 </head>
 <body>
 <div class="grain"></div>
@@ -107,10 +107,16 @@
           <span id="power-max">/ 800 W</span>
         </div>
       </div>
+      <div class="hero-peak" id="hero-avg-row">
+        <span data-i18n="hero.avgDuringProduction">Ø</span>
+        <span id="hero-avg-value">—</span>
+        <span class="hero-peak-unit">W</span>
+      </div>
       <div class="hero-peak">
         <span data-i18n="hero.peakToday">Peak today</span>:
         <span id="hero-peak-value">—</span>
         <span class="hero-peak-unit">W</span>
+        <span class="hero-peak-time" id="hero-peak-time"></span>
       </div>
     </div>
     <div class="hero-side">
@@ -220,10 +226,9 @@
       <div class="stat-sub"><span data-i18n="stats.lastMonthUntilProgress">same period last month</span>: <span id="stat-last-month-until-progress">—</span> kWh</div>
       <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.lastMonthFull">last month total</span>: <span id="stat-last-month-full">—</span> kWh</div>
       <div class="stat-sub stat-sub-yoy">
-        <span class="stat-value-row">
-          <span><span id="stat-same-month-ly-label">—</span>: <span id="stat-same-month-ly">—</span> kWh</span>
-          <span class="stat-compare" id="stat-same-month-ly-compare"></span>
-        </span>
+        <div class="stat-sub-yoy-line">
+          <span id="stat-same-month-ly-label">—</span>: <span class="stat-sub-yoy-tail"><span id="stat-same-month-ly">—</span> kWh <span class="stat-compare" id="stat-same-month-ly-compare"></span></span>
+        </div>
         <div class="stat-sub-yoy-total">
           <span id="stat-same-month-ly-total-label">—</span>: <span id="stat-same-month-ly-total">—</span> kWh
         </div>
@@ -274,6 +279,45 @@
     </div>
   </section>
 
+  <!-- Hall of Fame -->
+  <section class="hof-section">
+    <div class="card hof-card">
+      <div class="card-header">
+        <h2 data-i18n="hof.title">Hall of Fame</h2>
+      </div>
+      <div class="hof-grid">
+        <div class="hof-slot" id="hof-day">
+          <div class="hof-icon">🥇</div>
+          <div class="hof-period" data-i18n="hof.bestDay">Best Day</div>
+          <div class="hof-date" id="hof-day-date">—</div>
+          <div class="hof-value"><span id="hof-day-value">—</span> kWh</div>
+          <span class="hof-new-badge" data-i18n="hof.newBadge">NEW</span>
+        </div>
+        <div class="hof-slot" id="hof-week">
+          <div class="hof-icon">🥇</div>
+          <div class="hof-period" data-i18n="hof.bestWeek">Best Week</div>
+          <div class="hof-date" id="hof-week-date">—</div>
+          <div class="hof-value"><span id="hof-week-value">—</span> kWh</div>
+          <span class="hof-new-badge" data-i18n="hof.newBadge">NEW</span>
+        </div>
+        <div class="hof-slot" id="hof-month">
+          <div class="hof-icon">🥇</div>
+          <div class="hof-period" data-i18n="hof.bestMonth">Best Month</div>
+          <div class="hof-date" id="hof-month-date">—</div>
+          <div class="hof-value"><span id="hof-month-value">—</span> kWh</div>
+          <span class="hof-new-badge" data-i18n="hof.newBadge">NEW</span>
+        </div>
+        <div class="hof-slot" id="hof-year">
+          <div class="hof-icon">🥇</div>
+          <div class="hof-period" data-i18n="hof.bestYear">Best Year</div>
+          <div class="hof-date" id="hof-year-date">—</div>
+          <div class="hof-value"><span id="hof-year-value">—</span> kWh</div>
+          <span class="hof-new-badge" data-i18n="hof.newBadge">NEW</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Lifetime stats -->
   <section class="lifetime-grid">
     <div class="card lifetime-card accent">
@@ -315,6 +359,6 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
-<script src="/static/app.js?v=1.5.0"></script>
+<script src="/static/app.js?v=1.4.3"></script>
 </body>
 </html>
