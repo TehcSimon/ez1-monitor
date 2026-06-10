@@ -20,6 +20,12 @@ __pycache__
 .venv
 venv
 
+# Tests and dev tooling — not needed in the runtime image
+tests/
+tools/
+pytest.ini
+requirements-dev.txt
+
 # Docs / meta files not needed at runtime
 README.md
 LICENSE
