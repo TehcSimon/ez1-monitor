@@ -1,0 +1,81 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill in as
+        much of the form as you can — the more context, the faster we can
+        figure out what's going on.
+
+  - type: input
+    id: version
+    attributes:
+      label: EZ1 Monitor version
+      description: Visible at the top right of the dashboard, or in your container tag.
+      placeholder: e.g. v1.6.0
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Where are you running the container?
+      placeholder: e.g. Unraid 7.0, Docker Compose on Debian, K3s on Raspberry Pi
+    validations:
+      required: true
+
+  - type: input
+    id: inverter
+    attributes:
+      label: Inverter model and firmware
+      description: From the AP EasyPower app, or the dashboard's about/info area.
+      placeholder: e.g. EZ1-M, firmware EZ1 1.7.x
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can someone else trigger this?
+      placeholder: |
+        1. Open the dashboard
+        2. Switch to the Year card
+        3. Click on …
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Container logs
+      description: Output of `docker logs ez1-monitor` around the time of the issue.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, browser, network setup, anything else relevant.
+    validations:
+      required: false
