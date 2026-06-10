@@ -50,6 +50,17 @@ CREATE TABLE IF NOT EXISTS yearly_aggregates (
     avg_co2_g_per_kwh   REAL,
     last_updated        INTEGER NOT NULL
 );
+
+-- Daily aggregates: one row per calendar day with that day's total energy.
+-- Used for "best day" Hall of Fame highscores so they survive raw-row
+-- retention pruning. Date stored as ISO string (YYYY-MM-DD) for natural
+-- sort and easy display.
+CREATE TABLE IF NOT EXISTS daily_aggregates (
+    date                TEXT PRIMARY KEY,     -- YYYY-MM-DD
+    total_kwh           REAL NOT NULL DEFAULT 0,
+    peak_w              INTEGER NOT NULL DEFAULT 0,
+    last_updated        INTEGER NOT NULL
+);
 """
 
 
@@ -310,6 +321,49 @@ class Database:
             row = await cur.fetchone()
             return row[0] if row and row[0] is not None else 0.0
 
+    async def get_peak_today_with_time(self) -> tuple[float, Optional[int]]:
+        """Return (peak_watts, unix_timestamp_of_peak) for today.
+
+        Used by the hero card to show "Peak today: 612 W at 13:24" instead
+        of just the bare number.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT COALESCE(p1, 0) + COALESCE(p2, 0) AS power, timestamp
+                   FROM measurements
+                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+                     AND online = 1
+                   ORDER BY power DESC, timestamp ASC
+                   LIMIT 1"""
+            )
+            row = await cur.fetchone()
+            if not row or row[0] is None or row[0] == 0:
+                return 0.0, None
+            return float(row[0]), int(row[1])
+
+    async def get_today_production_window(
+        self, threshold_w: int = 5
+    ) -> tuple[Optional[int], Optional[int]]:
+        """Return (first_ts, last_ts) of today's production above threshold.
+
+        Production is anything above threshold_w on (p1+p2). Used to compute
+        the "average during production" metric in the hero card. Returns
+        (None, None) if nothing has been generated today yet.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT MIN(timestamp), MAX(timestamp)
+                   FROM measurements
+                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+                     AND online = 1
+                     AND (COALESCE(p1, 0) + COALESCE(p2, 0)) >= ?""",
+                (threshold_w,),
+            )
+            row = await cur.fetchone()
+            if not row or row[0] is None:
+                return None, None
+            return int(row[0]), int(row[1])
+
     async def delete_old_measurements(self, older_than_days: int) -> int:
         cutoff = int((datetime.now() - timedelta(days=older_than_days)).timestamp())
         async with aiosqlite.connect(self.db_path) as db:
@@ -512,6 +566,221 @@ class Database:
             )
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+
+    # --- Daily aggregates -------------------------------------------------
+    #
+    # These power the Hall of Fame "best day" highscore. Daily totals are
+    # stored permanently — they survive RETENTION_DAYS pruning of raw rows.
+
+    async def upsert_daily_aggregate(
+        self, date_iso: str, total_kwh: float, peak_w: int
+    ) -> None:
+        """Insert or replace a single day's aggregate."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """INSERT OR REPLACE INTO daily_aggregates
+                   (date, total_kwh, peak_w, last_updated)
+                   VALUES (?, ?, ?, strftime('%s','now'))""",
+                (date_iso, total_kwh, peak_w),
+            )
+            await db.commit()
+
+    async def backfill_daily_aggregates(self) -> int:
+        """Populate daily_aggregates from existing measurements.
+
+        Idempotent and synchronous — called once at startup. Walks the
+        measurements table, groups by date, writes one row per day. Days
+        already in daily_aggregates are overwritten with fresh data (cheap
+        and keeps things consistent if the source data ever changed).
+
+        Returns the number of day rows written.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT date(timestamp, 'unixepoch') AS d,
+                          MAX(e1) AS e1, MAX(e2) AS e2,
+                          MAX(p1 + p2) AS peak
+                   FROM measurements
+                   WHERE online = 1
+                   GROUP BY d
+                   ORDER BY d ASC"""
+            )
+            rows = await cur.fetchall()
+            for r in rows:
+                d, e1, e2, peak = r
+                if d is None:
+                    continue
+                total = float((e1 or 0) + (e2 or 0))
+                peak_w = int(peak or 0)
+                await db.execute(
+                    """INSERT OR REPLACE INTO daily_aggregates
+                       (date, total_kwh, peak_w, last_updated)
+                       VALUES (?, ?, ?, strftime('%s','now'))""",
+                    (d, total, peak_w),
+                )
+            await db.commit()
+            return len(rows)
+
+    async def get_best_day(self) -> Optional[dict]:
+        """Return the all-time best day, or None if no data."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT date, total_kwh, peak_w
+                   FROM daily_aggregates
+                   ORDER BY total_kwh DESC, date DESC
+                   LIMIT 1"""
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def get_best_day_in_range(
+        self, start_iso: str, end_iso: str
+    ) -> Optional[dict]:
+        """Return the best day with date in [start_iso, end_iso] (inclusive)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT date, total_kwh, peak_w
+                   FROM daily_aggregates
+                   WHERE date BETWEEN ? AND ?
+                   ORDER BY total_kwh DESC, date DESC
+                   LIMIT 1""",
+                (start_iso, end_iso),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def get_best_week(self) -> Optional[dict]:
+        """Return the all-time best ISO calendar week (Mon-Sun).
+
+        Returns dict with keys: year_week (ISO 'YYYY-Www'), iso_year, iso_week,
+        week_start (Monday ISO date), total_kwh.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # SQLite has %Y/%W but %W treats week 00 as days before first
+            # Monday. We compute ISO-year and ISO-week in Python instead so
+            # the semantics match the rest of the codebase. Pull all days,
+            # group by ISO week locally — cheap, < a few thousand rows.
+            cur = await db.execute(
+                "SELECT date, total_kwh FROM daily_aggregates ORDER BY date ASC"
+            )
+            rows = await cur.fetchall()
+
+        if not rows:
+            return None
+        from datetime import date as date_cls
+        from collections import defaultdict
+        by_week: dict[tuple, float] = defaultdict(float)
+        by_week_start: dict[tuple, str] = {}
+        for r in rows:
+            try:
+                d = date_cls.fromisoformat(r["date"])
+            except ValueError:
+                continue
+            iso_year, iso_week, _ = d.isocalendar()
+            key = (iso_year, iso_week)
+            by_week[key] += float(r["total_kwh"] or 0)
+            # Track the Monday of the week (earliest day in that ISO week)
+            if key not in by_week_start:
+                # Monday of this ISO week
+                jan4 = date_cls(iso_year, 1, 4)
+                week1_monday = jan4 - timedelta(days=jan4.isoweekday() - 1)
+                monday = week1_monday + timedelta(weeks=iso_week - 1)
+                by_week_start[key] = monday.isoformat()
+        if not by_week:
+            return None
+        best_key = max(by_week.keys(), key=lambda k: (by_week[k], k))
+        iso_year, iso_week = best_key
+        return {
+            "iso_year": iso_year,
+            "iso_week": iso_week,
+            "year_week": f"{iso_year}-W{iso_week:02d}",
+            "week_start": by_week_start[best_key],
+            "total_kwh": by_week[best_key],
+        }
+
+    async def get_best_month(self) -> Optional[dict]:
+        """Return the all-time best month from monthly_aggregates."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT year, month, total_kwh
+                   FROM monthly_aggregates
+                   ORDER BY total_kwh DESC, year DESC, month DESC
+                   LIMIT 1"""
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def get_best_year(self) -> Optional[dict]:
+        """Return the all-time best year from yearly_aggregates."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT year, total_kwh
+                   FROM yearly_aggregates
+                   ORDER BY total_kwh DESC, year DESC
+                   LIMIT 1"""
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def get_data_extent(self) -> dict:
+        """Return (first_date, last_date, days_with_data, completed_weeks,
+        completed_months, completed_years) from daily_aggregates.
+
+        Used for tier-unlock logic in the Hall of Fame: we don't show
+        record animations until there's a meaningful amount of comparison
+        data, so a fresh install doesn't blink every day for the first
+        few weeks.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT MIN(date) AS first_date,
+                          MAX(date) AS last_date,
+                          COUNT(*) AS days
+                   FROM daily_aggregates"""
+            )
+            row = await cur.fetchone()
+            first = row["first_date"] if row else None
+            last = row["last_date"] if row else None
+            days = row["days"] if row else 0
+
+            # Distinct completed ISO weeks (excluding the currently-running one)
+            cur2 = await db.execute("SELECT date FROM daily_aggregates")
+            all_dates = await cur2.fetchall()
+
+        from datetime import date as date_cls
+        today = date_cls.today()
+        current_iso = today.isocalendar()
+        completed_weeks: set = set()
+        completed_months: set = set()
+        completed_years: set = set()
+        for r in all_dates:
+            try:
+                d = date_cls.fromisoformat(r["date"])
+            except ValueError:
+                continue
+            iy, iw, _ = d.isocalendar()
+            # Only count weeks/months/years that have ended
+            if (iy, iw) != (current_iso[0], current_iso[1]):
+                completed_weeks.add((iy, iw))
+            if (d.year, d.month) != (today.year, today.month):
+                completed_months.add((d.year, d.month))
+            if d.year != today.year:
+                completed_years.add(d.year)
+
+        return {
+            "first_date": first,
+            "last_date": last,
+            "days_with_data": days,
+            "completed_weeks": len(completed_weeks),
+            "completed_months": len(completed_months),
+            "completed_years": len(completed_years),
+        }
 
     async def get_lifetime_co2_split(self) -> dict:
         """Returns the breakdown of lifetime energy production into a part
