@@ -32,6 +32,12 @@
   --accent-card-glow: #3a2810;   /* warm dark glow inside accent lifetime card */
   --hero-glow: #2a1c0a;          /* radial gradient center inside the hero card */
   --hero-text-shadow: 0 0 40px var(--accent-glow);  /* warm aura behind big numbers */
+  /* Hall of Fame highscore glow — warm amber that pops on dark backgrounds */
+  --hof-glow-soft:   #f59e0b66;
+  --hof-glow-bright: #fbbf24cc;
+  --hof-badge-bg:    #f59e0b;
+  --hof-badge-text:  #1c1207;
+  --hof-title-color: #fbbf24;   /* amber-400 — slot titles in gold */
 }
 
 /* Light theme — applied when user explicitly chose light, OR when the
@@ -72,6 +78,12 @@
     --accent-card-glow: #dbeafe;     /* blue-100 — pale sky on the accent card */
     --hero-glow: #dbeafe;            /* same gentle blue wash in the hero card */
     --hero-text-shadow: none;
+    /* Hall of Fame highscore glow — deeper amber that's visible on white */
+    --hof-glow-soft:   #d9770633;
+    --hof-glow-bright: #b4530988;
+    --hof-badge-bg:    #d97706;
+    --hof-badge-text:  #ffffff;
+    --hof-title-color: #b45309;   /* amber-700 — slot titles in gold */
   }
 }
 
@@ -103,6 +115,11 @@ html[data-theme="light"] {
   --accent-card-glow: #dbeafe;
   --hero-glow: #dbeafe;
   --hero-text-shadow: none;
+  --hof-glow-soft:   #d9770633;
+  --hof-glow-bright: #b4530988;
+  --hof-badge-bg:    #d97706;
+  --hof-badge-text:  #ffffff;
+  --hof-title-color: #b45309;
 }
 
 /* Dark theme override (explicit user choice) — same as :root defaults */
@@ -579,8 +596,21 @@ main {
   border-top: 1px dashed var(--border);
 }
 
-.stat-sub-yoy .stat-value-row .stat-compare {
+/* YoY stichtag row: label can wrap on its own, but the value-unit-pill
+   trio sticks together via white-space: nowrap on the tail span. Without
+   this, the pill (▲ 21%) gets stranded on its own line when the label
+   is long ("Vergleichszeitraum Juni 2025"). */
+.stat-sub-yoy-line {
+  font-family: var(--font-mono);
   font-size: 11px;
+  color: var(--text-muted);
+}
+.stat-sub-yoy-tail {
+  white-space: nowrap;
+}
+.stat-sub-yoy-tail .stat-compare {
+  font-size: 11px;
+  margin-left: 4px;
 }
 
 .stat-sub-yoy-total {
@@ -1105,4 +1135,111 @@ html[data-theme="light"] .info-tooltip-content {
     justify-content: space-between;
   }
   .day-picker-label { flex: 1; min-width: 0; }
+}
+
+/* ------------------------- Hero peak-time suffix --------------------- */
+.hero-peak-time {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.hero-peak-time:empty { display: none; }
+
+/* ------------------------- Hall of Fame ------------------------------ */
+.hof-card {
+  padding: 18px 22px;
+}
+.hof-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.hof-slot {
+  position: relative;
+  text-align: center;
+  padding: 14px 10px;
+  border-radius: 8px;
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  transition: box-shadow 0.3s ease;
+}
+.hof-icon {
+  font-size: 24px;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.hof-period {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hof-title-color);
+  margin-bottom: 6px;
+}
+.hof-date {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.hof-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.hof-new-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--hof-badge-bg);
+  color: var(--hof-badge-text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: none;
+}
+
+/* Slot states — "fresh" (record set today, endless glow + badge),
+   "recent" (within tier window, one pulse on load),
+   "settled" / "locked" → no animation, just the static value. */
+.hof-slot.hof-fresh {
+  animation: hof-glow 2s ease-in-out infinite;
+}
+.hof-slot.hof-fresh .hof-new-badge {
+  display: block;
+}
+.hof-slot.hof-recent {
+  /* 30 cycles × 2 s = 60 s, then box-shadow stays at the keyframe end.
+     Longer than you'd think necessary — without the NEW badge the glow
+     is the only cue and at 20 s it was easy to miss. */
+  animation: hof-glow 2s ease-in-out 30;
+}
+
+@keyframes hof-glow {
+  0%, 100% { box-shadow: 0 0 4px var(--hof-glow-soft); }
+  50%      { box-shadow: 0 0 16px var(--hof-glow-bright); }
+}
+
+/* Respect user motion preferences. Static glow stays so the slot is
+   still visually distinguishable, but it doesn't pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .hof-slot.hof-fresh,
+  .hof-slot.hof-recent {
+    animation: none;
+    box-shadow: 0 0 8px var(--hof-glow-soft);
+  }
+}
+
+/* Responsive: 2x2 on tablet, stacked on phone. */
+@media (max-width: 900px) {
+  .hof-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .hof-grid { grid-template-columns: 1fr; }
 }
