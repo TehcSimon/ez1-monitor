@@ -22,8 +22,6 @@ No cloud, no account, no telemetry. Localized for English and German.
   drill-down from the history chart)
 - **Same-period (calendar-aligned) comparisons** on all four time-range cards
   (Today / Week / Month / Year), plus year-over-year on the month card
-- **Best-day-per-period highlights** on the Week / Month / Year cards
-  (best day this week, best day last week, etc.)
 - **Hall of Fame**: all-time best day / week / month / year with subtle
   amber glow when records are fresh. Tier-unlocked so a new install
   doesn't blink permanently while it accumulates comparison data
@@ -207,17 +205,19 @@ so there's 50× headroom.
 ## Long-term aggregates
 
 Raw measurements are pruned after `RETENTION_DAYS` (default 730 = 2 years),
-but their summaries are kept indefinitely in two tables:
+but their summaries are kept indefinitely in three tables:
 
+- `daily_aggregates`: one row per calendar day with total kWh and peak W
+  — powers the Hall of Fame "best day" highscore
 - `monthly_aggregates`: total kWh, peak W, days with data, energy-weighted
   avg CO₂ factor — per (year, month)
 - `yearly_aggregates`: same fields rolled up per year
 
-These are populated on container start (backfill from existing measurements)
-and kept current by a background task that refreshes the current month's
-aggregate hourly. The History chart's **Multi-year** view reads from them,
-so it shows every year you've collected data for — even after the raw rows
-have been pruned.
+These are populated on container start (backfill from existing
+measurements) and kept current by a background task that refreshes the
+current month's aggregate and today's daily row hourly. The History
+chart's **Multi-year** view and the Hall of Fame card both read from
+them, so they keep working even after the raw rows have been pruned.
 
 ## Themes
 
@@ -287,8 +287,8 @@ No manual steps. On first start the container creates the new
 `daily_aggregates` table and backfills it from existing measurements
 (typically 1-3 seconds, up to ~15 seconds on a fully populated 2-year
 install on a Raspberry Pi). Subsequent starts are instant. The new
-table powers the Hall of Fame card and the per-period "best day"
-references on the Week/Month/Year stat cards.
+table powers the Hall of Fame card, which is the only place all-time
+record information lives.
 
 ### From v1.4.x to v1.5.x
 
