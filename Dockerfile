@@ -33,11 +33,21 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # tzdata: required so the TZ env var maps to real timezone files.
-# curl:   required for the HEALTHCHECK.
-RUN apk add --no-cache tzdata curl
+# No curl — the HEALTHCHECK uses busybox wget, which is part of the
+# Alpine base image (saves ~5 MB of curl + libcurl dependencies).
+RUN apk add --no-cache tzdata
 
 # Copy installed Python packages from builder
 COPY --from=builder /install /usr/local
+
+# Slim the runtime: pip/ensurepip are never used at runtime (the image is
+# immutable; upgrades come as new images), and __pycache__ dirs are dead
+# weight with PYTHONDONTWRITEBYTECODE. Together ~12 MB. Paths are derived
+# via glob instead of hardcoding the Python minor version so Dependabot
+# base-image bumps (3.12 → 3.14 → ...) can't silently break this step.
+RUN find /usr/local/lib -depth -type d \
+         \( -name __pycache__ -o -name 'pip' -o -name 'pip-*' -o -name ensurepip \) \
+         -exec rm -rf {} +
 
 # UID-agnostic non-root user (OpenShift / Kubernetes / Docker compatible).
 # The container is set up to run as ANY UID by ensuring files are owned by
@@ -72,7 +82,7 @@ ENV INVERTER_PORT=8050 \
     LOG_LEVEL=INFO
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+    CMD wget -q -T 5 -O /dev/null http://127.0.0.1:8080/health || exit 1
 
 USER 1000
 
