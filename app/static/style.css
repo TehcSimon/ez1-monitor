@@ -158,15 +158,27 @@ html, body { margin: 0; padding: 0; }
 
 body {
   background-color: var(--bg-base);
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, var(--body-glow-1), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 100%, var(--body-glow-2), transparent);
-  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-feature-settings: 'ss01', 'cv11';
   min-height: 100vh;
   line-height: 1.5;
+}
+
+/* Ambient glow layer. Previously these gradients sat on the body with
+   background-attachment: fixed — which iOS Safari renders unreliably and,
+   on small dark-mode viewports, made the bottom-right glow read as a
+   "sticky shadow" that content scrolled through. A fixed pseudo-element
+   gives the identical desktop look without background-attachment. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, var(--body-glow-1), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%, var(--body-glow-2), transparent);
 }
 
 .grain {
