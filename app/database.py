@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS measurements (
     te1           REAL,
     te2           REAL,
     online        INTEGER,
-    co2_g_per_kwh REAL
+    co2_g_per_kwh REAL,
+    price_per_kwh REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_timestamp ON measurements(timestamp);
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS device_info (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     device_id     TEXT,
     serial_number TEXT,
+    firmware      TEXT,
     min_power     INTEGER,
     max_power     INTEGER,
     last_seen     INTEGER
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS monthly_aggregates (
     peak_w              INTEGER NOT NULL DEFAULT 0,
     days_with_data      INTEGER NOT NULL DEFAULT 0,
     avg_co2_g_per_kwh   REAL,    -- energy-weighted average CO2 factor
+    avg_price_per_kwh   REAL,    -- energy-weighted average electricity price
     last_updated        INTEGER NOT NULL,
     PRIMARY KEY (year, month)
 );
@@ -48,6 +51,7 @@ CREATE TABLE IF NOT EXISTS yearly_aggregates (
     peak_w              INTEGER NOT NULL DEFAULT 0,
     days_with_data      INTEGER NOT NULL DEFAULT 0,
     avg_co2_g_per_kwh   REAL,
+    avg_price_per_kwh   REAL,
     last_updated        INTEGER NOT NULL
 );
 
@@ -72,6 +76,12 @@ MIGRATIONS = [
     "ALTER TABLE measurements        ADD COLUMN co2_g_per_kwh REAL",
     "ALTER TABLE monthly_aggregates  ADD COLUMN avg_co2_g_per_kwh REAL",
     "ALTER TABLE yearly_aggregates   ADD COLUMN avg_co2_g_per_kwh REAL",
+    # v1.6.1: per-measurement electricity price stamping (same pattern as
+    # the CO2 factor) and firmware version in device_info.
+    "ALTER TABLE measurements        ADD COLUMN price_per_kwh REAL",
+    "ALTER TABLE monthly_aggregates  ADD COLUMN avg_price_per_kwh REAL",
+    "ALTER TABLE yearly_aggregates   ADD COLUMN avg_price_per_kwh REAL",
+    "ALTER TABLE device_info         ADD COLUMN firmware TEXT",
 ]
 
 
@@ -102,29 +112,43 @@ class Database:
             await db.commit()
 
     async def insert_measurement(self, timestamp, p1, p2, e1, e2, te1, te2,
-                                 online, co2_g_per_kwh=None):
+                                 online, co2_g_per_kwh=None, price_per_kwh=None):
         """Insert a measurement. co2_g_per_kwh is the CO2 factor that was
         active at the time of measurement (gCO2eq/kWh). May be None when no
         carbon-intensity data source is configured or when the historical
         DB has rows from before the column existed.
+
+        price_per_kwh is the electricity price that was active at the time
+        (configured PRICE_PER_KWH). Stamping it per row keeps the lifetime
+        "money saved" calculation historically accurate across tariff
+        changes — the same pattern as the CO2 factor. May be None for rows
+        from before the column existed.
         """
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT OR REPLACE INTO measurements
-                   (timestamp, p1, p2, e1, e2, te1, te2, online, co2_g_per_kwh)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (timestamp, p1, p2, e1, e2, te1, te2, online,
+                    co2_g_per_kwh, price_per_kwh)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (timestamp, p1, p2, e1, e2, te1, te2,
-                 1 if online else 0, co2_g_per_kwh),
+                 1 if online else 0, co2_g_per_kwh, price_per_kwh),
             )
             await db.commit()
 
-    async def update_device_info(self, device_id, serial_number, min_power, max_power):
+    async def update_device_info(self, device_id, firmware, min_power, max_power):
+        """Upsert the single device_info row.
+
+        device_id is the inverter's ID (effectively its serial number).
+        firmware is the devVer string from the local API. The legacy
+        serial_number column is kept in the schema but no longer written —
+        it used to (incorrectly) hold the firmware version.
+        """
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT OR REPLACE INTO device_info
-                   (id, device_id, serial_number, min_power, max_power, last_seen)
+                   (id, device_id, firmware, min_power, max_power, last_seen)
                    VALUES (1, ?, ?, ?, ?, ?)""",
-                (device_id, serial_number, min_power, max_power, int(datetime.now().timestamp())),
+                (device_id, firmware, min_power, max_power, int(datetime.now().timestamp())),
             )
             await db.commit()
 
@@ -188,7 +212,7 @@ class Database:
             for start_ts, end_ts in windows:
                 cur = await db.execute(
                     """SELECT
-                          SUM(daily_e1) + SUM(daily_e2) AS kwh
+                          COALESCE(SUM(daily_e1), 0) + COALESCE(SUM(daily_e2), 0) AS kwh
                        FROM (
                          SELECT
                            MAX(e1) AS daily_e1,
@@ -435,33 +459,53 @@ class Database:
             peak_w = max((r["day_peak"] or 0) for r in rows) if rows else 0
             days_with_data = sum(1 for r in rows if (r["day_kwh"] or 0) > 0)
 
-            # Energy-weighted CO2 average over all measurements with both a
-            # known CO2 factor and non-zero power. NULL when there's no data.
+            # Energy-weighted CO2 and price averages over all measurements
+            # with a known factor and non-zero power. NULL when there's no
+            # data for the respective factor. The two factors are weighted
+            # independently because their NULL-eras differ (CO2 stamping
+            # started in v1.4, price stamping in v1.6.1).
             cur2 = await db.execute(
                 """SELECT
-                      SUM(co2_g_per_kwh * (COALESCE(p1, 0) + COALESCE(p2, 0))) AS weighted_sum,
-                      SUM(COALESCE(p1, 0) + COALESCE(p2, 0)) AS power_sum
+                      SUM(CASE WHEN co2_g_per_kwh IS NOT NULL
+                           THEN co2_g_per_kwh * (COALESCE(p1, 0) + COALESCE(p2, 0))
+                           END) AS co2_weighted_sum,
+                      SUM(CASE WHEN co2_g_per_kwh IS NOT NULL
+                           THEN COALESCE(p1, 0) + COALESCE(p2, 0)
+                           END) AS co2_power_sum,
+                      SUM(CASE WHEN price_per_kwh IS NOT NULL
+                           THEN price_per_kwh * (COALESCE(p1, 0) + COALESCE(p2, 0))
+                           END) AS price_weighted_sum,
+                      SUM(CASE WHEN price_per_kwh IS NOT NULL
+                           THEN COALESCE(p1, 0) + COALESCE(p2, 0)
+                           END) AS price_power_sum
                    FROM measurements
                    WHERE timestamp >= ? AND timestamp < ?
                      AND online = 1
-                     AND co2_g_per_kwh IS NOT NULL
                      AND (COALESCE(p1, 0) + COALESCE(p2, 0)) > 0""",
                 (start_ts, end_ts),
             )
-            co2_row = await cur2.fetchone()
+            factor_row = await cur2.fetchone()
             avg_co2 = None
-            if co2_row and co2_row["power_sum"] and co2_row["power_sum"] > 0:
-                avg_co2 = round(co2_row["weighted_sum"] / co2_row["power_sum"], 2)
+            avg_price = None
+            if factor_row:
+                if factor_row["co2_power_sum"] and factor_row["co2_power_sum"] > 0:
+                    avg_co2 = round(
+                        factor_row["co2_weighted_sum"] / factor_row["co2_power_sum"], 2
+                    )
+                if factor_row["price_power_sum"] and factor_row["price_power_sum"] > 0:
+                    avg_price = round(
+                        factor_row["price_weighted_sum"] / factor_row["price_power_sum"], 4
+                    )
 
             now_ts = int(datetime.now().timestamp())
 
             await db.execute(
                 """INSERT OR REPLACE INTO monthly_aggregates
                    (year, month, total_kwh, peak_w, days_with_data,
-                    avg_co2_g_per_kwh, last_updated)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    avg_co2_g_per_kwh, avg_price_per_kwh, last_updated)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (year, month, round(total_kwh, 3), int(peak_w),
-                 days_with_data, avg_co2, now_ts),
+                 days_with_data, avg_co2, avg_price, now_ts),
             )
             await db.commit()
 
@@ -472,6 +516,7 @@ class Database:
                 "peak_w": int(peak_w),
                 "days_with_data": days_with_data,
                 "avg_co2_g_per_kwh": avg_co2,
+                "avg_price_per_kwh": avg_price,
             }
 
     async def recompute_year_aggregate(self, year: int) -> dict:
@@ -497,7 +542,15 @@ class Database:
                       COALESCE(SUM(
                           CASE WHEN avg_co2_g_per_kwh IS NOT NULL
                                THEN total_kwh
-                               ELSE 0 END), 0)          AS co2_weight_sum
+                               ELSE 0 END), 0)          AS co2_weight_sum,
+                      COALESCE(SUM(
+                          CASE WHEN avg_price_per_kwh IS NOT NULL
+                               THEN avg_price_per_kwh * total_kwh
+                               ELSE 0 END), 0)          AS weighted_price_sum,
+                      COALESCE(SUM(
+                          CASE WHEN avg_price_per_kwh IS NOT NULL
+                               THEN total_kwh
+                               ELSE 0 END), 0)          AS price_weight_sum
                    FROM monthly_aggregates
                    WHERE year = ?""",
                 (year,),
@@ -510,16 +563,19 @@ class Database:
             avg_co2 = None
             if row and row["co2_weight_sum"] and row["co2_weight_sum"] > 0:
                 avg_co2 = round(row["weighted_co2_sum"] / row["co2_weight_sum"], 2)
+            avg_price = None
+            if row and row["price_weight_sum"] and row["price_weight_sum"] > 0:
+                avg_price = round(row["weighted_price_sum"] / row["price_weight_sum"], 4)
 
             now_ts = int(datetime.now().timestamp())
 
             await db.execute(
                 """INSERT OR REPLACE INTO yearly_aggregates
                    (year, total_kwh, peak_w, days_with_data,
-                    avg_co2_g_per_kwh, last_updated)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                    avg_co2_g_per_kwh, avg_price_per_kwh, last_updated)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (year, round(total_kwh, 3), int(peak_w),
-                 days_with_data, avg_co2, now_ts),
+                 days_with_data, avg_co2, avg_price, now_ts),
             )
             await db.commit()
 
@@ -529,6 +585,7 @@ class Database:
                 "peak_w": int(peak_w),
                 "days_with_data": days_with_data,
                 "avg_co2_g_per_kwh": avg_co2,
+                "avg_price_per_kwh": avg_price,
             }
 
     async def get_monthly_aggregates(self, year: Optional[int] = None) -> list[dict]:
@@ -538,7 +595,7 @@ class Database:
             if year is not None:
                 cur = await db.execute(
                     """SELECT year, month, total_kwh, peak_w, days_with_data,
-                              avg_co2_g_per_kwh
+                              avg_co2_g_per_kwh, avg_price_per_kwh
                        FROM monthly_aggregates
                        WHERE year = ?
                        ORDER BY month ASC""",
@@ -547,7 +604,7 @@ class Database:
             else:
                 cur = await db.execute(
                     """SELECT year, month, total_kwh, peak_w, days_with_data,
-                              avg_co2_g_per_kwh
+                              avg_co2_g_per_kwh, avg_price_per_kwh
                        FROM monthly_aggregates
                        ORDER BY year ASC, month ASC"""
                 )
@@ -560,7 +617,7 @@ class Database:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 """SELECT year, total_kwh, peak_w, days_with_data,
-                          avg_co2_g_per_kwh
+                          avg_co2_g_per_kwh, avg_price_per_kwh
                    FROM yearly_aggregates
                    ORDER BY year ASC"""
             )
@@ -585,25 +642,37 @@ class Database:
             )
             await db.commit()
 
-    async def backfill_daily_aggregates(self) -> int:
+    async def backfill_daily_aggregates(self, since_iso: Optional[str] = None) -> int:
         """Populate daily_aggregates from existing measurements.
 
-        Idempotent and synchronous — called once at startup. Walks the
-        measurements table, groups by date, writes one row per day. Days
-        already in daily_aggregates are overwritten with fresh data (cheap
-        and keeps things consistent if the source data ever changed).
+        Idempotent — called at startup and hourly. Walks the measurements
+        table, groups by LOCAL calendar date (same 'localtime' semantics as
+        every other daily query in this module — using UTC here attributed
+        evening production to the wrong day for timezones west of UTC),
+        and writes one row per day.
+
+        since_iso optionally restricts the rewrite to days >= that ISO date.
+        The caller passes the retention boundary so days whose raw rows have
+        been partially pruned keep their previously stored (complete)
+        aggregate instead of being overwritten with a reduced peak.
 
         Returns the number of day rows written.
         """
+        params: list = []
+        since_clause = ""
+        if since_iso:
+            since_clause = "AND date(timestamp, 'unixepoch', 'localtime') >= ?"
+            params.append(since_iso)
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
-                """SELECT date(timestamp, 'unixepoch') AS d,
+                f"""SELECT date(timestamp, 'unixepoch', 'localtime') AS d,
                           MAX(e1) AS e1, MAX(e2) AS e2,
-                          MAX(p1 + p2) AS peak
+                          MAX(COALESCE(p1, 0) + COALESCE(p2, 0)) AS peak
                    FROM measurements
-                   WHERE online = 1
+                   WHERE online = 1 {since_clause}
                    GROUP BY d
-                   ORDER BY d ASC"""
+                   ORDER BY d ASC""",
+                params,
             )
             rows = await cur.fetchall()
             for r in rows:
@@ -782,68 +851,109 @@ class Database:
             "completed_years": len(completed_years),
         }
 
-    async def get_lifetime_co2_split(self) -> dict:
-        """Returns the breakdown of lifetime energy production into a part
-        that has live carbon-intensity data attached, and a part that
-        doesn't. The caller combines them with the static fallback factor
-        for the unmeasured portion.
+    async def get_lifetime_factor_split(
+        self, current_year: int, current_month: int
+    ) -> dict:
+        """Lifetime energy split for the CO2 and money calculations.
 
-        Why this split is needed: containers that ran before the CO2
-        integration was added have early measurements with NULL
-        co2_g_per_kwh because the column didn't exist. Plain "SUM only
-        where co2 IS NOT NULL" would lose those kWh entirely from the
-        lifetime CO2 estimate, making it look comically low ("0.1 kg"
-        while the inverter has produced 7 kWh). With the split, the
-        caller can do:
+        Returns, independently for each factor (CO2 and price), how many
+        lifetime kWh have a known factor attached and the factor-weighted
+        total over that share:
+
+            {
+              "co2_kwh":   kWh with a known CO2 factor,
+              "co2_g":     grams of CO2 over that share,
+              "price_kwh": kWh with a known price,
+              "price_sum": currency units over that share,
+            }
+
+        The caller combines each share with the static fallback for the
+        unmeasured remainder:
 
             unmeasured_kwh = total_kwh - measured_kwh
-            total_co2_g    = measured_co2_g + unmeasured_kwh * static_factor
+            total          = measured + unmeasured_kwh * static_factor
 
-        Over time the unmeasured portion shrinks to zero as live data
-        accumulates, so the result naturally migrates from "static
-        guess" to "fully accurate" without any backfill.
+        Two sources are merged:
 
-        The measured part uses per-day energy weighting (same as
-        recompute_month_aggregate) so high-production days correctly
-        dominate the calculation.
+        1. monthly_aggregates for every month EXCEPT the current one.
+           These survive RETENTION_DAYS pruning, so accuracy is preserved
+           even after the underlying raw measurements are gone. (The
+           previous implementation read raw measurements only, which made
+           pruned energy silently fall back to the static factor.)
+        2. The current month live from measurements, with the same
+           per-day energy weighting used by recompute_month_aggregate.
+           This keeps today's production reflected immediately instead of
+           waiting for the hourly aggregate refresh.
+
+        Months/rows where a factor is NULL (pre-v1.4 for CO2, pre-v1.6.1
+        for price) contribute to neither share and thus fall back to the
+        static factor — over time both shares grow toward 100%.
         """
+        month_start = datetime(current_year, current_month, 1)
+        month_start_ts = int(month_start.timestamp())
+
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
+
+            # 1) Completed months from the long-term aggregates
             cur = await db.execute(
+                """SELECT
+                      COALESCE(SUM(CASE WHEN avg_co2_g_per_kwh IS NOT NULL
+                                   THEN total_kwh END), 0) AS co2_kwh,
+                      COALESCE(SUM(CASE WHEN avg_co2_g_per_kwh IS NOT NULL
+                                   THEN avg_co2_g_per_kwh * total_kwh END), 0) AS co2_g,
+                      COALESCE(SUM(CASE WHEN avg_price_per_kwh IS NOT NULL
+                                   THEN total_kwh END), 0) AS price_kwh,
+                      COALESCE(SUM(CASE WHEN avg_price_per_kwh IS NOT NULL
+                                   THEN avg_price_per_kwh * total_kwh END), 0) AS price_sum
+                   FROM monthly_aggregates
+                   WHERE NOT (year = ? AND month = ?)""",
+                (current_year, current_month),
+            )
+            agg = await cur.fetchone()
+
+            # 2) Current month live from raw measurements. Per-day energy
+            # weighting: day_kwh × (power-weighted factor of that day).
+            cur2 = await db.execute(
                 """WITH days AS (
                        SELECT
                            date(timestamp, 'unixepoch', 'localtime') AS day,
                            MAX(COALESCE(e1, 0) + COALESCE(e2, 0))    AS day_kwh,
-                           SUM(co2_g_per_kwh * (COALESCE(p1, 0) + COALESCE(p2, 0)))
-                               AS weighted_sum,
-                           SUM(COALESCE(p1, 0) + COALESCE(p2, 0))    AS power_sum
+                           SUM(CASE WHEN co2_g_per_kwh IS NOT NULL
+                                THEN co2_g_per_kwh * (COALESCE(p1, 0) + COALESCE(p2, 0))
+                                END) AS co2_wsum,
+                           SUM(CASE WHEN co2_g_per_kwh IS NOT NULL
+                                THEN COALESCE(p1, 0) + COALESCE(p2, 0)
+                                END) AS co2_psum,
+                           SUM(CASE WHEN price_per_kwh IS NOT NULL
+                                THEN price_per_kwh * (COALESCE(p1, 0) + COALESCE(p2, 0))
+                                END) AS price_wsum,
+                           SUM(CASE WHEN price_per_kwh IS NOT NULL
+                                THEN COALESCE(p1, 0) + COALESCE(p2, 0)
+                                END) AS price_psum
                        FROM measurements
-                       WHERE online = 1
-                         AND co2_g_per_kwh IS NOT NULL
+                       WHERE timestamp >= ?
+                         AND online = 1
                          AND (COALESCE(p1, 0) + COALESCE(p2, 0)) > 0
                        GROUP BY day
                    )
                    SELECT
-                       COALESCE(SUM(day_kwh), 0) AS measured_kwh,
-                       COALESCE(SUM(
-                           day_kwh * (weighted_sum / power_sum)
-                       ), 0) AS measured_co2_g
-                   FROM days
-                   WHERE power_sum > 0"""
+                       COALESCE(SUM(CASE WHEN co2_psum > 0
+                                    THEN day_kwh END), 0) AS co2_kwh,
+                       COALESCE(SUM(CASE WHEN co2_psum > 0
+                                    THEN day_kwh * (co2_wsum / co2_psum) END), 0) AS co2_g,
+                       COALESCE(SUM(CASE WHEN price_psum > 0
+                                    THEN day_kwh END), 0) AS price_kwh,
+                       COALESCE(SUM(CASE WHEN price_psum > 0
+                                    THEN day_kwh * (price_wsum / price_psum) END), 0) AS price_sum
+                   FROM days""",
+                (month_start_ts,),
             )
-            row = await cur.fetchone()
-            return {
-                "measured_kwh":   float(row["measured_kwh"] or 0),
-                "measured_co2_g": float(row["measured_co2_g"] or 0),
-            }
+            live = await cur2.fetchone()
 
-    async def get_lifetime_co2_g(self) -> Optional[float]:
-        """Legacy wrapper kept for tests / external callers. Returns just
-        the measured portion's CO2 in grams, or None when there are no
-        measured rows yet. Most callers should use get_lifetime_co2_split()
-        and the static-fallback combination in main.py instead.
-        """
-        split = await self.get_lifetime_co2_split()
-        if split["measured_kwh"] <= 0:
-            return None
-        return split["measured_co2_g"]
+            return {
+                "co2_kwh":   float(agg["co2_kwh"])   + float(live["co2_kwh"]),
+                "co2_g":     float(agg["co2_g"])     + float(live["co2_g"]),
+                "price_kwh": float(agg["price_kwh"]) + float(live["price_kwh"]),
+                "price_sum": float(agg["price_sum"]) + float(live["price_sum"]),
+            }
