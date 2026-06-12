@@ -37,7 +37,7 @@ const state = {
 };
 
 let todayChart, historyChart;
-let liveTimer, statsTimer, todayTimer, historyTimer;
+let liveTimer, statsTimer, todayTimer, historyTimer, highscoresTimer;
 let dayPicker = null;  // flatpickr instance
 
 const fmt = {
@@ -236,9 +236,10 @@ async function loadLive() {
 
     if (data.device) {
       state.maxPowerW = data.device.max_power || 800;
-      const deviceId = data.device.device_id || data.device.serial_number || "EZ1-M";
+      const deviceId = data.device.device_id || "EZ1-M";
+      const fw = data.device.firmware ? ` · FW ${data.device.firmware}` : "";
       document.getElementById("device-subtitle").textContent =
-        `${deviceId} · max ${state.maxPowerW} W`;
+        `${deviceId}${fw} · max ${state.maxPowerW} W`;
     }
 
     // Carbon block: live grid intensity from Electricity Maps or fallback
@@ -899,6 +900,18 @@ function renderMultiYearMonthly(data) {
   renderMonthlyHistory({ months });
 }
 
+// Width-aware label thinning for bar-chart x axes. Chart.js' built-in
+// autoSkip measures the raw label values, not what our formatting
+// callbacks return, so it can't be used here. Instead we compute how many
+// formatted labels of ~labelPx width fit into the actual chart width and
+// derive a stride. Count-based fallback covers the first layout pass,
+// where chart.width can still be 0.
+function tickStride(chart, total, labelPx) {
+  const width = (chart && chart.width) || 0;
+  const maxLabels = width > 0 ? Math.max(3, Math.floor(width / labelPx)) : 10;
+  return total > maxLabels ? Math.ceil(total / maxLabels) : 1;
+}
+
 function renderYearlyHistory(data) {
   // Shape from API: { years: [{year, total_kwh, ...}, ...] }
   const years = data.years || [];
@@ -1044,18 +1057,20 @@ function renderDailyHistory(data, isYear) {
               const d = new Date(lbl);
               if (isYear) {
                 // 365 days would be a wall of "Jan Jan Jan…" — show only
-                // the first of each month.
+                // the first of each month, and on narrow screens only
+                // every 2nd/3rd month (~34px per short month name).
                 if (!lbl.endsWith("-01")) return "";
+                const monthCount = Math.max(1, Math.round(labels.length / 30));
+                const mStride = tickStride(this.chart, monthCount, 34);
+                if (mStride > 1 && d.getMonth() % mStride !== 0) return "";
                 return d.toLocaleDateString(state.locale, { month: "short" });
               }
-              // Non-year ranges: week (7 days) renders all labels; month
-              // (~30 days) thins to roughly 10 labels so they don't
-              // overlap. Stride is computed from the actual label count.
-              const total = labels.length;
-              if (total > 12) {
-                const stride = Math.ceil(total / 10);
-                if (idx % stride !== 0) return "";
-              }
+              // Week/month: thin based on how many "dd.mm." labels
+              // (~56px in the mono font) actually fit into the chart
+              // width — a count-based threshold alone let 8-11 labels
+              // through, which overlap badly on phone screens.
+              const stride = tickStride(this.chart, labels.length, 56);
+              if (stride > 1 && idx % stride !== 0) return "";
               return d.toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
             },
           },
@@ -1125,14 +1140,13 @@ function renderMonthlyHistory(data) {
             autoSkip: false,  // we skip explicitly in the callback below
             callback: function (val, idx) {
               const labels = this.chart.data.labels;
-              const total = labels.length;
-              // Multi-year view (>15 months): show roughly every 3rd month
-              // so we get ~12 labels max for 36 months. Center the kept
-              // labels on indices that line up with Jan/Apr/Jul/Oct so the
-              // sampling looks intentional, not random.
-              if (total > 15) {
-                if (idx % 3 !== 0) return "";
-              }
+              // Thin to what actually fits: "Jun 25"-style labels are
+              // ~64px wide in the mono font. On desktop with 36 months
+              // this yields the previous every-3rd-month behavior; on
+              // phones it drops to every 3rd-4th label instead of
+              // rendering all of them on top of each other.
+              const stride = tickStride(this.chart, labels.length, 64);
+              if (stride > 1 && idx % stride !== 0) return "";
               return fmt.shortMonthYear(labels[idx]);
             },
           },
@@ -1322,10 +1336,11 @@ function scheduleTimers() {
   const liveInterval = active ? REFRESH_LIVE_ACTIVE : REFRESH_LIVE_IDLE;
   const histInterval = active ? REFRESH_HIST_ACTIVE : REFRESH_HIST_IDLE;
 
-  if (liveTimer)    clearInterval(liveTimer);
-  if (statsTimer)   clearInterval(statsTimer);
-  if (todayTimer)   clearInterval(todayTimer);
-  if (historyTimer) clearInterval(historyTimer);
+  if (liveTimer)       clearInterval(liveTimer);
+  if (statsTimer)      clearInterval(statsTimer);
+  if (todayTimer)      clearInterval(todayTimer);
+  if (historyTimer)    clearInterval(historyTimer);
+  if (highscoresTimer) clearInterval(highscoresTimer);
 
   liveTimer    = setInterval(loadLive, liveInterval);
   statsTimer   = setInterval(loadStats, histInterval);
@@ -1333,8 +1348,10 @@ function scheduleTimers() {
     todayTimer = setInterval(loadTodayChart, histInterval);
   }
   historyTimer = setInterval(() => loadHistoryChart(state.currentRange), histInterval * 5);
-  // Highscores change rarely; refresh on the slower history cadence
-  setInterval(loadHighscores, histInterval * 5);
+  // Highscores change rarely; refresh on the slower history cadence.
+  // Stored and cleared like the other timers — scheduleTimers() runs on
+  // every status change, so an anonymous interval here would stack up.
+  highscoresTimer = setInterval(loadHighscores, histInterval * 5);
 }
 
 
