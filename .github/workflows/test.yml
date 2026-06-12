@@ -1,9 +1,9 @@
 name: Tests
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*.*.*']
+  # No push trigger: pushes to main (and tags) already run this suite via
+  # workflow_call from build-and-push.yml — a push trigger here would run
+  # everything twice.
   pull_request:
     branches: [main]
   workflow_dispatch:
