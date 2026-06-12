@@ -22,6 +22,8 @@ No cloud, no account, no telemetry. Localized for English and German.
   drill-down from the history chart)
 - **Same-period (calendar-aligned) comparisons** on all four time-range cards
   (Today / Week / Month / Year), plus year-over-year on the month card
+- **Best-day-per-period highlights** on the Week / Month / Year cards
+  (best day this week, best day last week, etc.)
 - **Hall of Fame**: all-time best day / week / month / year with subtle
   amber glow when records are fresh. Tier-unlocked so a new install
   doesn't blink permanently while it accumulates comparison data
@@ -125,7 +127,7 @@ All configuration via environment variables.
 | `INSTALL_KWP` | `1.0` | Installed peak power in kWp |
 | `DEFAULT_LANG` | *(empty)* | `""` = auto-detect from browser, or force `de`/`en` |
 | `CURRENCY` | `EUR` | `EUR` or `USD` |
-| `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh |
+| `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh. Stamped on every measurement, so historical "money saved" stays accurate across tariff changes — update the value when your tariff changes and only new production is valued at the new price. |
 | `CO2_KG_PER_KWH` | `0.38` | Static grid CO₂ factor (fallback when Electricity Maps is off or unavailable) |
 | `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Optional. Enables live grid CO₂ intensity. |
 | `ELECTRICITY_MAPS_ZONE` | `DE` | ISO country code shown as zone label in the UI (the actual zone is bound to the token in the portal) |
@@ -205,19 +207,17 @@ so there's 50× headroom.
 ## Long-term aggregates
 
 Raw measurements are pruned after `RETENTION_DAYS` (default 730 = 2 years),
-but their summaries are kept indefinitely in three tables:
+but their summaries are kept indefinitely in two tables:
 
-- `daily_aggregates`: one row per calendar day with total kWh and peak W
-  — powers the Hall of Fame "best day" highscore
 - `monthly_aggregates`: total kWh, peak W, days with data, energy-weighted
-  avg CO₂ factor — per (year, month)
+  avg CO₂ factor and avg electricity price — per (year, month)
 - `yearly_aggregates`: same fields rolled up per year
 
-These are populated on container start (backfill from existing
-measurements) and kept current by a background task that refreshes the
-current month's aggregate and today's daily row hourly. The History
-chart's **Multi-year** view and the Hall of Fame card both read from
-them, so they keep working even after the raw rows have been pruned.
+These are populated on container start (backfill from existing measurements)
+and kept current by a background task that refreshes the current month's
+aggregate hourly. The History chart's **Multi-year** view reads from them,
+so it shows every year you've collected data for — even after the raw rows
+have been pruned.
 
 ## Themes
 
@@ -264,7 +264,7 @@ ez1_carbon_intensity_g_per_kwh
 ez1_carbon_fossil_percentage
 ez1_carbon_source{source="live|stale|avg|static"}
 ez1_status{state="online|standby|error|noData"}
-ez1_info{device_id="...", serial_number="...", version="..."}
+ez1_info{device_id="...", firmware="...", version="..."}
 ```
 
 No authentication. LAN-only by design — put it behind your reverse proxy
@@ -281,14 +281,49 @@ automatically.
 
 ## Upgrading
 
+### From v1.6.0 to v1.6.1
+
+No manual steps. On first start the container runs idempotent
+`ALTER TABLE` migrations adding the electricity-price columns
+(`price_per_kwh` on measurements, `avg_price_per_kwh` on the aggregate
+tables) and a `firmware` column on `device_info`. Existing rows keep
+`NULL` prices — the "money saved" calculation falls back to the current
+`PRICE_PER_KWH` for that unstamped portion, exactly like the CO₂
+calculation handles pre-v1.4 rows.
+
+Notable fixes in this release:
+
+- **Long-term aggregates are no longer overwritten with partial values**
+  when the startup backfill runs after raw measurements at the retention
+  boundary have been pruned. Months outside the retention window stay
+  frozen at the value computed while their data was complete.
+- **Daily aggregates (Hall of Fame) now group by local calendar date**
+  instead of UTC — for timezones west of UTC, evening production was
+  attributed to the wrong day.
+- **Lifetime CO₂ and money values are now derived from the monthly
+  aggregates** (plus the current month live), so they remain
+  historically accurate after raw rows are pruned.
+- Fixed a frontend interval leak that stacked up Hall-of-Fame refresh
+  timers on every online/standby status change.
+- Fixed the ambient background glow appearing as a "sticky shadow" when
+  scrolling on iOS Safari in dark mode.
+- The `ez1_info` Prometheus metric now exports the inverter firmware as
+  `firmware` (previously mislabeled `serial_number`), and the dashboard
+  shows the firmware version in the device subtitle.
+- The container image is roughly 40 MB smaller (~110 MB instead of
+  ~150 MB): plain `uvicorn` instead of `uvicorn[standard]` (uvloop,
+  websockets, watchfiles and httptools were never used), busybox `wget`
+  instead of `curl` for the healthcheck, and no pip in the runtime
+  stage. No functional change.
+
 ### From v1.5.x to v1.6.x
 
 No manual steps. On first start the container creates the new
 `daily_aggregates` table and backfills it from existing measurements
 (typically 1-3 seconds, up to ~15 seconds on a fully populated 2-year
 install on a Raspberry Pi). Subsequent starts are instant. The new
-table powers the Hall of Fame card, which is the only place all-time
-record information lives.
+table powers the Hall of Fame card and the per-period "best day"
+references on the Week/Month/Year stat cards.
 
 ### From v1.4.x to v1.5.x
 
