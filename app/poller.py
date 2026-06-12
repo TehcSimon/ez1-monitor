@@ -28,11 +28,16 @@ STANDBY_CAP_S = 300  # 5 minutes
 
 class Poller:
     def __init__(self, inverter_ip: str, port: int, interval: int,
-                 db: Database, carbon_state: CarbonState):
+                 db: Database, carbon_state: CarbonState,
+                 price_per_kwh: float = 0.0):
         self.inverter = APsystemsEZ1M(inverter_ip, port)
         self.interval = interval
         self.db = db
         self.carbon_state = carbon_state
+        # Stamped on every measurement so the lifetime "money saved"
+        # calculation stays historically accurate across tariff changes
+        # (same pattern as the CO2 factor).
+        self.price_per_kwh = price_per_kwh
         self._task: asyncio.Task | None = None
         self._stop = False
         # Have we already written one offline marker since the last successful poll?
@@ -64,7 +69,7 @@ class Poller:
                 if info:
                     await self.db.update_device_info(
                         device_id=info.deviceId or "",
-                        serial_number=info.devVer or "",
+                        firmware=info.devVer or "",
                         min_power=info.minPower or 0,
                         max_power=info.maxPower or 800,
                     )
@@ -99,6 +104,7 @@ class Poller:
                         te2=data.te2,
                         online=True,
                         co2_g_per_kwh=co2_g,
+                        price_per_kwh=self.price_per_kwh,
                     )
                     logger.debug(f"Polled: p1={data.p1}W p2={data.p2}W co2={co2_g:.0f}")
                     # Online: reset offline marker, use normal interval
@@ -121,12 +127,13 @@ class Poller:
         if not self._offline_marker_written:
             try:
                 # Offline marker: no power data, and we leave co2_g_per_kwh
-                # unset because there's no production to attribute a factor
-                # to. The energy-weighted CO2 averages skip NULL rows anyway,
-                # so this keeps the lifetime calculation honest.
+                # and price_per_kwh unset because there's no production to
+                # attribute a factor to. The energy-weighted averages skip
+                # NULL rows anyway, so this keeps the lifetime calculations
+                # honest.
                 await self.db.insert_measurement(
                     ts, None, None, None, None, None, None,
-                    online=False, co2_g_per_kwh=None,
+                    online=False, co2_g_per_kwh=None, price_per_kwh=None,
                 )
                 self._offline_marker_written = True
                 logger.info(
