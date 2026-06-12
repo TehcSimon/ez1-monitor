@@ -77,17 +77,21 @@ CREATE TABLE IF NOT EXISTS measurements (
     te1              REAL,
     te2              REAL,
     online           INTEGER NOT NULL DEFAULT 1,
-    co2_g_per_kwh    REAL
+    co2_g_per_kwh    REAL,
+    price_per_kwh    REAL
 );
 
+-- Mirrors the app's real device_info schema (app/database.py). The earlier
+-- divergent column set made the poller's update_device_info fail when run
+-- against a mock DB.
 CREATE TABLE IF NOT EXISTS device_info (
     id               INTEGER PRIMARY KEY CHECK (id = 1),
     device_id        TEXT,
     serial_number    TEXT,
-    version          TEXT,
-    minor_version    TEXT,
+    firmware         TEXT,
+    min_power        INTEGER,
     max_power        INTEGER,
-    last_updated     INTEGER
+    last_seen        INTEGER
 );
 """
 
@@ -224,8 +228,9 @@ def main():
     for row in generate_measurements():
         conn.execute(
             """INSERT OR REPLACE INTO measurements
-               (timestamp, p1, p2, e1, e2, te1, te2, online, co2_g_per_kwh)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (timestamp, p1, p2, e1, e2, te1, te2, online,
+                co2_g_per_kwh, price_per_kwh)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0.35)""",
             row,
         )
         count += 1
@@ -233,9 +238,8 @@ def main():
     # Fake device_info so /api/live has something to show
     conn.execute(
         """INSERT OR REPLACE INTO device_info
-           (id, device_id, serial_number, version, minor_version, max_power, last_updated)
-           VALUES (1, 'MOCK001', 'EZ1M-MOCK-000000001', '1.7.0', '1.0.0', 800,
-                   strftime('%s','now'))"""
+           (id, device_id, firmware, min_power, max_power, last_seen)
+           VALUES (1, 'MOCK001', '1.7.0', 30, 800, strftime('%s','now'))"""
     )
 
     conn.commit()
