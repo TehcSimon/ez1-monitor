@@ -93,7 +93,8 @@ carbon_state = CarbonState(
     static_g_per_kwh=CO2_KG_PER_KWH * 1000.0,  # env is kg, internal is g
 )
 
-poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db, carbon_state)
+poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db, carbon_state,
+                price_per_kwh=PRICE_PER_KWH)
 
 
 @functools.lru_cache(maxsize=128)
@@ -163,6 +164,13 @@ async def backfill_aggregates() -> None:
     Walks from the earliest measurement to the current month, computing
     each month's aggregate. Then recomputes each year's aggregate from
     its monthly rows.
+
+    IMPORTANT: months that start before the retention boundary are
+    skipped. Their raw measurements have been (partially) pruned, so
+    recomputing them from raw data would overwrite the stored complete
+    aggregate with a reduced partial value — defeating the entire point
+    of the long-term aggregate tables. Those months keep the value that
+    was computed while their data was still complete.
     """
     earliest, latest = await db.get_measurements_date_range()
     if earliest is None:
@@ -171,19 +179,33 @@ async def backfill_aggregates() -> None:
 
     start_date = datetime.fromtimestamp(earliest).date()
     end_date = datetime.fromtimestamp(latest).date()
+
+    retention_cutoff = None
+    if RETENTION_DAYS > 0:
+        retention_cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).date()
+
     logger.info(
         f"Aggregate backfill: recomputing months from {start_date.isoformat()} "
         f"to {end_date.isoformat()}"
+        + (f" (skipping months starting before {retention_cutoff.isoformat()})"
+           if retention_cutoff else "")
     )
 
     current_year = start_date.year
     current_month = start_date.month
     years_touched = set()
     months_done = 0
+    months_skipped = 0
     while (current_year, current_month) <= (end_date.year, end_date.month):
-        await db.recompute_month_aggregate(current_year, current_month)
-        years_touched.add(current_year)
-        months_done += 1
+        month_start = datetime(current_year, current_month, 1).date()
+        if retention_cutoff is not None and month_start < retention_cutoff:
+            # Raw data for this month is no longer complete — keep the
+            # frozen aggregate from when it was.
+            months_skipped += 1
+        else:
+            await db.recompute_month_aggregate(current_year, current_month)
+            years_touched.add(current_year)
+            months_done += 1
         if current_month == 12:
             current_month = 1
             current_year += 1
@@ -194,14 +216,18 @@ async def backfill_aggregates() -> None:
         await db.recompute_year_aggregate(year)
 
     # Daily aggregates feed the Hall of Fame "best day" highscore. Walks
-    # all measurements once and writes one row per calendar day. On a fresh
-    # install this is a no-op; on an existing install with 2 years of data
-    # it's a few thousand rows and finishes well under a second on a NAS.
-    daily_rows = await db.backfill_daily_aggregates()
+    # measurements once and writes one row per calendar day. The same
+    # retention boundary is passed down so the day at the pruning edge
+    # (whose intraday rows may be partially deleted) keeps its stored
+    # complete aggregate — relevant for peak_w, which unlike the
+    # cumulative e1/e2 counters does not survive partial pruning.
+    daily_since = retention_cutoff.isoformat() if retention_cutoff else None
+    daily_rows = await db.backfill_daily_aggregates(since_iso=daily_since)
 
     logger.info(
-        f"Aggregate backfill: {months_done} months, {len(years_touched)} years, "
-        f"{daily_rows} days updated."
+        f"Aggregate backfill: {months_done} months recomputed "
+        f"({months_skipped} frozen outside retention), "
+        f"{len(years_touched)} years, {daily_rows} days updated."
     )
 
 
@@ -215,10 +241,15 @@ async def aggregate_refresh_task():
             now = datetime.now()
             await db.recompute_month_aggregate(now.year, now.month)
             await db.recompute_year_aggregate(now.year)
-            # Refresh today's daily aggregate. The full-table backfill is
+            # Refresh daily aggregates. The full-window backfill is
             # idempotent and runs in <1s, so we just re-derive everything
-            # rather than maintain a separate one-day codepath.
-            await db.backfill_daily_aggregates()
+            # within the retention window rather than maintain a separate
+            # one-day codepath. Days at/behind the retention boundary stay
+            # frozen (see backfill_aggregates for why).
+            daily_since = None
+            if RETENTION_DAYS > 0:
+                daily_since = (now - timedelta(days=RETENTION_DAYS)).date().isoformat()
+            await db.backfill_daily_aggregates(since_iso=daily_since)
         except Exception as e:
             logger.warning(f"Aggregate refresh task failed: {e}")
         await asyncio.sleep(3600)
@@ -481,20 +512,25 @@ async def get_stats():
 
     total_kwh = await db.get_total_energy()
 
-    # CO2 saved: hybrid calculation that combines historically-accurate
-    # per-measurement live values with a static-factor fallback for the
-    # portion of lifetime energy that predates the live integration (or
-    # came in during API outages). Over time the "measured" share grows
-    # and the "unmeasured" share shrinks, so the total naturally migrates
-    # from "single static guess" to "fully accurate".
-    co2_split = await db.get_lifetime_co2_split()
-    measured_kwh = co2_split["measured_kwh"]
-    measured_co2_kg = co2_split["measured_co2_g"] / 1000.0
-    unmeasured_kwh = max(0.0, total_kwh - measured_kwh)
-    unmeasured_co2_kg = unmeasured_kwh * CO2_KG_PER_KWH
-    co2_kg = measured_co2_kg + unmeasured_co2_kg
+    # CO2 saved and money saved: hybrid calculations that combine
+    # historically-accurate stamped factors with a static fallback for the
+    # portion of lifetime energy that predates the respective stamping
+    # (CO2 since v1.4, price since v1.6.1) or came in during API outages.
+    # Sourced from the long-term monthly aggregates (which survive
+    # retention pruning) plus the current month live from measurements —
+    # see Database.get_lifetime_factor_split. Over time the "measured"
+    # shares grow and the totals naturally migrate from "static guess" to
+    # "fully accurate", and they stay accurate after raw rows are pruned.
+    split = await db.get_lifetime_factor_split(now.year, now.month)
+    co2_kg = (
+        split["co2_g"] / 1000.0
+        + max(0.0, total_kwh - split["co2_kwh"]) * CO2_KG_PER_KWH
+    )
+    money_saved = (
+        split["price_sum"]
+        + max(0.0, total_kwh - split["price_kwh"]) * PRICE_PER_KWH
+    )
 
-    money_saved = total_kwh * PRICE_PER_KWH
     peak_w_today, peak_today_ts = await db.get_peak_today_with_time()
 
     # Average power during today's production window. Uses the time between
@@ -784,7 +820,7 @@ async def _populate_metrics() -> None:
     if info:
         _m_info.info({
             "device_id": str(info.get("device_id") or ""),
-            "serial_number": str(info.get("serial_number") or ""),
+            "firmware": str(info.get("firmware") or ""),
             "max_power": str(info.get("max_power") or ""),
             "version": __version__,
         })
@@ -792,11 +828,24 @@ async def _populate_metrics() -> None:
         _m_info.info({"version": __version__})
 
 
+# Scrape-side TTL cache: _populate_metrics runs ~15 queries (including the
+# full stats computation), which adds up with aggressive Prometheus scrape
+# intervals on NAS-grade hardware. Gauges keep their last values between
+# refreshes, so serving a snapshot up to 30s old is harmless for data that
+# changes once per POLL_INTERVAL anyway.
+METRICS_CACHE_TTL_S = 30
+_metrics_last_populated: float = float("-inf")
+
+
 @app.get("/metrics")
 async def metrics():
     """Prometheus scrape endpoint. No authentication; expected to be
     accessed from within the LAN only."""
-    await _populate_metrics()
+    global _metrics_last_populated
+    now_mono = asyncio.get_running_loop().time()
+    if now_mono - _metrics_last_populated >= METRICS_CACHE_TTL_S:
+        await _populate_metrics()
+        _metrics_last_populated = now_mono
     return Response(generate_latest(_metrics_registry), media_type=CONTENT_TYPE_LATEST)
 
 
