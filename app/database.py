@@ -1,8 +1,11 @@
 """SQLite database layer for EZ1 measurements."""
+import logging
 import aiosqlite
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA = """
@@ -105,10 +108,7 @@ class Database:
                     # Anything else is logged but doesn't crash startup.
                     msg = str(e).lower()
                     if "duplicate column" not in msg:
-                        import logging
-                        logging.getLogger(__name__).warning(
-                            f"Migration '{stmt}' failed: {e}"
-                        )
+                        logger.warning(f"Migration '{stmt}' failed: {e}")
             await db.commit()
 
     async def insert_measurement(self, timestamp, p1, p2, e1, e2, te1, te2,
@@ -168,17 +168,6 @@ class Database:
             row = await cur.fetchone()
             return dict(row) if row else None
 
-    async def get_latest_online(self) -> Optional[dict]:
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cur = await db.execute(
-                """SELECT * FROM measurements
-                   WHERE online = 1
-                   ORDER BY timestamp DESC LIMIT 1"""
-            )
-            row = await cur.fetchone()
-            return dict(row) if row else None
-
     async def get_recent_avg_power(self, seconds: int = 300) -> Optional[float]:
         cutoff = int(datetime.now().timestamp()) - seconds
         async with aiosqlite.connect(self.db_path) as db:
@@ -206,6 +195,18 @@ class Database:
         columns are the daily-resetting energy counters from the
         inverter, so MAX-per-day yields each day's total production and
         SUM across days yields the window total.
+
+        Grouping is by LOCAL calendar day (date(..., 'localtime')), the
+        same semantics as every other daily query in this module. The
+        inverter resets e1/e2 at its local midnight, so a local-day group
+        maps cleanly to one counter cycle. The previous `timestamp / 86400`
+        grouped by UTC day, which only happened to work in timezones near
+        UTC: for far-east offsets (e.g. UTC+9/+10) the UTC-day boundary
+        falls mid-morning local time, splitting a single production day
+        across two buckets and double-counting the morning ramp in the
+        "today" window. online = 1 mirrors the other daily queries (offline
+        rows carry NULL counters and were already SUM-ignored, but the
+        explicit filter keeps the intent obvious and the query consistent).
         """
         results: list[float] = []
         async with aiosqlite.connect(self.db_path) as db:
@@ -219,7 +220,8 @@ class Database:
                            MAX(e2) AS daily_e2
                          FROM measurements
                          WHERE timestamp BETWEEN ? AND ?
-                         GROUP BY (timestamp / 86400)
+                           AND online = 1
+                         GROUP BY date(timestamp, 'unixepoch', 'localtime')
                        )""",
                     (start_ts, end_ts),
                 )
@@ -264,29 +266,6 @@ class Database:
             if bucket_seconds > 0:
                 return [{"timestamp": r["bucket_ts"], **{k: r[k] for k in ("p1","p2","e1","e2","te1","te2","online")}} for r in rows]
             return [dict(r) for r in rows]
-
-    async def get_daily_totals(self, days: int = 30) -> list[dict]:
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cur = await db.execute(
-                """SELECT
-                      date(timestamp, 'unixepoch', 'localtime') AS day,
-                      MAX(e1) AS e1_max,
-                      MAX(e2) AS e2_max
-                   FROM measurements
-                   WHERE timestamp >= ?
-                   GROUP BY day
-                   ORDER BY day ASC""",
-                (int((datetime.now() - timedelta(days=days)).timestamp()),),
-            )
-            rows = await cur.fetchall()
-            return [
-                {
-                    "day": r["day"],
-                    "kwh": (r["e1_max"] or 0) + (r["e2_max"] or 0),
-                }
-                for r in rows
-            ]
 
     async def get_monthly_totals(self, months: int = 12) -> list[dict]:
         """kWh sum per calendar month over the last N months.
@@ -333,17 +312,6 @@ class Database:
             if not row:
                 return 0.0
             return (row["te1"] or 0) + (row["te2"] or 0)
-
-    async def get_peak_today(self) -> float:
-        async with aiosqlite.connect(self.db_path) as db:
-            cur = await db.execute(
-                """SELECT MAX(COALESCE(p1, 0) + COALESCE(p2, 0))
-                   FROM measurements
-                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
-                     AND online = 1"""
-            )
-            row = await cur.fetchone()
-            return row[0] if row and row[0] is not None else 0.0
 
     async def get_peak_today_with_time(self) -> tuple[float, Optional[int]]:
         """Return (peak_watts, unix_timestamp_of_peak) for today.
@@ -629,19 +597,6 @@ class Database:
     # These power the Hall of Fame "best day" highscore. Daily totals are
     # stored permanently — they survive RETENTION_DAYS pruning of raw rows.
 
-    async def upsert_daily_aggregate(
-        self, date_iso: str, total_kwh: float, peak_w: int
-    ) -> None:
-        """Insert or replace a single day's aggregate."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                """INSERT OR REPLACE INTO daily_aggregates
-                   (date, total_kwh, peak_w, last_updated)
-                   VALUES (?, ?, ?, strftime('%s','now'))""",
-                (date_iso, total_kwh, peak_w),
-            )
-            await db.commit()
-
     async def backfill_daily_aggregates(self, since_iso: Optional[str] = None) -> int:
         """Populate daily_aggregates from existing measurements.
 
@@ -651,17 +606,24 @@ class Database:
         evening production to the wrong day for timezones west of UTC),
         and writes one row per day.
 
-        since_iso optionally restricts the rewrite to days >= that ISO date.
-        The caller passes the retention boundary so days whose raw rows have
-        been partially pruned keep their previously stored (complete)
-        aggregate instead of being overwritten with a reduced peak.
+        since_iso optionally restricts the rewrite to days strictly AFTER
+        that ISO date (date > since_iso). The caller passes the retention
+        boundary, which is the day whose early-morning raw rows have
+        already been pruned by delete_old_measurements (it deletes rows
+        with timestamp < cutoff_instant, and the cutoff instant falls
+        mid-day on the boundary date). That day therefore has incomplete
+        raw data, so recomputing it would overwrite its stored complete
+        aggregate with a reduced peak — exactly the regression this guard
+        prevents. Using `>` (not `>=`) leaves the boundary day and
+        everything before it frozen, and only rewrites the fully-present
+        days after it.
 
         Returns the number of day rows written.
         """
         params: list = []
         since_clause = ""
         if since_iso:
-            since_clause = "AND date(timestamp, 'unixepoch', 'localtime') >= ?"
+            since_clause = "AND date(timestamp, 'unixepoch', 'localtime') > ?"
             params.append(since_iso)
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
@@ -699,23 +661,6 @@ class Database:
                    FROM daily_aggregates
                    ORDER BY total_kwh DESC, date DESC
                    LIMIT 1"""
-            )
-            row = await cur.fetchone()
-            return dict(row) if row else None
-
-    async def get_best_day_in_range(
-        self, start_iso: str, end_iso: str
-    ) -> Optional[dict]:
-        """Return the best day with date in [start_iso, end_iso] (inclusive)."""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cur = await db.execute(
-                """SELECT date, total_kwh, peak_w
-                   FROM daily_aggregates
-                   WHERE date BETWEEN ? AND ?
-                   ORDER BY total_kwh DESC, date DESC
-                   LIMIT 1""",
-                (start_iso, end_iso),
             )
             row = await cur.fetchone()
             return dict(row) if row else None
