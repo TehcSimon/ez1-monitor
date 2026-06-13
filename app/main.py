@@ -233,12 +233,41 @@ async def backfill_aggregates() -> None:
 
 async def aggregate_refresh_task():
     """Background task that refreshes the current month's aggregate plus
-    today's daily aggregate every hour. Past months stay frozen unless the
-    container is restarted and the backfill picks them up again."""
+    today's daily aggregate every hour.
+
+    On a month rollover it also recomputes the month that just ended,
+    exactly once. Without this, the final hour(s) of a month between the
+    last in-month refresh and midnight would only be captured on the next
+    container restart (when backfill_aggregates re-walks everything). For
+    a solar inverter that window is night-time and produces nothing, so
+    the energy total is unaffected — but peak_w and the day/CO2/price
+    weighting could in principle still move, and closing the gap keeps the
+    frozen aggregate provably complete rather than "complete enough"."""
     await asyncio.sleep(300)  # let initial poll fill in first
+    # Seed with the current month so the first loop iteration doesn't
+    # mistake startup for a rollover (backfill already covered the past).
+    last_refreshed_month: tuple[int, int] = (datetime.now().year, datetime.now().month)
     while True:
         try:
             now = datetime.now()
+            this_month = (now.year, now.month)
+
+            # Month rollover: finalize the month that just ended before we
+            # move on to the new one. Respect the retention freeze — if the
+            # ended month's raw data is already (partially) pruned, leave its
+            # stored aggregate alone (same rule as backfill_aggregates).
+            if this_month != last_refreshed_month:
+                ended_year, ended_month = last_refreshed_month
+                ended_start = datetime(ended_year, ended_month, 1).date()
+                frozen = (
+                    RETENTION_DAYS > 0
+                    and ended_start < (now - timedelta(days=RETENTION_DAYS)).date()
+                )
+                if not frozen:
+                    await db.recompute_month_aggregate(ended_year, ended_month)
+                    await db.recompute_year_aggregate(ended_year)
+                last_refreshed_month = this_month
+
             await db.recompute_month_aggregate(now.year, now.month)
             await db.recompute_year_aggregate(now.year)
             # Refresh daily aggregates. The full-window backfill is
