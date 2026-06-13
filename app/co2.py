@@ -7,7 +7,8 @@ value depending on data freshness:
 
     0-6h   since last successful poll  →  live     (display "Live")
     6-48h  since last successful poll  →  stale    (display "Letzter Wert · vor Nh")
-    >48h   since last successful poll  →  rolling-average from history
+    >48h   since last successful poll  →  cumulative mean of all samples
+                                          collected since process start
     no token / no data ever            →  static fallback from env var
 
 The Electricity Maps API endpoint we use is the Home-Assistant-flavored one
@@ -78,7 +79,13 @@ class CarbonState:
     last_country_code: Optional[str] = None
     last_success_at: Optional[datetime] = None    # UTC, when poll succeeded
 
-    # Rolling average across all successful polls (since process start)
+    # Cumulative mean across all successful polls since process start.
+    # NOT a sliding window despite the historical "rolling" field names:
+    # a long-lived container blends seasons into one average. That's
+    # acceptable because this value is only ever surfaced as a last-resort
+    # fallback after >48h of API outage, and it's re-seeded from zero on
+    # every restart. The JSON field exposed to the UI keeps the name
+    # `rolling_count` for backward compatibility.
     rolling_sum: float = 0.0
     rolling_count: int = 0
 
@@ -235,7 +242,7 @@ def resolve_current(state: CarbonState) -> CarbonResolution:
             age_seconds=int(age_s),
         )
 
-    # >48h: rolling average if we have any history
+    # >48h: cumulative mean since process start, if we have any history
     if state.rolling_count > 0:
         avg = state.rolling_sum / state.rolling_count
         return CarbonResolution(
