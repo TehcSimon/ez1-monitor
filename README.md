@@ -281,6 +281,46 @@ automatically.
 
 ## Upgrading
 
+### From v1.6.1 to v1.6.2
+
+No manual steps, no database migration — a bug-fix and cleanup release.
+
+- **Energy windows now bucket by local calendar day** instead of by UTC
+  day. The four stat cards (today/week/month/year and their comparisons)
+  were correct in timezones near UTC, but in far-east offsets (e.g.
+  UTC+9/+10) the UTC-day boundary falls mid-morning local time, which
+  could double-count the morning production ramp in the "today" figure.
+- **The retention-boundary day stays frozen during daily-aggregate
+  backfill.** The boundary day's early rows are pruned by the time
+  backfill runs, so recomputing it could lower its stored peak. It is now
+  left at its complete stored value (`>` instead of `>=` on the boundary).
+- **Month-rollover gap closed.** The hourly aggregate refresh now
+  finalizes the month that just ended exactly once at rollover, instead
+  of waiting for the next container restart to pick up its final hour.
+- **Frontend date parsing fixed for the Americas.** History-chart tooltips
+  and the year-view month labels parsed `YYYY-MM-DD` as UTC midnight,
+  rendering the previous local day at negative UTC offsets; they now parse
+  at local midnight.
+- **`PRICE_PER_KWH=0` / `RETENTION_DAYS=0` are honored by the UI.** A
+  configured `0` no longer falls back to the default (nullish-coalescing
+  instead of truthy fallback); with retention disabled the day picker now
+  allows browsing the full history instead of clamping to today.
+- Removed unused database methods, pinned the Chart.js date adapter to a
+  fixed version, and moved the test suite to native async (`pytest-asyncio`)
+  so CI runs on the same Python (3.14) the runtime image ships.
+- **All front-end assets are now self-hosted** — Chart.js, the date-fns
+  adapter, flatpickr and the web fonts (Inter, JetBrains Mono, Bricolage
+  Grotesque, latin subset) ship inside the image under `app/static/vendor/`.
+  The dashboard now renders fully offline with zero third-party requests,
+  which also removes the Google Fonts hotlink (a documented GDPR issue in
+  Germany, since it leaks the visitor IP to Google). Adds ~450 KB to the
+  image.
+- **Window-chrome color is now neutral.** The macOS "Add to Dock" web-app
+  title bar (and Android PWA chrome) followed the amber accent
+  `theme-color`; it now matches the dashboard background per system scheme
+  (`#0c0a08` dark / `#f8fafc` light) so the window edge blends with the
+  header instead of showing an amber band. UI accent colors are unchanged.
+
 ### From v1.6.0 to v1.6.1
 
 No manual steps. On first start the container runs idempotent
@@ -383,9 +423,12 @@ the result to GHCR.
 
 ### Tests
 
-The date-math helpers in `app/date_helpers.py` have a unit-test suite
-covering leap years, month-end boundaries, and century-year edge cases.
-Run them locally with:
+Two suites: pure unit tests for the date-math helpers in
+`app/date_helpers.py` (leap years, month-end boundaries, century-year
+edge cases) and async integration tests in `tests/test_aggregates.py`
+that spin up a temporary SQLite database and verify the aggregate and
+Hall-of-Fame queries (including the retention-boundary freeze). Run them
+locally with:
 
 ```bash
 pip install -r requirements-dev.txt
