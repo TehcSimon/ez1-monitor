@@ -118,6 +118,21 @@ function isToday(d) {
       && d.getDate() === today.getDate();
 }
 
+// Earliest day the user may select in the day picker. Normally bounded by
+// RETENTION_DAYS (raw measurements older than that are pruned, so there'd
+// be nothing to chart). When retention is disabled (RETENTION_DAYS <= 0 →
+// keep forever) there is no lower bound from pruning, so we fall back to a
+// generous 30-year lookback instead of clamping to today. Single source of
+// truth — the picker init, the prev-button disable check, and the keyboard
+// shift logic all call this so they can never drift apart.
+function getEarliestSelectableDate() {
+  const lookback = state.retentionDays > 0 ? state.retentionDays : 365 * 30;
+  const earliest = new Date();
+  earliest.setHours(0, 0, 0, 0);
+  earliest.setDate(earliest.getDate() - lookback);
+  return earliest;
+}
+
 // COLORS is populated from CSS variables. Re-call refreshChartColors() after
 // a theme switch to pick up new values from the freshly-set CSS variables.
 const COLORS = {};
@@ -215,11 +230,16 @@ async function loadLive() {
       state.lang = data.config.language || "en";
       state.locale = state.lang === "de" ? "de-DE" : "en-US";
       state.currency = data.config.currency || "USD";
-      state.pricePerKwh = data.config.price_per_kwh || 0.35;
-      state.co2KgPerKwh = data.config.co2_kg_per_kwh || 0.38;
-      state.installKwp = data.config.install_kwp || 1.0;
+      // Nullish coalescing (??) — NOT || — for numeric config: a legitimate
+      // backend value of 0 (e.g. PRICE_PER_KWH=0 to disable the money card,
+      // or RETENTION_DAYS=0 to disable pruning entirely) must survive. With
+      // || a configured 0 would silently fall back to the default, so the
+      // UI would show "based on 35 ct/kWh" while the backend computed with 0.
+      state.pricePerKwh = data.config.price_per_kwh ?? 0.35;
+      state.co2KgPerKwh = data.config.co2_kg_per_kwh ?? 0.38;
+      state.installKwp = data.config.install_kwp ?? 1.0;
       state.pollInterval = data.config.poll_interval || 60;
-      state.retentionDays = data.config.retention_days || 730;
+      state.retentionDays = data.config.retention_days ?? 730;
 
       window.i18n.applyTranslations(state.lang);
       updateDynamicLabels();
@@ -604,8 +624,7 @@ function ensureDayPicker() {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const earliest = new Date(today);
-  earliest.setDate(earliest.getDate() - state.retentionDays);
+  const earliest = getEarliestSelectableDate();
 
   const fpLocale = (state.lang === "de" && flatpickr.l10ns && flatpickr.l10ns.de)
     ? flatpickr.l10ns.de
@@ -695,9 +714,7 @@ function updateDayPickerButtons() {
   }
   const prevBtn = document.getElementById("day-prev");
   if (prevBtn) {
-    const earliest = new Date();
-    earliest.setDate(earliest.getDate() - state.retentionDays);
-    earliest.setHours(0, 0, 0, 0);
+    const earliest = getEarliestSelectableDate();
     const current = state.viewedDay || new Date();
     prevBtn.disabled = (current <= earliest);
   }
@@ -746,9 +763,7 @@ function shiftViewedDay(deltaDays) {
     setViewedDay(null);  // clamp to today (live mode)
     return;
   }
-  const earliest = new Date();
-  earliest.setDate(earliest.getDate() - state.retentionDays);
-  earliest.setHours(0, 0, 0, 0);
+  const earliest = getEarliestSelectableDate();
   if (base < earliest) return;  // already at limit
 
   setViewedDay(isToday(base) ? null : base);
@@ -1037,7 +1052,7 @@ function renderDailyHistory(data, isYear) {
       plugins: {
         legend: { display: false },
         tooltip: tooltipStyle({
-          title: items => new Date(items[0].label).toLocaleDateString(state.locale, {
+          title: items => new Date(items[0].label + "T00:00:00").toLocaleDateString(state.locale, {
             weekday: "short", day: "2-digit", month: "short", year: "numeric",
           }),
           label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
@@ -1054,7 +1069,13 @@ function renderDailyHistory(data, isYear) {
               const labels = this.chart.data.labels;
               const lbl = labels[idx];
               if (!lbl) return "";
-              const d = new Date(lbl);
+              // "YYYY-MM-DD" + "T00:00:00" forces LOCAL-midnight parsing.
+              // Bare new Date("YYYY-MM-DD") is parsed as UTC midnight, which
+              // for negative UTC offsets (the Americas) rolls back to the
+              // previous local day — so a "-01" first-of-month label could
+              // render the prior month's name and the month-stride logic
+              // would key off the wrong month.
+              const d = new Date(lbl + "T00:00:00");
               if (isYear) {
                 // 365 days would be a wall of "Jan Jan Jan…" — show only
                 // the first of each month, and on narrow screens only
