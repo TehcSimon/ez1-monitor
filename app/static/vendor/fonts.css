@@ -1,0 +1,48 @@
+/* EZ1 Monitor — self-hosted web fonts.
+ *
+ * Vendored from the @fontsource-variable packages so the dashboard renders
+ * fully offline and makes ZERO third-party requests. This removes the
+ * Google Fonts hotlink, which in Germany has been ruled a GDPR violation
+ * (LG München I, 3 O 17493/20) because it leaks the visitor IP to Google.
+ *
+ * Each family ships a single latin-subset variable-weight woff2 (the `wght`
+ * axis), upright only — no italics are used by the UI. The latin subset
+ * (U+0000–00FF plus the symbol ranges below) fully covers the German and
+ * English UI text, including ä ö ü ß, the € sign and the ₂ in "CO₂".
+ *
+ * The font-family names below are exactly the ones referenced by the
+ * --font-display / --font-body / --font-mono custom properties in
+ * style.css, so no other file needs to change.
+ *
+ * Sources (MIT / OFL):
+ *   Inter              5.2.8  — @fontsource-variable/inter
+ *   JetBrains Mono     5.2.8  — @fontsource-variable/jetbrains-mono
+ *   Bricolage Grotesque 5.2.10 — @fontsource-variable/bricolage-grotesque
+ */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/static/vendor/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('/static/vendor/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('/static/vendor/fonts/bricolage-grotesque-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
