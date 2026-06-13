@@ -19,7 +19,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          # Match the runtime image (python:3.14-alpine) so the suite tests
+          # exactly what ships. Testing on an older minor would mask
+          # version-specific behavior changes (e.g. the asyncio event-loop
+          # removal in 3.14 that the old test pattern relied on).
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Install dependencies
