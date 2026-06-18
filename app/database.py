@@ -333,6 +333,29 @@ class Database:
                 return 0.0, None
             return float(row[0]), int(row[1])
 
+    async def get_today_panel_energy(self) -> tuple[float, float]:
+        """Return (pv1_kwh, pv2_kwh) produced today, per panel.
+
+        e1/e2 are the inverter's daily-resetting energy counters, so the
+        per-panel day total is MAX over today's online rows. Reading this
+        from the database (rather than the live inverter reading) means the
+        PV cards keep showing today's production after the inverter drops to
+        standby at night — exactly like the peak/average figures, which are
+        also DB-derived. Returns (0.0, 0.0) when there's no production yet
+        today, matching the "today total" energy card.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT MAX(e1), MAX(e2)
+                   FROM measurements
+                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+                     AND online = 1"""
+            )
+            row = await cur.fetchone()
+            e1 = row[0] if row and row[0] is not None else 0.0
+            e2 = row[1] if row and row[1] is not None else 0.0
+            return float(e1), float(e2)
+
     async def get_today_production_window(
         self, threshold_w: int = 5
     ) -> tuple[Optional[int], Optional[int]]:
