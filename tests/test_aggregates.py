@@ -12,7 +12,7 @@ stopped working once the implicit event loop was removed.
 """
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import aiosqlite
 import pytest
@@ -179,3 +179,32 @@ class TestProductionWindow:
         first, last = await db.get_today_production_window()
         assert first is None
         assert last is None
+
+
+class TestTodayPanelEnergy:
+    """Per-panel "today" energy must come from the DB so it survives the
+    inverter dropping to standby at night. Regression: the PV cards showed
+    "—" overnight because they were sourced from the live e1/e2 reading,
+    which the poller stores as NULL once the inverter is offline."""
+
+    async def test_returns_day_totals_and_survives_offline_row(self, db):
+        midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+        def at(hour):
+            return int((midnight + timedelta(hours=hour)).timestamp())
+
+        # e1/e2 are daily-resetting counters that climb through the day.
+        await db.insert_measurement(at(8), 100, 80, 0.10, 0.08, 1, 1, online=True, co2_g_per_kwh=400)
+        await db.insert_measurement(at(12), 300, 250, 0.45, 0.39, 1, 1, online=True, co2_g_per_kwh=400)
+        await db.insert_measurement(at(16), 120, 90, 0.62, 0.55, 1, 1, online=True, co2_g_per_kwh=400)
+        # Inverter goes to standby at night: offline row with NULL counters.
+        await db.insert_measurement(at(23), None, None, None, None, None, None, online=False)
+
+        pv1, pv2 = await db.get_today_panel_energy()
+        assert abs(pv1 - 0.62) < 1e-9
+        assert abs(pv2 - 0.55) < 1e-9
+
+    async def test_zero_when_no_production_today(self, db):
+        pv1, pv2 = await db.get_today_panel_energy()
+        assert pv1 == 0.0
+        assert pv2 == 0.0
