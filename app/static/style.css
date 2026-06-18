@@ -193,7 +193,7 @@ body::before {
 /* ------------------------- Top bar ------------------------- */
 .topbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 24px 32px;
   border-bottom: 1px solid var(--border);
@@ -226,12 +226,22 @@ h1 {
   color: var(--text-primary);
 }
 
-.subtitle {
+/* Stacked device meta (S/N, max output, firmware) under the title. Each
+   line is "label: value" — the label is dimmed (muted) and the value uses
+   the readable secondary text color so the data stands out. */
+.device-meta {
+  margin: 4px 0 0 0;
+}
+.subtitle-line {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
-  margin: 2px 0 0 0;
+  color: var(--text-secondary);
   letter-spacing: 0.05em;
+  line-height: 1.55;
+  margin: 0;
+}
+.meta-label {
+  color: var(--text-muted);
 }
 
 .status-pill {
@@ -1081,14 +1091,22 @@ html[data-theme="light"] .info-tooltip-content {
   .stat-title { font-size: 10px; }
   .stat-sub { font-size: 11px; }
 
-  /* Topbar: vertical stack, control row right-aligned */
+  /* Topbar: brand on the left, controls as a compact column on the right
+     (theme toggle on top, status pill below). The multi-line device meta
+     would otherwise push the controls onto a third row and make the header
+     tall; this mirrors the left block with a right column instead, keeping
+     the header compact and balanced. Tighter side padding buys width so the
+     meta lines don't wrap on narrow phones. */
   .topbar {
-    flex-direction: column;
     gap: 12px;
-    align-items: stretch;
+    padding: 20px 16px;
   }
+  .brand { gap: 12px; min-width: 0; }
   .topbar-controls {
-    justify-content: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    flex: none;
   }
 
   /* Day picker: touch-friendly buttons, narrower input */
