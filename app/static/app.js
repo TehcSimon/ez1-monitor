@@ -257,9 +257,11 @@ async function loadLive() {
     if (data.device) {
       state.maxPowerW = data.device.max_power || 800;
       const deviceId = data.device.device_id || "EZ1-M";
-      const fw = data.device.firmware ? ` · FW ${data.device.firmware}` : "";
-      document.getElementById("device-subtitle").textContent =
-        `${deviceId}${fw} · max ${state.maxPowerW} W`;
+      // Stacked, labeled meta lines. Values set via textContent only (labels
+      // are translated separately via data-i18n) — no innerHTML, no XSS.
+      document.getElementById("device-serial").textContent = deviceId;
+      document.getElementById("device-maxpower").textContent = `${state.maxPowerW} W`;
+      document.getElementById("device-firmware").textContent = data.device.firmware || "—";
     }
 
     // Carbon block: live grid intensity from Electricity Maps or fallback
@@ -280,8 +282,9 @@ async function loadLive() {
         document.getElementById("current-power").textContent = fmt.power(totalW);
         document.getElementById("pv1-power").textContent = fmt.power(m.p1);
         document.getElementById("pv2-power").textContent = fmt.power(m.p2);
-        document.getElementById("pv1-energy").textContent = fmt.kwh(m.e1);
-        document.getElementById("pv2-energy").textContent = fmt.kwh(m.e2);
+        // Per-panel "kWh heute" is intentionally NOT set here. It's rendered
+        // by loadStats() from DB-derived day totals so it persists after the
+        // inverter drops to standby at night (the live e1/e2 are null then).
         const pct = Math.min(100, (totalW / state.maxPowerW) * 100);
         document.getElementById("power-bar").style.width = pct + "%";
         document.getElementById("power-pct").textContent = fmt.pct(pct) + " %";
@@ -428,6 +431,13 @@ async function loadStats() {
     renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
 
     document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
+
+    // Per-panel production today — DB-derived, so it stays correct after the
+    // inverter goes to standby at night (see loadLive for why it's here).
+    const pv1e = document.getElementById("pv1-energy");
+    const pv2e = document.getElementById("pv2-energy");
+    if (pv1e) pv1e.textContent = fmt.kwh(s.pv1_kwh_today);
+    if (pv2e) pv2e.textContent = fmt.kwh(s.pv2_kwh_today);
 
     // Peak-today timestamp suffix
     const peakTimeEl = document.getElementById("hero-peak-time");
