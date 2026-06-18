@@ -3,7 +3,9 @@
 const TRANSLATIONS = {
   de: {
     app: {
-      subtitleLoading: "— wird geladen —",
+      serial: "S/N",
+      maxOut: "max. Leistung",
+      firmware: "Firmware",
     },
     status: {
       connecting: "verbinde …",
@@ -97,7 +99,9 @@ const TRANSLATIONS = {
 
   en: {
     app: {
-      subtitleLoading: "— loading —",
+      serial: "S/N",
+      maxOut: "max. output",
+      firmware: "Firmware",
     },
     status: {
       connecting: "connecting …",
