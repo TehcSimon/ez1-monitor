@@ -561,6 +561,7 @@ async def get_stats():
     )
 
     peak_w_today, peak_today_ts = await db.get_peak_today_with_time()
+    pv1_kwh_today, pv2_kwh_today = await db.get_today_panel_energy()
 
     # Average power during today's production window. Uses the time between
     # first and last measurement with >=5 W output today. If there's no
@@ -602,6 +603,10 @@ async def get_stats():
         "total_kwh": round(total_kwh, 3),
         "peak_w_today": round(peak_w_today, 1),
         "peak_today_ts": peak_today_ts,
+        # Per-panel production today, DB-derived so it survives inverter
+        # standby (the live reading is null at night).
+        "pv1_kwh_today": round(pv1_kwh_today, 2),
+        "pv2_kwh_today": round(pv2_kwh_today, 2),
         "avg_w_during_production": (
             round(avg_w_during_production, 1)
             if avg_w_during_production is not None else None
@@ -625,12 +630,14 @@ TIER_UNLOCK = {
     "year":  {"min_completed_years": 2},        # 2 finished calendar years
 }
 
-# How many days the record-glow animation stays active. Day = set day + 2
-# following days, etc.
+# How many days the record-glow animation stays active AFTER the day the
+# record was set (the set day itself always shows as "fresh"). So day=1 means
+# the record glows on the set day plus the one following day; year=7 means the
+# set day plus the following week.
 TIER_GLOW_DAYS = {
-    "day":   2,
-    "week":  3,
-    "month": 5,
+    "day":   1,
+    "week":  2,
+    "month": 3,
     "year":  7,
 }
 
