@@ -281,6 +281,26 @@ automatically.
 
 ## Upgrading
 
+### From v1.6.2 to v1.6.3
+
+No manual steps, no database migration — a small bug-fix and polish release.
+
+- **Per-panel "today" production survives inverter standby.** The PV 1 / PV 2
+  cards read today's kWh from the live inverter reading, which is null once
+  the inverter drops to standby at night, so they showed "—" overnight while
+  peak and average (both DB-derived) stayed correct. The per-panel day total
+  is now read from the database (`MAX(e1)`/`MAX(e2)` for today) like the
+  other figures. No schema change — `e1`/`e2` were already stored per row.
+- **Shorter record-glow durations.** The Hall-of-Fame highlight now fades
+  sooner: day record glows for the set day + 1 (was + 2), week + 2 (was + 3),
+  month + 3 (was + 5). Year is unchanged (+ 7).
+- **Device header is now stacked and labeled.** Serial number, max output and
+  firmware were a single dense line under the title; they're now three labeled
+  lines (`S/N`, `max. output`, `Firmware`). The max output continues to be
+  read from the inverter, not hard-coded. On mobile the theme toggle and status
+  pill move into a compact right-hand column (toggle on top, status below) so
+  the multi-line header stays compact instead of stacking a third row.
+
 ### From v1.6.1 to v1.6.2
 
 No manual steps, no database migration — a bug-fix and cleanup release.
