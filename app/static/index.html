@@ -7,16 +7,16 @@
 
   <!-- Favicons (multi-size for various browser contexts) -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.6.2" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.6.2" />
-  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.6.2" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.6.3" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.6.3" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.6.3" />
 
   <!-- Apple home-screen icons. When the user adds the page to their iOS
        home screen, iOS picks the closest size match. The 180px one is the
        modern standard, 167 is for iPad Pro, 152 for older iPads. -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.6.2" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.6.2" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.6.2" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.6.3" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.6.3" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.6.3" />
 
   <!-- iOS standalone-mode tweaks. When the user "Add to Home Screen"s the
        site and opens it from there, iOS strips its browser chrome. The
@@ -43,22 +43,22 @@
   <meta name="description" content="Self-hosted dashboard for APsystems EZ1-M solar microinverter" />
 
   <!-- Fonts (self-hosted — no third-party requests, see vendor/fonts.css) -->
-  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.6.2" />
+  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.6.3" />
 
   <!-- Own styles (cache-busted) -->
-  <link rel="stylesheet" href="/static/style.css?v=1.6.2" />
+  <link rel="stylesheet" href="/static/style.css?v=1.6.3" />
 
   <!-- Chart.js 4.4.4 + date-fns adapter 3.0.0 (vendored) -->
-  <script src="/static/vendor/chart.umd.min.js?v=1.6.2"></script>
-  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.6.2"></script>
+  <script src="/static/vendor/chart.umd.min.js?v=1.6.3"></script>
+  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.6.3"></script>
 
   <!-- Flatpickr 4.6.13 day picker (vendored) -->
-  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.6.2">
-  <script src="/static/vendor/flatpickr.min.js?v=1.6.2"></script>
-  <script src="/static/vendor/flatpickr-de.js?v=1.6.2"></script>
+  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.6.3">
+  <script src="/static/vendor/flatpickr.min.js?v=1.6.3"></script>
+  <script src="/static/vendor/flatpickr-de.js?v=1.6.3"></script>
 
   <!-- Own scripts (cache-busted) -->
-  <script src="/static/i18n.js?v=1.6.2"></script>
+  <script src="/static/i18n.js?v=1.6.3"></script>
 </head>
 <body>
 <div class="grain"></div>
@@ -68,7 +68,11 @@
     <div class="logo-mark"></div>
     <div>
       <h1>EZ1 Monitor</h1>
-      <p class="subtitle" id="device-subtitle" data-i18n="app.subtitleLoading">— loading —</p>
+      <div class="device-meta" id="device-meta">
+        <p class="subtitle-line"><span class="meta-label" data-i18n="app.serial">S/N</span>: <span id="device-serial">—</span></p>
+        <p class="subtitle-line"><span class="meta-label" data-i18n="app.maxOut">max. output</span>: <span id="device-maxpower">—</span></p>
+        <p class="subtitle-line"><span class="meta-label" data-i18n="app.firmware">Firmware</span>: <span id="device-firmware">—</span></p>
+      </div>
     </div>
   </div>
   <div class="topbar-controls">
@@ -365,6 +369,6 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
-<script src="/static/app.js?v=1.6.2"></script>
+<script src="/static/app.js?v=1.6.3"></script>
 </body>
 </html>
