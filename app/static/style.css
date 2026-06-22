@@ -805,11 +805,23 @@ main {
 }
 
 /* ------------------------- Range + Granularity tabs ------------------------- */
-.chart-controls {
+/* History card controls: range row on top (full-width segmented), the
+   optional granularity row below it as a compact pill. The rolling/calendar
+   mode toggle lives in the card header (top-right), not here. */
+.chart-controls-stacked {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
+  margin-bottom: 16px;
+  max-width: 560px;
+}
+.chart-controls-stacked .range-tabs {
+  width: 100%;
+}
+.chart-controls-stacked .range-tab {
+  flex: 1;
+  white-space: nowrap;
 }
 
 .range-tabs, .granularity-tabs {
@@ -931,7 +943,7 @@ footer {
   gap: 12px;
 }
 
-.theme-toggle {
+.theme-toggle, .mode-toggle {
   background: var(--bg-card-2);
   border: 1px solid var(--border);
   color: var(--text-secondary);
@@ -945,16 +957,16 @@ footer {
   transition: all 0.15s;
   padding: 0;
 }
-.theme-toggle:hover {
+.theme-toggle:hover, .mode-toggle:hover {
   color: var(--accent);
   border-color: var(--border-bright);
   background: var(--bg-card);
 }
-.theme-toggle:focus-visible {
+.theme-toggle:focus-visible, .mode-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.theme-icon {
+.theme-icon, .mode-icon {
   display: block;
 }
 
