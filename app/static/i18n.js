@@ -4,7 +4,7 @@ const TRANSLATIONS = {
   de: {
     app: {
       serial: "S/N",
-      maxOut: "max. Leistung",
+      acLimit: "AC-Limit",
       firmware: "Firmware",
     },
     status: {
@@ -34,6 +34,8 @@ const TRANSLATIONS = {
       granDaily: "Tage",
       granMonthly: "Monate",
       granYearly: "Jahre",
+      switchToCalendar: "Auf Kalenderansicht wechseln",
+      switchToRolling: "Auf rollende Ansicht wechseln",
       tooltipPower: "Leistung",
       tooltipKwh: "kWh",
       previousDay: "Vorheriger Tag",
@@ -100,7 +102,7 @@ const TRANSLATIONS = {
   en: {
     app: {
       serial: "S/N",
-      maxOut: "max. output",
+      acLimit: "AC limit",
       firmware: "Firmware",
     },
     status: {
@@ -130,6 +132,8 @@ const TRANSLATIONS = {
       granDaily: "Daily",
       granMonthly: "Monthly",
       granYearly: "Yearly",
+      switchToCalendar: "Switch to calendar view",
+      switchToRolling: "Switch to rolling view",
       tooltipPower: "Power",
       tooltipKwh: "kWh",
       previousDay: "Previous day",
