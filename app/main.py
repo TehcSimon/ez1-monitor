@@ -375,6 +375,7 @@ async def get_live(request: Request):
 async def get_history(
     range: str = Query("day", pattern="^(day|week|month|year|multiyear)$"),
     granularity: str = Query("auto", pattern="^(auto|daily|monthly|yearly)$"),
+    mode: str = Query("rolling", pattern="^(rolling|calendar)$"),
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     """Historical data for the requested time range.
@@ -413,12 +414,31 @@ async def get_history(
                 "months": monthly,
             }
 
-    # Special path: rolling 12-month aggregate for the year view
+    # Special path: monthly aggregate for the year view.
     if range == "year" and granularity == "monthly":
+        if mode == "calendar":
+            # Calendar year: the actual months Jan–Dec of the current year.
+            # Returned in the same {month, kwh} shape as the rolling path;
+            # the client pads any missing months out to a full Jan–Dec frame.
+            rows = await db.get_monthly_aggregates(year=now.year)
+            months = [
+                {"month": f"{r['year']}-{r['month']:02d}", "kwh": r["total_kwh"]}
+                for r in rows
+            ]
+            return {
+                "range": "year", "granularity": "monthly", "mode": "calendar",
+                "calendar_year": now.year, "months": months,
+            }
+        # Rolling: the last 12 months up to now.
         monthly = await db.get_monthly_totals(12)
-        return {"range": "year", "granularity": "monthly", "months": monthly}
+        return {"range": "year", "granularity": "monthly", "mode": "rolling", "months": monthly}
 
     used_date: str | None = None
+    # period_*_day frame the full calendar period for the client to pad the
+    # chart with empty slots after "now" (only set in calendar mode). In
+    # rolling mode the window simply trails "now" by a fixed span.
+    period_start_day: str | None = None
+    period_end_day: str | None = None
 
     if range == "day":
         # Optional ?date=YYYY-MM-DD for historical day lookups
@@ -443,24 +463,43 @@ async def get_history(
             end = now
         bucket = 0
     elif range == "week":
-        start = now - timedelta(days=7)
-        end = now
         bucket = 600
+        if mode == "calendar":
+            monday = datetime.combine(
+                (now - timedelta(days=now.weekday())).date(), time.min
+            )
+            start, end = monday, now
+            period_start_day = monday.date().isoformat()
+            period_end_day = (monday.date() + timedelta(days=6)).isoformat()
+        else:
+            start, end = now - timedelta(days=7), now
     elif range == "month":
-        start = now - timedelta(days=30)
-        end = now
         bucket = 3600
+        if mode == "calendar":
+            first = datetime(now.year, now.month, 1)
+            start, end = first, now
+            period_start_day = first.date().isoformat()
+            period_end_day = last_day_of_month(first).date().isoformat()
+        else:
+            start, end = now - timedelta(days=30), now
     else:  # year, daily
-        start = now - timedelta(days=365)
-        end = now
         bucket = 86400
+        if mode == "calendar":
+            start, end = datetime(now.year, 1, 1), now
+            period_start_day = f"{now.year}-01-01"
+            period_end_day = f"{now.year}-12-31"
+        else:
+            start, end = now - timedelta(days=365), now
 
     points = await db.get_range(int(start.timestamp()), int(end.timestamp()), bucket)
     return {
         "range": range,
         "granularity": "daily" if range == "year" else "auto",
+        "mode": mode,
         "bucket_seconds": bucket,
         "date": used_date,
+        "period_start_day": period_start_day,
+        "period_end_day": period_end_day,
         "points": points,
     }
 
