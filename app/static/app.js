@@ -27,6 +27,7 @@ const state = {
   installKwp: 1.0,
   maxPowerW: 800,
   currentRange: "month",
+  historyMode: "rolling",            // rolling | calendar (week/month/year)
   yearGranularity: "daily",
   multiYearGranularity: "monthly",   // monthly | yearly
   statusState: "noData",
@@ -243,6 +244,7 @@ async function loadLive() {
 
       window.i18n.applyTranslations(state.lang);
       updateDynamicLabels();
+      updateHistoryModeIcon();   // re-localize the toggle tooltip
       ensureDayPicker();   // Re-init picker with new locale if needed
       updateDayPickerLabels();
 
@@ -836,15 +838,51 @@ async function loadTodayChart() {
 
 // --- History chart ----------------------------------------------------
 
+// Enumerate local "YYYY-MM-DD" keys from start to end (inclusive). Used to
+// frame a full calendar period in the history chart: the days after "now"
+// become empty (null) slots so you can see how far into the week/month/year
+// you are. setDate(+1) is calendar-based, so month/year/DST rollovers are safe.
+function enumerateDayKeys(startIso, endIso) {
+  const [sy, sm, sd] = startIso.split("-").map(Number);
+  const [ey, em, ed] = endIso.split("-").map(Number);
+  const out = [];
+  const d = new Date(sy, sm - 1, sd);
+  const end = new Date(ey, em - 1, ed);
+  while (d <= end) {
+    out.push(fmt.isoDay(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
+// Pad the year/monthly calendar response out to a full Jan–Dec frame. Months
+// without data (future months, or pre-install months) become null so they
+// render as empty slots rather than being dropped. No-op outside calendar mode.
+function padMonthlyCalendar(data) {
+  if (data.mode !== "calendar" || !data.calendar_year) return data;
+  const year = data.calendar_year;
+  const found = new Map((data.months || []).map(m => [m.month, m.kwh]));
+  const months = [];
+  for (let m = 1; m <= 12; m++) {
+    const key = `${year}-${String(m).padStart(2, "0")}`;
+    months.push({ month: key, kwh: found.has(key) ? found.get(key) : null });
+  }
+  return { ...data, months };
+}
+
 async function loadHistoryChart(range) {
   try {
     const isYear = range === "year";
     const isMultiYear = range === "multiyear";
+    const modeToggle = document.getElementById("history-mode-toggle");
 
     // Multi-year view: pulls from monthly_aggregates table (survives
     // retention pruning). Same chart shape as the year-view monthly mode,
     // just spans every year that has data instead of the last 12 months.
     if (isMultiYear) {
+      // All-years is calendar-based by nature — the rolling/calendar toggle
+      // doesn't apply, so hide it.
+      if (modeToggle) modeToggle.style.display = "none";
       const url = state.multiYearGranularity === "yearly"
         ? "/api/history?range=multiyear&granularity=yearly"
         : "/api/history?range=multiyear&granularity=monthly";
@@ -862,16 +900,19 @@ async function loadHistoryChart(range) {
       return;
     }
 
+    if (modeToggle) modeToggle.style.display = "";
+
     const useMonthly = isYear && state.yearGranularity === "monthly";
+    const mode = state.historyMode;
     const url = useMonthly
-      ? "/api/history?range=year&granularity=monthly"
-      : `/api/history?range=${range}`;
+      ? `/api/history?range=year&granularity=monthly&mode=${mode}`
+      : `/api/history?range=${range}&mode=${mode}`;
 
     const res = await fetch(url);
     const data = await res.json();
 
     if (useMonthly) {
-      renderMonthlyHistory(data);
+      renderMonthlyHistory(padMonthlyCalendar(data));
     } else {
       renderDailyHistory(data, isYear);
     }
@@ -993,8 +1034,17 @@ function renderDailyHistory(data, isYear) {
     }
   }
   const days = [...byDay.entries()].sort();
-  const labels = days.map(([k]) => k);
-  const series = days.map(([_, v]) => v.max);
+  // In calendar mode the backend sends period_start_day/period_end_day; we
+  // enumerate every day in that frame so the days after "now" show as empty
+  // slots (null = no bar). In rolling mode we just plot the days with data.
+  let labels, series;
+  if (data.period_start_day && data.period_end_day) {
+    labels = enumerateDayKeys(data.period_start_day, data.period_end_day);
+    series = labels.map(k => (byDay.has(k) ? byDay.get(k).max : null));
+  } else {
+    labels = days.map(([k]) => k);
+    series = days.map(([_, v]) => v.max);
+  }
 
   // Year-view dimming and boundaries
   const thisYear = new Date().getFullYear();
@@ -1210,7 +1260,12 @@ function timeChartOptions(timeFormat) {
       x: {
         type: "time",
         time: { displayFormats: { minute: timeFormat, hour: timeFormat } },
-        ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+        // autoSkipPadding (not a fixed maxTicksLimit) keeps a minimum gap
+        // between time labels, so Chart.js drops as many as needed to avoid
+        // overlap. This is width-responsive: a wide desktop plot shows more
+        // labels, a narrow phone plot fewer — and it re-runs on resize, so
+        // the "06:0007:00…" run-together on mobile can't happen.
+        ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 24 },
       },
       y: {
         beginAtZero: true,
@@ -1286,6 +1341,47 @@ document.getElementById("day-today")?.addEventListener("click", () => setViewedD
 
 const THEME_KEY = "ez1-theme";
 
+// --- History chart rolling/calendar mode -----------------------------------
+// Same UX pattern as the theme toggle: a single button whose icon shows the
+// mode you'll switch TO (rolling → calendar icon; calendar → clock icon),
+// with a localized tooltip. Persisted across reloads.
+const HISTORY_MODE_KEY = "ez1-history-mode";
+
+function getStoredHistoryMode() {
+  try {
+    const m = localStorage.getItem(HISTORY_MODE_KEY);
+    return m === "calendar" || m === "rolling" ? m : "rolling";
+  } catch (_e) {
+    return "rolling";
+  }
+}
+
+function updateHistoryModeIcon() {
+  const btn = document.getElementById("history-mode-toggle");
+  if (!btn) return;
+  const calIcon = btn.querySelector('[data-mode-icon="calendar"]');
+  const rollIcon = btn.querySelector('[data-mode-icon="rolling"]');
+  if (!calIcon || !rollIcon) return;
+  const inCalendar = state.historyMode === "calendar";
+  // Show the icon of the mode you'll switch TO.
+  calIcon.style.display = inCalendar ? "none" : "";
+  rollIcon.style.display = inCalendar ? "" : "none";
+  const label = window.i18n.t(
+    state.lang, inCalendar ? "chart.switchToRolling" : "chart.switchToCalendar"
+  );
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+}
+
+function toggleHistoryMode() {
+  state.historyMode = state.historyMode === "calendar" ? "rolling" : "calendar";
+  try {
+    localStorage.setItem(HISTORY_MODE_KEY, state.historyMode);
+  } catch (_e) { /* private mode: in-memory only */ }
+  updateHistoryModeIcon();
+  loadHistoryChart(state.currentRange);
+}
+
 function getStoredOverride() {
   const stored = localStorage.getItem(THEME_KEY);
   return stored === "light" || stored === "dark" ? stored : null;
@@ -1351,6 +1447,11 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 });
 
 document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
+
+// History rolling/calendar mode: restore persisted choice and wire the toggle.
+state.historyMode = getStoredHistoryMode();
+document.getElementById("history-mode-toggle")?.addEventListener("click", toggleHistoryMode);
+updateHistoryModeIcon();
 
 // Apply stored theme FIRST so the data-theme attribute is set on <html>,
 // THEN refresh chart colors so Chart.defaults reads the correct theme's
