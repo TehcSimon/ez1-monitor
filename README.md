@@ -281,6 +281,28 @@ automatically.
 
 ## Upgrading
 
+### From v1.6.3 to v1.7.0
+
+No manual steps, no database migration. A feature release.
+
+- **Rolling vs. calendar history views.** The Week / Month / Year charts gain a
+  small toggle (top-right of the History card) to switch between the rolling
+  window (last 7 / 30 / 365 days, the previous behaviour) and the calendar
+  period (current Mon–Sun, 1st–end of month, Jan–Dec). In calendar mode the
+  chart frames the whole period, so the days/months after today show as empty
+  slots and you can see how far into the period you are. The choice is
+  remembered across reloads. The All-years view is unchanged (it is already
+  calendar-based). No new data is stored — calendar views read the same
+  measurements and monthly aggregates.
+- **Clearer device header.** The header lines are reordered to serial number,
+  firmware, then output limit, and the output limit is now labelled **AC limit**
+  (German: *AC-Limit*) — it is the inverter's configurable AC output cap (read
+  from the inverter), not the panel rating.
+- **Day-picker icon now shows day dots**, matching its purpose (picking a single
+  day) and distinguishing it from the plain calendar used by the new mode toggle.
+- History-card layout tidied: the range tabs sit above the (optional) granularity
+  tabs instead of the other way round, so they no longer crowd each other.
+
 ### From v1.6.2 to v1.6.3
 
 No manual steps, no database migration — a small bug-fix and polish release.
@@ -300,6 +322,9 @@ No manual steps, no database migration — a small bug-fix and polish release.
   read from the inverter, not hard-coded. On mobile the theme toggle and status
   pill move into a compact right-hand column (toggle on top, status below) so
   the multi-line header stays compact instead of stacking a third row.
+- **Day-chart time labels no longer overlap on mobile.** The x-axis now keeps
+  a minimum gap between time labels and drops as many as needed to fit, so the
+  hourly labels stop running together on narrow screens.
 
 ### From v1.6.1 to v1.6.2
 
