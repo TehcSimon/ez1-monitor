@@ -7,16 +7,16 @@
 
   <!-- Favicons (multi-size for various browser contexts) -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.6.3" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.6.3" />
-  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.6.3" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.7.0" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.7.0" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.7.0" />
 
   <!-- Apple home-screen icons. When the user adds the page to their iOS
        home screen, iOS picks the closest size match. The 180px one is the
        modern standard, 167 is for iPad Pro, 152 for older iPads. -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.6.3" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.6.3" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.6.3" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.7.0" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.7.0" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.7.0" />
 
   <!-- iOS standalone-mode tweaks. When the user "Add to Home Screen"s the
        site and opens it from there, iOS strips its browser chrome. The
@@ -43,22 +43,22 @@
   <meta name="description" content="Self-hosted dashboard for APsystems EZ1-M solar microinverter" />
 
   <!-- Fonts (self-hosted — no third-party requests, see vendor/fonts.css) -->
-  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.6.3" />
+  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.7.0" />
 
   <!-- Own styles (cache-busted) -->
-  <link rel="stylesheet" href="/static/style.css?v=1.6.3" />
+  <link rel="stylesheet" href="/static/style.css?v=1.7.0" />
 
   <!-- Chart.js 4.4.4 + date-fns adapter 3.0.0 (vendored) -->
-  <script src="/static/vendor/chart.umd.min.js?v=1.6.3"></script>
-  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.6.3"></script>
+  <script src="/static/vendor/chart.umd.min.js?v=1.7.0"></script>
+  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.7.0"></script>
 
   <!-- Flatpickr 4.6.13 day picker (vendored) -->
-  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.6.3">
-  <script src="/static/vendor/flatpickr.min.js?v=1.6.3"></script>
-  <script src="/static/vendor/flatpickr-de.js?v=1.6.3"></script>
+  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.7.0">
+  <script src="/static/vendor/flatpickr.min.js?v=1.7.0"></script>
+  <script src="/static/vendor/flatpickr-de.js?v=1.7.0"></script>
 
   <!-- Own scripts (cache-busted) -->
-  <script src="/static/i18n.js?v=1.6.3"></script>
+  <script src="/static/i18n.js?v=1.7.0"></script>
 </head>
 <body>
 <div class="grain"></div>
@@ -70,8 +70,8 @@
       <h1>EZ1 Monitor</h1>
       <div class="device-meta" id="device-meta">
         <p class="subtitle-line"><span class="meta-label" data-i18n="app.serial">S/N</span>: <span id="device-serial">—</span></p>
-        <p class="subtitle-line"><span class="meta-label" data-i18n="app.maxOut">max. output</span>: <span id="device-maxpower">—</span></p>
         <p class="subtitle-line"><span class="meta-label" data-i18n="app.firmware">Firmware</span>: <span id="device-firmware">—</span></p>
+        <p class="subtitle-line"><span class="meta-label" data-i18n="app.acLimit">AC limit</span>: <span id="device-maxpower">—</span></p>
       </div>
     </div>
   </div>
@@ -161,6 +161,12 @@
             <line x1="2" y1="6.5" x2="14" y2="6.5"></line>
             <line x1="5" y1="2" x2="5" y2="5"></line>
             <line x1="11" y1="2" x2="11" y2="5"></line>
+            <circle cx="5" cy="9.5" r="0.85" fill="currentColor" stroke="none"></circle>
+            <circle cx="8" cy="9.5" r="0.85" fill="currentColor" stroke="none"></circle>
+            <circle cx="11" cy="9.5" r="0.85" fill="currentColor" stroke="none"></circle>
+            <circle cx="5" cy="12" r="0.85" fill="currentColor" stroke="none"></circle>
+            <circle cx="8" cy="12" r="0.85" fill="currentColor" stroke="none"></circle>
+            <circle cx="11" cy="12" r="0.85" fill="currentColor" stroke="none"></circle>
           </svg>
         </button>
         <button class="day-today-btn" id="day-today" data-i18n="chart.todayButton">Today</button>
@@ -268,20 +274,33 @@
   </section>
 
   <!-- Historical chart with range + granularity tabs -->
-  <section class="card chart-card">
+  <section class="card chart-card history-card">
     <div class="card-header">
       <h2 data-i18n="chart.historyTitle">History</h2>
-      <div class="chart-controls">
-        <div class="granularity-tabs" id="granularity-tabs" style="display: none;">
-          <button class="gran-tab active" data-gran="daily" data-i18n="chart.granDaily">Daily</button>
-          <button class="gran-tab" data-gran="monthly" data-i18n="chart.granMonthly">Monthly</button>
-        </div>
-        <div class="range-tabs">
-          <button class="range-tab" data-range="week" data-i18n="chart.rangeWeek">Week</button>
-          <button class="range-tab active" data-range="month" data-i18n="chart.rangeMonth">Month</button>
-          <button class="range-tab" data-range="year" data-i18n="chart.rangeYear">Year</button>
-          <button class="range-tab" data-range="multiyear" data-i18n="chart.rangeMultiyear">All Years</button>
-        </div>
+      <!-- Rolling/calendar mode toggle. Convention (like the theme toggle):
+           the icon shows the mode you'll switch TO. In rolling mode the
+           calendar icon is shown (click → calendar); in calendar mode the
+           clock/history icon is shown (click → rolling). Hidden for the
+           "All years" range, which is calendar-based by nature. -->
+      <button class="mode-toggle" id="history-mode-toggle" title="" aria-label="">
+        <svg class="mode-icon" data-mode-icon="calendar" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path>
+        </svg>
+        <svg class="mode-icon" data-mode-icon="rolling" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="chart-controls-stacked">
+      <div class="range-tabs">
+        <button class="range-tab" data-range="week" data-i18n="chart.rangeWeek">Week</button>
+        <button class="range-tab active" data-range="month" data-i18n="chart.rangeMonth">Month</button>
+        <button class="range-tab" data-range="year" data-i18n="chart.rangeYear">Year</button>
+        <button class="range-tab" data-range="multiyear" data-i18n="chart.rangeMultiyear">All Years</button>
+      </div>
+      <div class="granularity-tabs" id="granularity-tabs" style="display: none;">
+        <button class="gran-tab active" data-gran="daily" data-i18n="chart.granDaily">Daily</button>
+        <button class="gran-tab" data-gran="monthly" data-i18n="chart.granMonthly">Monthly</button>
       </div>
     </div>
     <div class="chart-wrap">
@@ -369,6 +388,6 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
-<script src="/static/app.js?v=1.6.3"></script>
+<script src="/static/app.js?v=1.7.0"></script>
 </body>
 </html>
