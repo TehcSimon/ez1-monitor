@@ -36,6 +36,15 @@ services:
 
       # --- Economic / environmental factors ---
       - PRICE_PER_KWH=0.35               # local electricity price per kWh
+      - SELF_CONSUMPTION_PCT=100         # % of production you self-consume;
+                                         # 100 = old behaviour. The fed-in
+                                         # remainder earns FEED_IN_TARIFF.
+                                         # Affects only "money saved" &
+                                         # amortization, not kWh or CO2.
+      - FEED_IN_TARIFF=0                 # pay per kWh for the fed-in share
+                                         # (often 0 for a balcony plant)
+      - INSTALL_COST=0                   # total install cost; >0 shows the
+                                         # amortization card, 0 hides it
       - CO2_KG_PER_KWH=0.38              # grid CO2 intensity (kg CO2/kWh)
                                          # Used as fallback when Electricity
                                          # Maps integration is disabled or
