@@ -925,3 +925,45 @@ class Database:
                 "price_kwh": float(agg["price_kwh"]) + float(live["price_kwh"]),
                 "price_sum": float(agg["price_sum"]) + float(live["price_sum"]),
             }
+
+    async def get_breakeven_date(
+        self, install_cost: float, total_savings: float
+    ) -> Optional[str]:
+        """Local date (YYYY-MM-DD) on which cumulative savings first reached
+        install_cost, or None if the installation hasn't broken even.
+
+        Drives the amortization break-even glow. Rather than re-valuing energy
+        (which can drift from the headline money figure — it's built from
+        stamped prices and the lifetime split), this works *proportionally*:
+        the caller passes the realistic lifetime savings, and we find the day
+        at which the cumulative energy in daily_aggregates — which spans the
+        full history and survives raw-row pruning — first reaches the
+        install_cost / total_savings fraction of the lifetime energy. Since
+        the caller only invokes this once savings ≥ cost, the fraction is ≤ 1
+        and (given any daily data) a day is always found, so an amortized
+        install is never left undatable. Assumes a roughly stable
+        value-per-kWh over time; a changed tariff shifts the date slightly,
+        which is fine for a cosmetic glow.
+        """
+        if install_cost <= 0 or total_savings <= 0:
+            return None
+        fraction = install_cost / total_savings
+        if fraction > 1.0:
+            return None
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                "SELECT date, total_kwh FROM daily_aggregates ORDER BY date ASC"
+            )
+            rows = await cur.fetchall()
+        total_kwh = sum((r[1] or 0.0) for r in rows)
+        if total_kwh <= 0:
+            return None
+        target_kwh = fraction * total_kwh
+        cumulative = 0.0
+        last_date = None
+        for r in rows:
+            cumulative += r[1] or 0.0
+            last_date = r[0]
+            if cumulative >= target_kwh:
+                return r[0]
+        return last_date
