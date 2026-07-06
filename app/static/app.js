@@ -1121,7 +1121,7 @@ function renderWeeklyHistory(data) {
       },
       scales: {
         x: { ticks: { maxRotation: 0, autoSkip: false, callback: function (val, idx) {
-          const stride = tickStride(this.chart, weeks.length, 34);
+          const stride = tickStride(this.chart, weeks.length, 48);
           if (stride > 1 && idx % stride !== 0) return "";
           const w = weeks[idx]; return w ? `${wkWord}${w.iso_week}` : "";
         } } },
@@ -1164,7 +1164,7 @@ function renderAnchoredDaily(data) {
       scales: {
         x: { ticks: { maxRotation: 0, autoSkip: false, callback: function (val, idx) {
           const lbl = this.chart.data.labels[idx]; if (!lbl) return "";
-          const stride = tickStride(this.chart, this.chart.data.labels.length, 40);
+          const stride = tickStride(this.chart, this.chart.data.labels.length, 56);
           if (stride > 1 && idx % stride !== 0) return "";
           return new Date(lbl + "T00:00:00").toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
         } } },
@@ -1312,7 +1312,7 @@ function renderYearlyHistory(data) {
         }),
       },
       scales: {
-        x: { ticks: { maxRotation: 0, autoSkip: false } },
+        x: { ticks: { maxRotation: 0, autoSkip: true } },
         y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
       },
     },
