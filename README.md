@@ -128,6 +128,9 @@ All configuration via environment variables.
 | `DEFAULT_LANG` | *(empty)* | `""` = auto-detect from browser, or force `de`/`en` |
 | `CURRENCY` | `EUR` | `EUR` or `USD` |
 | `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh. Stamped on every measurement, so historical "money saved" stays accurate across tariff changes — update the value when your tariff changes and only new production is valued at the new price. |
+| `SELF_CONSUMPTION_PCT` | `100` | Estimated share (%) of production you actually self-consume. Without a battery/smart control you can't use 100% — the rest is fed in. Affects only the realistic "money saved" and amortization; the kWh and CO₂ figures are unchanged. `100` reproduces the previous behaviour. |
+| `FEED_IN_TARIFF` | `0` | Feed-in compensation per kWh for the share you don't self-consume (same currency as `PRICE_PER_KWH`). Commonly `0` for a balcony plant. |
+| `INSTALL_COST` | `0` | One-off total cost of your installation. When set (> 0), a "Payback" card shows how far your savings have repaid it, with a break-even highlight. `0` hides the card. |
 | `CO2_KG_PER_KWH` | `0.38` | Static grid CO₂ factor (fallback when Electricity Maps is off or unavailable) |
 | `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Optional. Enables live grid CO₂ intensity. |
 | `ELECTRICITY_MAPS_ZONE` | `DE` | ISO country code shown as zone label in the UI (the actual zone is bound to the token in the portal) |
@@ -260,6 +263,8 @@ ez1_this_week_kwh, ez1_this_month_kwh, ez1_this_year_kwh
 ez1_peak_today_watts
 ez1_lifetime_kwh_total
 ez1_co2_saved_kg_total
+ez1_money_saved
+ez1_amortization_percent
 ez1_carbon_intensity_g_per_kwh
 ez1_carbon_fossil_percentage
 ez1_carbon_source{source="live|stale|avg|static"}
@@ -280,6 +285,37 @@ read-while-write). The Unraid appdata-backup plugin handles this
 automatically.
 
 ## Upgrading
+
+### From v1.7.0 to v1.8.0
+
+No manual steps, no database migration. A feature release.
+
+- **Realistic "money saved".** Two new optional variables make the savings
+  figure reflect a setup without a battery or smart control:
+  `SELF_CONSUMPTION_PCT` (the estimated share you actually self-consume,
+  default `100` = unchanged) and `FEED_IN_TARIFF` (what the fed-in remainder
+  earns, default `0`). The money card shows the realistic value with a
+  transparent subtitle (`bei 35 ct/kWh · 70 % Eigennutzung …`), plus the
+  100%-self-consumption ceiling as a second line when a self-consumption
+  estimate below 100% is set. The factor is global and applied at display
+  time, so adjusting it re-values the whole history. CO₂ and kWh figures are
+  deliberately unchanged — fed-in energy displaces grid generation just the
+  same, so it avoids CO₂ regardless of who consumes it.
+- **Amortization card.** Set `INSTALL_COST` to your installation's one-off
+  cost and a new lifetime card shows how far your savings have repaid it
+  (progress bar capped at 100%, the true percentage in the value). Crossing
+  break-even is celebrated with the Hall-of-Fame glow — a steady glow plus an
+  *AMORTISIERT* badge for the first week, then a one-off ~60 s pulse for the
+  following three weeks. Both the percentage and the break-even date are
+  derived live, so you can update `INSTALL_COST` later (e.g. after expanding
+  the array) and everything recomputes — nothing is persisted. `0` (default)
+  hides the card.
+- **Fixed/auto day-chart scale.** The Today's-curve card gains a small toggle
+  (left of the title, kept clear of the day picker) to pin the Y-axis to the
+  AC limit + 50 W instead of auto-fitting to the day's peak, so weak and
+  strong days are visually comparable at a glance. Fixed is the default; the
+  choice is remembered across reloads.
+- Two new Prometheus metrics: `ez1_money_saved` and `ez1_amortization_percent`.
 
 ### From v1.6.3 to v1.7.0
 
