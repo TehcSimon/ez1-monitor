@@ -7,16 +7,16 @@
 
   <!-- Favicons (multi-size for various browser contexts) -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.7.0" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.7.0" />
-  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.7.0" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.8.0" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.8.0" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.8.0" />
 
   <!-- Apple home-screen icons. When the user adds the page to their iOS
        home screen, iOS picks the closest size match. The 180px one is the
        modern standard, 167 is for iPad Pro, 152 for older iPads. -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.7.0" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.7.0" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.7.0" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.8.0" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.8.0" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.8.0" />
 
   <!-- iOS standalone-mode tweaks. When the user "Add to Home Screen"s the
        site and opens it from there, iOS strips its browser chrome. The
@@ -43,22 +43,22 @@
   <meta name="description" content="Self-hosted dashboard for APsystems EZ1-M solar microinverter" />
 
   <!-- Fonts (self-hosted — no third-party requests, see vendor/fonts.css) -->
-  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.7.0" />
+  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.8.0" />
 
   <!-- Own styles (cache-busted) -->
-  <link rel="stylesheet" href="/static/style.css?v=1.7.0" />
+  <link rel="stylesheet" href="/static/style.css?v=1.8.0" />
 
   <!-- Chart.js 4.4.4 + date-fns adapter 3.0.0 (vendored) -->
-  <script src="/static/vendor/chart.umd.min.js?v=1.7.0"></script>
-  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.7.0"></script>
+  <script src="/static/vendor/chart.umd.min.js?v=1.8.0"></script>
+  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.8.0"></script>
 
   <!-- Flatpickr 4.6.13 day picker (vendored) -->
-  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.7.0">
-  <script src="/static/vendor/flatpickr.min.js?v=1.7.0"></script>
-  <script src="/static/vendor/flatpickr-de.js?v=1.7.0"></script>
+  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.8.0">
+  <script src="/static/vendor/flatpickr.min.js?v=1.8.0"></script>
+  <script src="/static/vendor/flatpickr-de.js?v=1.8.0"></script>
 
   <!-- Own scripts (cache-busted) -->
-  <script src="/static/i18n.js?v=1.7.0"></script>
+  <script src="/static/i18n.js?v=1.8.0"></script>
 </head>
 <body>
 <div class="grain"></div>
@@ -146,7 +146,23 @@
   <!-- Today chart with day picker -->
   <section class="card chart-card" id="today-chart-card">
     <div class="card-header">
-      <h2 data-i18n="chart.todayTitle">Today's Curve</h2>
+      <div class="card-header-left">
+        <h2 data-i18n="chart.todayTitle">Today's Curve</h2>
+        <!-- Fixed/auto Y-axis scale toggle. Convention (like the other
+             toggles): the icon shows the mode you'll switch TO. Default is
+             the fixed scale (axis pinned to AC-limit + 50 W) so days are
+             visually comparable; click switches to auto (fit to the day's
+             peak). Sits left next to the title, deliberately separated from
+             the day-picker cluster on the right so they're not mis-tapped. -->
+        <button class="mode-toggle" id="dayscale-toggle" title="" aria-label="">
+          <svg class="mode-icon" data-scale-icon="auto" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+          <svg class="mode-icon" data-scale-icon="fixed" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
+            <line x1="3" y1="5" x2="21" y2="5"></line><rect x="6" y="9" width="4" height="11" rx="1"></rect><rect x="14" y="12" width="4" height="8" rx="1"></rect>
+          </svg>
+        </button>
+      </div>
       <div class="day-picker">
         <button class="day-nav-btn" id="day-prev" title="" aria-label="">‹</button>
         <!-- Date label is a non-interactive span. Picker opens via the
@@ -372,6 +388,21 @@
         <div class="lifetime-title" data-i18n="lifetime.moneySaved">Money Saved</div>
         <div class="lifetime-value" id="lifetime-money">—</div>
         <div class="lifetime-sub" id="lifetime-money-sub">at $0.35/kWh</div>
+        <div class="lifetime-sub lifetime-sub-secondary" id="lifetime-money-sub-2"></div>
+      </div>
+    </div>
+    <!-- Amortization: realistic lifetime savings vs. the one-off install
+         cost (INSTALL_COST). Hidden entirely when INSTALL_COST is unset. The
+         bar is capped at 100%; the value shows the true percentage (which can
+         exceed 100). The break-even glow reuses the Hall-of-Fame animation. -->
+    <div class="card lifetime-card" id="amort-card" style="display: none;">
+      <div class="lifetime-icon">🏦</div>
+      <div class="lifetime-body">
+        <div class="lifetime-title" data-i18n="lifetime.amortTitle">Payback</div>
+        <div class="lifetime-value"><span id="amort-pct">—</span> %</div>
+        <div class="amort-bar-track"><div class="amort-bar-fill" id="amort-bar"></div></div>
+        <div class="lifetime-sub" id="amort-sub">—</div>
+        <span class="amort-badge" data-i18n="lifetime.amortBadge">PAID OFF</span>
       </div>
     </div>
   </section>
@@ -388,6 +419,6 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
-<script src="/static/app.js?v=1.7.0"></script>
+<script src="/static/app.js?v=1.8.0"></script>
 </body>
 </html>
