@@ -330,6 +330,17 @@ main {
   letter-spacing: -0.01em;
 }
 
+/* Left group of a card header: keeps the title and an adjacent toggle (e.g.
+   the day-chart scale toggle) together on the left, while the right-hand
+   cluster (day picker) stays pushed to the right via the header's
+   space-between. */
+.card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 /* ------------------------- Hero ------------------------- */
 .hero {
   display: grid;
@@ -855,7 +866,7 @@ main {
 /* ------------------------- Lifetime ------------------------- */
 .lifetime-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
 }
 
@@ -913,6 +924,55 @@ main {
    together (both are live-grid context for the value above). Empty content
    collapses via :empty so we don't waste vertical space in static mode. */
 .lifetime-sub-secondary:empty {
+  display: none;
+}
+
+/* Let the body (and its progress bar) take the remaining card width and
+   shrink instead of overflowing. Shared by the CO2 and amortization cards. */
+.lifetime-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Amortization card (4th lifetime card) ----------------------------
+   Realistic lifetime savings vs. the one-off install cost. The bar is
+   capped at 100%; the value label shows the true percentage (can exceed
+   100). Position context anchors the AMORTISIERT badge. */
+.lifetime-card#amort-card {
+  position: relative;
+}
+.amort-bar-track {
+  height: 8px;
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 8px 0 6px;
+}
+.amort-bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.6s ease;
+}
+/* Once broken even, the bar stays full in the calm "good" tone so the card
+   still reads as paid-off after the break-even glow has faded. */
+.amort-card.amort-done .amort-bar-fill {
+  background: var(--good);
+}
+.amort-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--hof-badge-bg);
+  color: var(--hof-badge-text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: 4px;
   display: none;
 }
 
@@ -1091,7 +1151,7 @@ html[data-theme="light"] .info-tooltip-content {
   .hero-side { flex-direction: row; }
   .pv-stat { flex: 1; }
   .comparison-grid { grid-template-columns: repeat(2, 1fr); }
-  .lifetime-grid { grid-template-columns: 1fr; }
+  .lifetime-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {
@@ -1250,16 +1310,20 @@ html[data-theme="light"] .info-tooltip-content {
 /* Slot states — "fresh" (record set today, endless glow + badge),
    "recent" (within tier window, one pulse on load),
    "settled" / "locked" → no animation, just the static value. */
-.hof-slot.hof-fresh {
+.hof-slot.hof-fresh,
+.amort-card.glow-fresh {
   animation: hof-glow 2s ease-in-out infinite;
 }
-.hof-slot.hof-fresh .hof-new-badge {
+.hof-slot.hof-fresh .hof-new-badge,
+.amort-card.glow-fresh .amort-badge {
   display: block;
 }
-.hof-slot.hof-recent {
+.hof-slot.hof-recent,
+.amort-card.glow-recent {
   /* 30 cycles × 2 s = 60 s, then box-shadow stays at the keyframe end.
      Longer than you'd think necessary — without the NEW badge the glow
-     is the only cue and at 20 s it was easy to miss. */
+     is the only cue and at 20 s it was easy to miss. The amortization
+     break-even reuses this exact pulse so it matches the Hall of Fame. */
   animation: hof-glow 2s ease-in-out 30;
 }
 
@@ -1272,7 +1336,9 @@ html[data-theme="light"] .info-tooltip-content {
    still visually distinguishable, but it doesn't pulse. */
 @media (prefers-reduced-motion: reduce) {
   .hof-slot.hof-fresh,
-  .hof-slot.hof-recent {
+  .hof-slot.hof-recent,
+  .amort-card.glow-fresh,
+  .amort-card.glow-recent {
     animation: none;
     box-shadow: 0 0 8px var(--hof-glow-soft);
   }
