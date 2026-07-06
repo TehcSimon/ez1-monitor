@@ -26,6 +26,10 @@ const state = {
   co2KgPerKwh: 0.38,
   installKwp: 1.0,
   maxPowerW: 800,
+  selfConsumptionPct: 100,   // % of production self-consumed (money calc)
+  feedInTariff: 0,           // currency/kWh for the fed-in remainder
+  installCost: 0,            // one-off install cost; 0 hides the amort card
+  dayScaleMode: "fixed",     // fixed | auto (today-chart Y-axis scale)
   currentRange: "month",
   historyMode: "rolling",            // rolling | calendar (week/month/year)
   yearGranularity: "daily",
@@ -241,10 +245,14 @@ async function loadLive() {
       state.installKwp = data.config.install_kwp ?? 1.0;
       state.pollInterval = data.config.poll_interval || 60;
       state.retentionDays = data.config.retention_days ?? 730;
+      state.selfConsumptionPct = data.config.self_consumption_pct ?? 100;
+      state.feedInTariff = data.config.feed_in_tariff ?? 0;
+      state.installCost = data.config.install_cost ?? 0;
 
       window.i18n.applyTranslations(state.lang);
       updateDynamicLabels();
       updateHistoryModeIcon();   // re-localize the toggle tooltip
+      updateDayScaleIcon();      // re-localize the scale-toggle tooltip
       ensureDayPicker();   // Re-init picker with new locale if needed
       updateDayPickerLabels();
 
@@ -318,9 +326,23 @@ function updateDynamicLabels() {
 
   const moneySub = document.getElementById("lifetime-money-sub");
   if (moneySub) {
-    moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOn", {
-      price: fmt.pricePerKwh(state.pricePerKwh),
-    });
+    // Three cases, depending on the configured self-consumption realism:
+    //  - 100%      → classic subtitle, nothing to disclose (back-compat)
+    //  - <100%, no feed-in tariff → "… · 70 % Eigennutzung"
+    //  - <100%, with feed-in      → "… · 70 % Eigennutzung · 8 ct/kWh Einspeisung"
+    const price = fmt.pricePerKwh(state.pricePerKwh);
+    const scq = state.selfConsumptionPct;
+    if (scq >= 100) {
+      moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOn", { price });
+    } else if (state.feedInTariff > 0) {
+      moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOnSelfUseFeedIn", {
+        price, pct: fmt.pct(scq), feedin: fmt.pricePerKwh(state.feedInTariff),
+      });
+    } else {
+      moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOnSelfUse", {
+        price, pct: fmt.pct(scq),
+      });
+    }
   }
   const footerUpdate = document.getElementById("footer-update-text");
   if (footerUpdate) {
@@ -469,8 +491,58 @@ async function loadStats() {
     document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
     document.getElementById("lifetime-co2").textContent = (s.co2_saved_kg || 0).toFixed(1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
+
+    // Second money line: the 100%-self-consumption ceiling. Shown only when a
+    // self-consumption estimate < 100% is configured (CSS :empty collapses it
+    // otherwise so the card stays compact in the default case).
+    const moneySub2 = document.getElementById("lifetime-money-sub-2");
+    if (moneySub2) {
+      moneySub2.textContent = (state.selfConsumptionPct < 100 && s.money_saved_full != null)
+        ? window.i18n.t(state.lang, "lifetime.moneyPotential", { amount: fmt.money(s.money_saved_full) })
+        : "";
+    }
+
+    renderAmortization(s);
   } catch (e) {
     console.error("loadStats:", e);
+  }
+}
+
+// Amortization card: realistic lifetime savings vs. the one-off install cost.
+// Hidden unless INSTALL_COST is configured (backend sends amortization_pct =
+// null then). Bar capped at 100%, value shows the true percentage. The
+// break-even glow reuses the Hall-of-Fame animation classes.
+function renderAmortization(s) {
+  const card = document.getElementById("amort-card");
+  if (!card) return;
+  if (s.amortization_pct == null || !state.installCost) {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "";
+
+  const pct = s.amortization_pct;
+  const pctEl = document.getElementById("amort-pct");
+  if (pctEl) pctEl.textContent = fmt.pct(pct);
+
+  const bar = document.getElementById("amort-bar");
+  if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+
+  const sub = document.getElementById("amort-sub");
+  if (sub) sub.textContent = `${fmt.money(s.money_saved)} / ${fmt.money(state.installCost)}`;
+
+  // "amort-done" keeps the bar in the calm good tone once broken even. The
+  // glow classes mirror the HoF: fresh = endless pulse + AMORTISIERT badge,
+  // recent = one ~60s pulse. Remove first so each render restarts the pulse,
+  // exactly like the HoF slots do.
+  card.classList.remove("amort-done", "glow-fresh", "glow-recent");
+  if (pct >= 100) {
+    card.classList.add("amort-done");
+    if (s.amortization_state === "fresh") {
+      card.classList.add("glow-fresh");
+    } else if (s.amortization_state === "recent") {
+      card.classList.add("glow-recent");
+    }
   }
 }
 
@@ -1269,6 +1341,14 @@ function timeChartOptions(timeFormat) {
       },
       y: {
         beginAtZero: true,
+        // Fixed scale (default): pin the top to the AC limit + 50 W headroom
+        // so every day is drawn to the same vertical scale and weak days read
+        // as weak instead of being stretched to fill. suggestedMax (not max)
+        // means a brief p1+p2 spike above the AC cap still isn't clipped.
+        // "auto" mode omits it, restoring Chart.js' fit-to-peak behaviour.
+        suggestedMax: state.dayScaleMode === "fixed"
+          ? (state.maxPowerW || 800) + 50
+          : undefined,
         ticks: { callback: v => v + " W" },
       },
     },
@@ -1382,6 +1462,48 @@ function toggleHistoryMode() {
   loadHistoryChart(state.currentRange);
 }
 
+// --- Today-chart fixed/auto Y-axis scale toggle -----------------------------
+// Default "fixed": the axis is pinned to AC-limit + 50 W (see
+// timeChartOptions) so days are comparable at a glance. "auto" restores
+// Chart.js' fit-to-peak. Persisted across reloads, same pattern as the
+// history-mode and theme toggles.
+const DAYSCALE_KEY = "ez1-dayscale-mode";
+
+function getStoredDayScaleMode() {
+  try {
+    const m = localStorage.getItem(DAYSCALE_KEY);
+    return m === "auto" || m === "fixed" ? m : "fixed";
+  } catch (_e) {
+    return "fixed";
+  }
+}
+
+function updateDayScaleIcon() {
+  const btn = document.getElementById("dayscale-toggle");
+  if (!btn) return;
+  const autoIcon = btn.querySelector('[data-scale-icon="auto"]');
+  const fixedIcon = btn.querySelector('[data-scale-icon="fixed"]');
+  if (!autoIcon || !fixedIcon) return;
+  const isFixed = state.dayScaleMode === "fixed";
+  // Show the icon of the mode you'll switch TO.
+  autoIcon.style.display = isFixed ? "" : "none";
+  fixedIcon.style.display = isFixed ? "none" : "";
+  const label = window.i18n.t(
+    state.lang, isFixed ? "chart.switchToAutoScale" : "chart.switchToFixedScale"
+  );
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+}
+
+function toggleDayScaleMode() {
+  state.dayScaleMode = state.dayScaleMode === "fixed" ? "auto" : "fixed";
+  try {
+    localStorage.setItem(DAYSCALE_KEY, state.dayScaleMode);
+  } catch (_e) { /* private mode: in-memory only */ }
+  updateDayScaleIcon();
+  loadTodayChart();
+}
+
 function getStoredOverride() {
   const stored = localStorage.getItem(THEME_KEY);
   return stored === "light" || stored === "dark" ? stored : null;
@@ -1452,6 +1574,11 @@ document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
 state.historyMode = getStoredHistoryMode();
 document.getElementById("history-mode-toggle")?.addEventListener("click", toggleHistoryMode);
 updateHistoryModeIcon();
+
+// Today-chart fixed/auto scale: restore persisted choice and wire the toggle.
+state.dayScaleMode = getStoredDayScaleMode();
+document.getElementById("dayscale-toggle")?.addEventListener("click", toggleDayScaleMode);
+updateDayScaleIcon();
 
 // Apply stored theme FIRST so the data-theme attribute is set on <html>,
 // THEN refresh chart colors so Chart.defaults reads the correct theme's
