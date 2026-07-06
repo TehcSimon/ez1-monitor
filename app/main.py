@@ -21,6 +21,7 @@ from .database import Database
 from .poller import Poller
 from .co2 import CarbonState, resolve_current, poll_loop
 from .date_helpers import shift_year, last_day_of_month
+from .money import compute_money_saved
 from . import __version__
 
 logging.basicConfig(
@@ -67,6 +68,26 @@ SUPPORTED_LANGS = {"de", "en"}
 CURRENCY = os.getenv("CURRENCY", "EUR").upper()
 PRICE_PER_KWH = float(os.getenv("PRICE_PER_KWH", "0.35"))
 CO2_KG_PER_KWH = float(os.getenv("CO2_KG_PER_KWH", "0.38"))
+
+# Money-saved realism (v1.8). Without a battery/smart control you can't
+# self-consume 100% of production. SELF_CONSUMPTION_PCT is the estimated
+# share that offsets the retail price; the fed-in remainder earns
+# FEED_IN_TARIFF (commonly 0 for a balcony plant). Both are applied as a
+# global factor at calc time — NOT stamped per measurement — so the estimate
+# stays adjustable and applies retroactively to the whole history. The
+# defaults (100% / 0) reproduce the pre-v1.8 "money saved" exactly.
+SELF_CONSUMPTION_PCT = max(0.0, min(100.0, float(os.getenv("SELF_CONSUMPTION_PCT", "100"))))
+FEED_IN_TARIFF = float(os.getenv("FEED_IN_TARIFF", "0"))
+# One-off total cost of the installation, for the amortization card.
+# 0 (default) hides the card entirely.
+INSTALL_COST = float(os.getenv("INSTALL_COST", "0"))
+
+# Amortization break-even glow windows (days since the break-even date):
+#   0 .. FRESH   → "fresh":  endless glow + AMORTISIERT badge
+#   .. RECENT    → "recent": one ~60 s pulse on load (same as Hall of Fame)
+#   beyond       → "settled": static, no glow
+AMORT_GLOW_FRESH_DAYS = 7
+AMORT_GLOW_RECENT_DAYS = 28
 
 # Electricity Maps integration (optional)
 ELECTRICITY_MAPS_TOKEN = os.getenv("ELECTRICITY_MAPS_TOKEN", "").strip()
@@ -365,6 +386,9 @@ async def get_live(request: Request):
             "currency": CURRENCY,
             "price_per_kwh": PRICE_PER_KWH,
             "co2_kg_per_kwh": CO2_KG_PER_KWH,
+            "self_consumption_pct": SELF_CONSUMPTION_PCT,
+            "feed_in_tariff": FEED_IN_TARIFF,
+            "install_cost": INSTALL_COST,
             "retention_days": RETENTION_DAYS,
             "timezone": os.environ.get("TZ", "UTC"),
         },
@@ -594,10 +618,44 @@ async def get_stats():
         split["co2_g"] / 1000.0
         + max(0.0, total_kwh - split["co2_kwh"]) * CO2_KG_PER_KWH
     )
-    money_saved = (
+    # Theoretical money saved assuming 100% self-consumption (the pre-v1.8
+    # behaviour): every produced kWh valued at the retail price active at the
+    # time. Shown as the "what's possible" ceiling on the card's second
+    # subtitle line.
+    money_saved_full = (
         split["price_sum"]
         + max(0.0, total_kwh - split["price_kwh"]) * PRICE_PER_KWH
     )
+    # Realistic money saved: only the self-consumed share offsets the retail
+    # price; the fed-in remainder earns FEED_IN_TARIFF (default 0). scq=1
+    # reproduces money_saved_full exactly, so the default is byte-for-byte the
+    # old behaviour.
+    money_saved = compute_money_saved(
+        money_saved_full, total_kwh, SELF_CONSUMPTION_PCT, FEED_IN_TARIFF
+    )
+
+    # Amortization vs. the one-off install cost. Both the percentage and the
+    # break-even date are derived live, so changing INSTALL_COST later (e.g.
+    # after expanding the array) simply recomputes — nothing is persisted.
+    amortization_pct = None
+    amortization_state = None
+    if INSTALL_COST > 0:
+        amortization_pct = round(money_saved / INSTALL_COST * 100.0, 1)
+        if money_saved >= INSTALL_COST:
+            be_date = await db.get_breakeven_date(INSTALL_COST, money_saved)
+            # Amortized but undatable (no daily aggregates at all) → quiet
+            # "settled" state, no glow.
+            amortization_state = "settled"
+            if be_date:
+                try:
+                    bd = datetime.strptime(be_date, "%Y-%m-%d").date()
+                    days_since = (now.date() - bd).days
+                    if days_since <= AMORT_GLOW_FRESH_DAYS:
+                        amortization_state = "fresh"
+                    elif days_since <= AMORT_GLOW_RECENT_DAYS:
+                        amortization_state = "recent"
+                except (ValueError, TypeError):
+                    pass
 
     peak_w_today, peak_today_ts = await db.get_peak_today_with_time()
     pv1_kwh_today, pv2_kwh_today = await db.get_today_panel_energy()
@@ -652,6 +710,9 @@ async def get_stats():
         ),
         "co2_saved_kg": round(co2_kg, 2),
         "money_saved": round(money_saved, 2),
+        "money_saved_full": round(money_saved_full, 2),
+        "amortization_pct": amortization_pct,
+        "amortization_state": amortization_state,
     }
 
 
@@ -841,6 +902,8 @@ _m_this_year_kwh   = Gauge("ez1_this_year_kwh", "Energy produced this year", reg
 _m_peak_today_w    = Gauge("ez1_peak_today_watts", "Peak power output today", registry=_metrics_registry)
 _m_lifetime_kwh    = Gauge("ez1_lifetime_kwh_total", "Lifetime total energy", registry=_metrics_registry)
 _m_co2_saved_kg    = Gauge("ez1_co2_saved_kg_total", "Lifetime CO2 avoided in kilograms", registry=_metrics_registry)
+_m_money_saved     = Gauge("ez1_money_saved", "Lifetime money saved (realistic, in the configured currency)", registry=_metrics_registry)
+_m_amortization_pct = Gauge("ez1_amortization_percent", "Share of INSTALL_COST recouped via savings, in percent (0 when INSTALL_COST is unset)", registry=_metrics_registry)
 _m_status          = Gauge("ez1_status", "Inverter status (1 = active state)", ["state"], registry=_metrics_registry)
 _m_info            = Info("ez1", "Inverter and monitor metadata", registry=_metrics_registry)
 
@@ -882,6 +945,8 @@ async def _populate_metrics() -> None:
     _m_peak_today_w.set(stats.get("peak_w_today") or 0)
     _m_lifetime_kwh.set(stats.get("total_kwh") or 0)
     _m_co2_saved_kg.set(stats.get("co2_saved_kg") or 0)
+    _m_money_saved.set(stats.get("money_saved") or 0)
+    _m_amortization_pct.set(stats.get("amortization_pct") or 0)
 
     # Carbon intensity metrics
     co2 = resolve_current(carbon_state)
