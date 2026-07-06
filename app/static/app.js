@@ -32,8 +32,9 @@ const state = {
   dayScaleMode: "fixed",     // fixed | auto (today-chart Y-axis scale)
   currentRange: "month",
   historyMode: "rolling",            // rolling | calendar (week/month/year)
-  yearGranularity: "daily",
+  yearGranularity: "daily",          // daily | weekly | monthly
   multiYearGranularity: "monthly",   // monthly | yearly
+  anchoredPeriod: null,              // {kind:'week',week} | {kind:'month',month} drill-down
   statusState: "noData",
   pollInterval: 60,
   retentionDays: 730,
@@ -428,24 +429,39 @@ async function loadStats() {
     document.getElementById("stat-last-week-full").textContent      = fmt.kwhOrDash(s.last_week_full_kwh);
     renderCompare("stat-week-compare", s.this_week_kwh, s.last_week_until_now_kwh);
 
+    // Week YoY line — v1.9, mirrors the month card. Data-gated: only shown
+    // when the same ISO week existed last year (young install / week 53 → off).
+    const weekYoyRow = document.getElementById("stat-week-yoy-row");
+    if (s.same_week_last_year_kwh) {
+      document.getElementById("stat-same-week-ly").textContent = fmt.kwhOrDash(s.same_week_last_year_kwh);
+      const wkWord = state.lang === "de" ? "KW" : "Week";
+      const lyWeekLabel = `${wkWord} ${s.same_week_last_year_iso_week} / ${s.same_week_last_year_iso_year}`;
+      document.getElementById("stat-same-week-ly-label").textContent =
+        window.i18n.t(state.lang, "stats.sameWeekLySamePeriod", { week: lyWeekLabel });
+      renderCompare("stat-same-week-ly-compare", s.this_week_kwh, s.same_week_last_year_kwh);
+      if (weekYoyRow) weekYoyRow.style.display = "";
+    } else if (weekYoyRow) {
+      weekYoyRow.style.display = "none";
+    }
+
     document.getElementById("stat-month").textContent = fmt.kwh(s.this_month_kwh);
     document.getElementById("stat-last-month-until-progress").textContent = fmt.kwhOrDash(s.last_month_until_progress_kwh);
     document.getElementById("stat-last-month-full").textContent           = fmt.kwhOrDash(s.last_month_full_kwh);
     renderCompare("stat-month-compare", s.this_month_kwh, s.last_month_until_progress_kwh);
 
-    document.getElementById("stat-same-month-ly").textContent       = fmt.kwhOrDash(s.same_month_last_year_kwh);
-    document.getElementById("stat-same-month-ly-total").textContent = fmt.kwhOrDash(s.same_month_last_year_total_kwh);
-    // Build both YoY labels with the month name inlined ("same period
-    // June 2025" / "June 2025 total") so the structure mirrors the rows
-    // above it ("same period last month" / "last month total").
-    const lyMonthLabel = fmt.monthYear(s.same_month_last_year_iso);
-    document.getElementById("stat-same-month-ly-label").textContent =
-      window.i18n.t(state.lang, "stats.sameMonthLySamePeriod", { month: lyMonthLabel });
-    document.getElementById("stat-same-month-ly-total-label").textContent =
-      window.i18n.t(state.lang, "stats.sameMonthLyTotal", { month: lyMonthLabel });
-    renderCompare("stat-same-month-ly-compare", s.this_month_kwh, s.same_month_last_year_kwh);
-    // The YoY "full month" row stays visible at all times for visual
-    // consistency with the other stat cards. Empty values show as "—".
+    // Month YoY same-period line — now data-gated too (the "full month last
+    // year" line was dropped in v1.9; it's reachable via the period drill-down).
+    const monthYoyRow = document.getElementById("stat-month-yoy-row");
+    if (s.same_month_last_year_kwh) {
+      document.getElementById("stat-same-month-ly").textContent = fmt.kwhOrDash(s.same_month_last_year_kwh);
+      const lyMonthLabel = fmt.monthYear(s.same_month_last_year_iso);
+      document.getElementById("stat-same-month-ly-label").textContent =
+        window.i18n.t(state.lang, "stats.sameMonthLySamePeriod", { month: lyMonthLabel });
+      renderCompare("stat-same-month-ly-compare", s.this_month_kwh, s.same_month_last_year_kwh);
+      if (monthYoyRow) monthYoyRow.style.display = "";
+    } else if (monthYoyRow) {
+      monthYoyRow.style.display = "none";
+    }
 
     document.getElementById("stat-year").textContent = fmt.kwh(s.this_year_kwh);
     document.getElementById("stat-last-year-ytd").textContent = fmt.kwhOrDash(s.last_year_ytd_kwh);
@@ -567,6 +583,15 @@ function renderHofSlot(slotId, entry, tier) {
   if (!slot) return;
   const dateEl = slot.querySelector(".hof-date");
   const valueEl = slot.querySelector(".hof-value span");
+
+  // Clickable navigation (v1.9): a populated tile opens its period in the
+  // history/today card. Wired here so it applies before the early return too.
+  const clickable = !!(entry && entry.value);
+  slot.style.cursor = clickable ? "pointer" : "default";
+  slot.onclick = clickable ? () => hofNavigate(tier, entry) : null;
+  slot.onkeydown = clickable
+    ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); hofNavigate(tier, entry); } }
+    : null;
 
   if (!entry || !entry.value) {
     if (dateEl) dateEl.textContent = "—";
@@ -944,16 +969,30 @@ function padMonthlyCalendar(data) {
 
 async function loadHistoryChart(range) {
   try {
+    const modeToggle = document.getElementById("history-mode-toggle");
+    const granTabs = document.getElementById("granularity-tabs");
+
+    // Anchored drill-down: a specific historical week/month rendered as daily
+    // bars plus the summary line. Takes precedence over the aggregate views.
+    if (state.anchoredPeriod) {
+      if (modeToggle) modeToggle.style.display = "none";
+      if (granTabs) granTabs.style.display = "none";
+      const ap = state.anchoredPeriod;
+      const url = ap.kind === "week"
+        ? `/api/history?range=week&week=${ap.week}`
+        : `/api/history?range=month&month=${ap.month}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      renderAnchoredDaily(data);
+      return;
+    }
+    renderSummary(null);  // no summary line outside anchored views
+
     const isYear = range === "year";
     const isMultiYear = range === "multiyear";
-    const modeToggle = document.getElementById("history-mode-toggle");
 
-    // Multi-year view: pulls from monthly_aggregates table (survives
-    // retention pruning). Same chart shape as the year-view monthly mode,
-    // just spans every year that has data instead of the last 12 months.
+    // Multi-year view: pulls from monthly_aggregates (survives pruning).
     if (isMultiYear) {
-      // All-years is calendar-based by nature — the rolling/calendar toggle
-      // doesn't apply, so hide it.
       if (modeToggle) modeToggle.style.display = "none";
       const url = state.multiYearGranularity === "yearly"
         ? "/api/history?range=multiyear&granularity=yearly"
@@ -965,31 +1004,36 @@ async function loadHistoryChart(range) {
       } else {
         renderMultiYearMonthly(data);
       }
-      const granTabs = document.getElementById("granularity-tabs");
       if (granTabs) granTabs.style.display = "";
-      // Swap the tab labels: yearly vs monthly (instead of daily vs monthly)
       updateGranularityTabsForRange(range);
       return;
     }
 
     if (modeToggle) modeToggle.style.display = "";
-
-    const useMonthly = isYear && state.yearGranularity === "monthly";
+    const gran = isYear ? state.yearGranularity : "daily";
     const mode = state.historyMode;
+
+    // Year → weekly: ISO-week bars from daily_aggregates.
+    if (isYear && gran === "weekly") {
+      const res = await fetch(`/api/history?range=year&granularity=weekly&mode=${mode}`);
+      const data = await res.json();
+      renderWeeklyHistory(data);
+      if (granTabs) granTabs.style.display = "";
+      updateGranularityTabsForRange("year");
+      return;
+    }
+
+    const useMonthly = isYear && gran === "monthly";
     const url = useMonthly
       ? `/api/history?range=year&granularity=monthly&mode=${mode}`
       : `/api/history?range=${range}&mode=${mode}`;
-
     const res = await fetch(url);
     const data = await res.json();
-
     if (useMonthly) {
       renderMonthlyHistory(padMonthlyCalendar(data));
     } else {
       renderDailyHistory(data, isYear);
     }
-
-    const granTabs = document.getElementById("granularity-tabs");
     if (granTabs) granTabs.style.display = isYear ? "" : "none";
     if (isYear) updateGranularityTabsForRange("year");
   } catch (e) {
@@ -1001,22 +1045,204 @@ async function loadHistoryChart(range) {
 // on whether we're in "year" mode (daily/monthly) or "multiyear" (monthly/yearly).
 function updateGranularityTabsForRange(range) {
   const tabs = document.querySelectorAll("#granularity-tabs .gran-tab");
-  if (tabs.length !== 2) return;
-  if (range === "multiyear") {
-    tabs[0].dataset.gran = "monthly";
-    tabs[0].textContent = window.i18n.t(state.lang, "chart.granMonthly");
-    tabs[1].dataset.gran = "yearly";
-    tabs[1].textContent = window.i18n.t(state.lang, "chart.granYearly");
-    // Reflect current selection
-    const active = state.multiYearGranularity || "monthly";
-    tabs.forEach(t => t.classList.toggle("active", t.dataset.gran === active));
-  } else {
-    tabs[0].dataset.gran = "daily";
-    tabs[0].textContent = window.i18n.t(state.lang, "chart.granDaily");
-    tabs[1].dataset.gran = "monthly";
-    tabs[1].textContent = window.i18n.t(state.lang, "chart.granMonthly");
-    const active = state.yearGranularity || "daily";
-    tabs.forEach(t => t.classList.toggle("active", t.dataset.gran === active));
+  // year → daily/weekly/monthly (3 tabs); multiyear → monthly/yearly (2 tabs,
+  // the 3rd hidden). The markup ships 3 buttons; we relabel + show/hide here.
+  const defs = range === "multiyear"
+    ? [["monthly", "chart.granMonthly"], ["yearly", "chart.granYearly"]]
+    : [["daily", "chart.granDaily"], ["weekly", "chart.granWeekly"], ["monthly", "chart.granMonthly"]];
+  const active = range === "multiyear"
+    ? (state.multiYearGranularity || "monthly")
+    : (state.yearGranularity || "daily");
+  tabs.forEach((t, i) => {
+    if (i < defs.length) {
+      t.style.display = "";
+      t.dataset.gran = defs[i][0];
+      t.textContent = window.i18n.t(state.lang, defs[i][1]);
+      t.classList.toggle("active", defs[i][0] === active);
+    } else {
+      t.style.display = "none";
+      t.classList.remove("active");
+    }
+  });
+}
+
+// --- v1.9: weekly bars, anchored period drill-down, summary line -----------
+
+// Navigate the history card to a specific historical period (renders daily
+// bars + summary). scroll=true brings the card into view (used from the Hall
+// of Fame); bar clicks within the card leave the scroll alone.
+function setAnchoredPeriod(ap, scroll) {
+  state.anchoredPeriod = ap;
+  document.querySelectorAll(".range-tab").forEach(
+    b => b.classList.toggle("active", b.dataset.range === state.currentRange)
+  );
+  loadHistoryChart(state.currentRange);
+  if (scroll) {
+    document.querySelector(".history-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function renderWeeklyHistory(data) {
+  const weeks = data.weeks || [];
+  const labels = weeks.map(w => w.week_start);
+  const series = weeks.map(w => w.kwh);
+  const thisYear = new Date().getFullYear();
+  const backgroundColors = weeks.map(w => w.iso_year === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55");
+  const wkWord = state.lang === "de" ? "KW" : "W";
+
+  const boundaries = [];
+  let prevYear = null;
+  weeks.forEach((w, i) => {
+    if (prevYear !== null && w.iso_year !== prevYear) boundaries.push({ label: labels[i], year: w.iso_year });
+    prevYear = w.iso_year;
+  });
+
+  if (historyChart) historyChart.destroy();
+  const ctx = document.getElementById("chart-history").getContext("2d");
+  historyChart = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: [{ label: "kWh", data: series, backgroundColor: backgroundColors, borderColor: COLORS.accent, borderWidth: 1, borderRadius: 3 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onHover: (event, els) => { event.native.target.style.cursor = els.length ? "pointer" : "default"; },
+      onClick: (_event, els) => {
+        if (!els.length) return;
+        const w = weeks[els[0].index];
+        setAnchoredPeriod({ kind: "week", week: `${w.iso_year}-W${String(w.iso_week).padStart(2, "0")}` }, false);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltipStyle({
+          title: items => { const w = weeks[items[0].dataIndex]; return w ? `${wkWord} ${w.iso_week} / ${w.iso_year}` : ""; },
+          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          afterLabel: () => window.i18n.t(state.lang, "chart.clickForWeekDetail"),
+        }),
+        yearBoundary: { boundaries },
+      },
+      scales: {
+        x: { ticks: { maxRotation: 0, autoSkip: false, callback: function (val, idx) {
+          const stride = tickStride(this.chart, weeks.length, 34);
+          if (stride > 1 && idx % stride !== 0) return "";
+          const w = weeks[idx]; return w ? `${wkWord}${w.iso_week}` : "";
+        } } },
+        y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
+      },
+    },
+    plugins: [yearBoundaryPlugin],
+  });
+}
+
+function renderAnchoredDaily(data) {
+  const points = data.points || [];
+  const labels = points.map(p => p.date);
+  const series = points.map(p => p.kwh);
+  renderSummary(data.summary, data.period);
+
+  if (historyChart) historyChart.destroy();
+  const ctx = document.getElementById("chart-history").getContext("2d");
+  historyChart = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: [{ label: "kWh", data: series, backgroundColor: COLORS.accent + "cc", borderColor: COLORS.accent, borderWidth: 1, borderRadius: 3 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onHover: (event, els) => { event.native.target.style.cursor = els.length ? "pointer" : "default"; },
+      onClick: (_event, els) => {
+        if (!els.length) return;
+        const [y, mo, d] = labels[els[0].index].split("-").map(Number);
+        const picked = new Date(y, mo - 1, d);
+        setViewedDay(isToday(picked) ? null : picked);
+        document.getElementById("today-chart-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltipStyle({
+          title: items => new Date(items[0].label + "T00:00:00").toLocaleDateString(state.locale, { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),
+          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          afterLabel: () => window.i18n.t(state.lang, "chart.clickForDayDetail"),
+        }),
+      },
+      scales: {
+        x: { ticks: { maxRotation: 0, autoSkip: false, callback: function (val, idx) {
+          const lbl = this.chart.data.labels[idx]; if (!lbl) return "";
+          const stride = tickStride(this.chart, this.chart.data.labels.length, 40);
+          if (stride > 1 && idx % stride !== 0) return "";
+          return new Date(lbl + "T00:00:00").toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
+        } } },
+        y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
+      },
+    },
+  });
+}
+
+function formatPeriodLabel(period) {
+  if (!period) return "";
+  if (period.kind === "week") {
+    const wk = state.lang === "de" ? "KW" : "Week";
+    return `${wk} ${period.iso_week} / ${period.iso_year}`;
+  }
+  return fmt.monthYear(`${period.year}-${String(period.month).padStart(2, "0")}`);
+}
+
+function renderSummaryDelta(elId, delta, labelKey) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!delta || !delta.available) { el.style.display = "none"; el.textContent = ""; return; }
+  el.style.display = "";
+  const sign = delta.delta_pct > 0 ? "+" : "";
+  el.textContent = `${window.i18n.t(state.lang, labelKey)} ${sign}${delta.delta_pct} %`;
+  el.className = "summary-pill " + (delta.delta_pct > 0 ? "up" : delta.delta_pct < 0 ? "down" : "");
+}
+
+// Period Kennzahl-Zeile. summary=null hides the whole block (aggregate views).
+function renderSummary(summary, period) {
+  const box = document.getElementById("history-summary");
+  if (!box) return;
+  if (!summary) { box.style.display = "none"; return; }
+  box.style.display = "";
+
+  const labelEl = document.getElementById("history-summary-label");
+  if (labelEl) labelEl.textContent = formatPeriodLabel(period);
+
+  const T = (k, v) => window.i18n.t(state.lang, k, v);
+  const parts = [
+    `${fmt.kwh(summary.total_kwh)} kWh ${T("summary.total")}`,
+    T("summary.perDay", { v: fmt.kwh(summary.avg_per_day) }),
+  ];
+  if (summary.best_date) {
+    const bd = new Date(summary.best_date + "T00:00:00").toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
+    parts.push(`${T("summary.bestDay")}: ${bd} ${fmt.kwh(summary.best_kwh)} kWh`);
+  }
+  const figuresEl = document.getElementById("history-summary-figures");
+  if (figuresEl) figuresEl.textContent = parts.join("  ·  ");
+
+  const prevKey = period && period.kind === "week" ? "summary.vsPrevWeek" : "summary.vsPrevMonth";
+  renderSummaryDelta("history-summary-prev", summary.prev, prevKey);
+  renderSummaryDelta("history-summary-yoy", summary.yoy, "summary.vsLastYear");
+}
+
+// Hall-of-Fame tile → history/today navigation.
+function hofNavigate(tier, entry) {
+  if (!entry || !entry.value) return;
+  const v = entry.value;
+  if (tier === "day" && v.date) {
+    const [y, mo, d] = v.date.split("-").map(Number);
+    const picked = new Date(y, mo - 1, d);
+    setViewedDay(isToday(picked) ? null : picked);
+    document.getElementById("today-chart-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (tier === "week" && v.iso_year && v.iso_week) {
+    state.currentRange = "year";
+    setAnchoredPeriod({ kind: "week", week: `${v.iso_year}-W${String(v.iso_week).padStart(2, "0")}` }, true);
+  } else if (tier === "month" && v.year && v.month) {
+    state.currentRange = "year";
+    setAnchoredPeriod({ kind: "month", month: `${v.year}-${String(v.month).padStart(2, "0")}` }, true);
+  } else if (tier === "year" && v.year) {
+    // No per-year anchor endpoint — open the all-years overview (calendar by
+    // nature) so the best year is visible in context.
+    state.anchoredPeriod = null;
+    state.currentRange = "multiyear";
+    document.querySelectorAll(".range-tab").forEach(b => b.classList.toggle("active", b.dataset.range === "multiyear"));
+    loadHistoryChart("multiyear");
+    document.querySelector(".history-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
 
@@ -1278,11 +1504,18 @@ function renderMonthlyHistory(data) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onHover: (event, els) => { event.native.target.style.cursor = els.length ? "pointer" : "default"; },
+      onClick: (_event, els) => {
+        if (!els.length) return;
+        const label = labels[els[0].index];   // "YYYY-MM"
+        if (label && /^\d{4}-\d{2}$/.test(label)) setAnchoredPeriod({ kind: "month", month: label }, false);
+      },
       plugins: {
         legend: { display: false },
         tooltip: tooltipStyle({
           title: items => fmt.monthYear(items[0].label),
           label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          afterLabel: () => window.i18n.t(state.lang, "chart.clickForMonthDetail"),
         }),
         yearBoundary: { boundaries },
       },
@@ -1377,6 +1610,7 @@ document.querySelectorAll(".range-tab").forEach(btn => {
     document.querySelectorAll(".range-tab").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     state.currentRange = btn.dataset.range;
+    state.anchoredPeriod = null;   // leaving any anchored drill-down
     loadHistoryChart(state.currentRange);
   });
 });
@@ -1385,6 +1619,7 @@ document.querySelectorAll(".gran-tab").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".gran-tab").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
+    state.anchoredPeriod = null;
     // Granularity tabs are reused between "year" (daily/monthly) and
     // "multiyear" (monthly/yearly) modes — store the value in the right
     // state slot depending on which range is active.
@@ -1403,6 +1638,12 @@ document.querySelectorAll(".gran-tab").forEach(btn => {
 document.getElementById("day-prev")?.addEventListener("click", () => shiftViewedDay(-1));
 document.getElementById("day-next")?.addEventListener("click", () => shiftViewedDay(+1));
 document.getElementById("day-today")?.addEventListener("click", () => setViewedDay(null));
+
+// Leave an anchored week/month drill-down, back to the aggregate view.
+document.getElementById("history-summary-back")?.addEventListener("click", () => {
+  state.anchoredPeriod = null;
+  loadHistoryChart(state.currentRange);
+});
 
 
 // --- Theme management (smart toggle: system default, click toggles light/dark) ---
