@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, date as date_cls
 from pathlib import Path
 from typing import Optional
 
@@ -20,7 +20,7 @@ from prometheus_client import (
 from .database import Database
 from .poller import Poller
 from .co2 import CarbonState, resolve_current, poll_loop
-from .date_helpers import shift_year, last_day_of_month
+from .date_helpers import shift_year, last_day_of_month, iso_week_monday
 from .money import compute_money_saved
 from . import __version__
 
@@ -395,25 +395,64 @@ async def get_live(request: Request):
     }
 
 
+async def _period_summary(cur_start, cur_end, prev_start, prev_end,
+                          yoy_start, yoy_end) -> dict:
+    """Assemble the Kennzahl-Zeile summary for an anchored week/month view.
+
+    Returns the current period's figures plus data-gated deltas vs. the
+    previous period and vs. the same period one year earlier. All ranges are
+    ISO 'YYYY-MM-DD' strings. A comparison with no data reports
+    available=False so the client hides that pill (young installs, the
+    earliest period, or an ISO week 53 that didn't exist last year).
+    """
+    cur = await db.get_range_summary(cur_start, cur_end)
+    prev = await db.get_range_summary(prev_start, prev_end)
+    yoy = await db.get_range_summary(yoy_start, yoy_end)
+
+    def delta(other):
+        if other["days"] == 0 or other["total_kwh"] <= 0:
+            return {"available": False}
+        return {
+            "available": True,
+            "total_kwh": other["total_kwh"],
+            "delta_pct": round(
+                (cur["total_kwh"] - other["total_kwh"]) / other["total_kwh"] * 100, 1
+            ),
+        }
+
+    return {
+        "total_kwh": cur["total_kwh"],
+        "avg_per_day": cur["avg_per_day"],
+        "days": cur["days"],
+        "best_date": cur["best_date"],
+        "best_kwh": cur["best_kwh"],
+        "prev": delta(prev),
+        "yoy": delta(yoy),
+    }
+
+
 @app.get("/api/history")
 async def get_history(
     range: str = Query("day", pattern="^(day|week|month|year|multiyear)$"),
-    granularity: str = Query("auto", pattern="^(auto|daily|monthly|yearly)$"),
+    granularity: str = Query("auto", pattern="^(auto|daily|weekly|monthly|yearly)$"),
     mode: str = Query("rolling", pattern="^(rolling|calendar)$"),
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    week: str | None = Query(None, pattern=r"^\d{4}-W\d{2}$"),
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
 ):
     """Historical data for the requested time range.
 
     Parameters:
     - range:       day | week | month | year | multiyear
-    - granularity: only used with range=year (auto, daily, monthly) or
-                   range=multiyear (monthly, yearly)
-    - date:        only used with range=day; YYYY-MM-DD for a specific day
+    - granularity: range=year → auto|daily|weekly|monthly; multiyear → monthly|yearly
+    - date:        range=day; YYYY-MM-DD for a specific day
+    - week:        range=week; YYYY-Www anchors a specific historical ISO week
+    - month:       range=month; YYYY-MM anchors a specific historical month
 
-    Multi-year range pulls from the long-term aggregates tables, so it
-    survives the RETENTION_DAYS pruning of detail measurements. Years
-    where the inverter hasn't produced anything are auto-excluded by the
-    underlying query.
+    Anchored week/month views and the weekly granularity read from
+    daily_aggregates, so they work for periods whose raw measurements have
+    already been pruned. Multi-year likewise pulls from the long-term
+    aggregate tables.
     """
     now = datetime.now()
 
@@ -438,6 +477,25 @@ async def get_history(
                 "months": monthly,
             }
 
+    # Weekly granularity for the year view: ISO-week bars from daily_aggregates.
+    # Rolling = the last 52 weeks; calendar = the ISO weeks of the current year.
+    # (No empty-week padding — weeks without data are simply omitted.)
+    if range == "year" and granularity == "weekly":
+        if mode == "calendar":
+            wk_start = date_cls(now.year, 1, 1)
+            wk_end = date_cls(now.year, 12, 31)
+            frame_start, frame_end = wk_start.isoformat(), wk_end.isoformat()
+        else:
+            wk_end = now.date()
+            wk_start = wk_end - timedelta(weeks=52)
+            frame_start = frame_end = None
+        weeks = await db.get_weekly_totals(wk_start.isoformat(), wk_end.isoformat())
+        return {
+            "range": "year", "granularity": "weekly", "mode": mode,
+            "weeks": weeks,
+            "period_start_day": frame_start, "period_end_day": frame_end,
+        }
+
     # Special path: monthly aggregate for the year view.
     if range == "year" and granularity == "monthly":
         if mode == "calendar":
@@ -456,6 +514,54 @@ async def get_history(
         # Rolling: the last 12 months up to now.
         monthly = await db.get_monthly_totals(12)
         return {"range": "year", "granularity": "monthly", "mode": "rolling", "months": monthly}
+
+    # Anchored historical week: that ISO week's 7 daily bars (from
+    # daily_aggregates, so old/pruned weeks still work) plus the summary.
+    if range == "week" and week:
+        iso_year, iso_week = int(week[:4]), int(week[6:8])
+        monday = iso_week_monday(iso_year, iso_week)
+        sunday = monday + timedelta(days=6)
+        prev_mon = monday - timedelta(days=7)
+        yoy_mon = iso_week_monday(iso_year - 1, iso_week)
+        points = await db.get_daily_series(monday.isoformat(), sunday.isoformat())
+        summary = await _period_summary(
+            monday.isoformat(), sunday.isoformat(),
+            prev_mon.isoformat(), (prev_mon + timedelta(days=6)).isoformat(),
+            yoy_mon.isoformat(), (yoy_mon + timedelta(days=6)).isoformat(),
+        )
+        return {
+            "range": "week", "anchored": True, "granularity": "daily",
+            "period": {"kind": "week", "iso_year": iso_year, "iso_week": iso_week,
+                       "start": monday.isoformat(), "end": sunday.isoformat()},
+            "points": points, "summary": summary,
+            "period_start_day": monday.isoformat(),
+            "period_end_day": sunday.isoformat(),
+        }
+
+    # Anchored historical month: that month's daily bars plus the summary.
+    if range == "month" and month:
+        y, m = int(month[:4]), int(month[5:7])
+        first = date_cls(y, m, 1)
+        last = last_day_of_month(datetime(y, m, 1)).date()
+        p_year, p_month = (y - 1, 12) if m == 1 else (y, m - 1)
+        p_first = date_cls(p_year, p_month, 1)
+        p_last = last_day_of_month(datetime(p_year, p_month, 1)).date()
+        y_first = date_cls(y - 1, m, 1)
+        y_last = last_day_of_month(datetime(y - 1, m, 1)).date()
+        points = await db.get_daily_series(first.isoformat(), last.isoformat())
+        summary = await _period_summary(
+            first.isoformat(), last.isoformat(),
+            p_first.isoformat(), p_last.isoformat(),
+            y_first.isoformat(), y_last.isoformat(),
+        )
+        return {
+            "range": "month", "anchored": True, "granularity": "daily",
+            "period": {"kind": "month", "year": y, "month": m,
+                       "start": first.isoformat(), "end": last.isoformat()},
+            "points": points, "summary": summary,
+            "period_start_day": first.isoformat(),
+            "period_end_day": last.isoformat(),
+        }
 
     used_date: str | None = None
     # period_*_day frame the full calendar period for the client to pad the
@@ -557,7 +663,14 @@ async def get_stats():
     last_year_until_today = shift_year(now, -1)
     same_month_ly_start = shift_year(this_month_start, -1)
     same_month_ly_until_today = shift_year(now, -1)
-    same_month_ly_full_end = last_day_of_month(same_month_ly_start)
+    # Same ISO week last year, up to the same weekday+time progress, for the
+    # week card's YoY line. An iso_week 53 that didn't exist last year yields a
+    # range with no data → the client gates that line off.
+    iso_year_now, iso_week_now, _ = now.isocalendar()
+    same_week_ly_start = datetime.combine(
+        iso_week_monday(iso_year_now - 1, iso_week_now), time.min
+    )
+    same_week_ly_until = same_week_ly_start + (now - this_week_start)
 
     # All energy windows we need for the four stat cards. Batched into a
     # single DB connection so we pay the connect cost once instead of 14
@@ -567,16 +680,16 @@ async def get_stats():
         (today_start, now),                                           # this period
         (yesterday_start, yesterday_until_now),                       # same period yesterday
         (yesterday_start, today_start),                               # yesterday total
-        # Week card
+        # Week card (with year-over-year sub-line)
         (this_week_start, now),                                       # this period
         (last_week_start, last_week_until_now),                       # same period last week
         (last_week_start, this_week_start),                           # last week total
-        # Month card (with year-over-year sub-block)
+        (same_week_ly_start, same_week_ly_until),                     # YoY same period
+        # Month card (with year-over-year sub-line)
         (this_month_start, now),                                      # this period
         (last_month_start, last_month_until_progress),                # same period last month
         (last_month_start, this_month_start),                         # last month total
         (same_month_ly_start, same_month_ly_until_today),             # YoY same period
-        (same_month_ly_start, same_month_ly_full_end),                # YoY full month
         # Year card
         (this_year_start, now),                                       # this period
         (last_year_start, last_year_until_today),                     # same period last year
@@ -592,11 +705,11 @@ async def get_stats():
         this_week_kwh,
         last_week_until_now_kwh,
         last_week_full_kwh,
+        same_week_ly_kwh,
         this_month_kwh,
         last_month_until_progress_kwh,
         last_month_full_kwh,
         same_month_ly_kwh,
-        same_month_ly_total_kwh,
         this_year_kwh,
         last_year_ytd_kwh,
         last_year_full_kwh,
@@ -676,10 +789,13 @@ async def get_stats():
         "yesterday_until_now_kwh": round(yesterday_until_now_kwh, 3),
         "yesterday_full_kwh": round(yesterday_full_kwh, 3),
 
-        # Week
+        # Week (with year-over-year sub-line)
         "this_week_kwh": round(this_week_kwh, 3),
         "last_week_until_now_kwh": round(last_week_until_now_kwh, 3),
         "last_week_full_kwh": round(last_week_full_kwh, 3),
+        "same_week_last_year_kwh": round(same_week_ly_kwh, 3),
+        "same_week_last_year_iso_year": iso_year_now - 1,
+        "same_week_last_year_iso_week": iso_week_now,
 
         # Month
         "this_month_kwh": round(this_month_kwh, 3),
@@ -691,9 +807,9 @@ async def get_stats():
         "last_year_ytd_kwh": round(last_year_ytd_kwh, 3),
         "last_year_full_kwh": round(last_year_full_kwh, 3),
 
-        # Year-over-year (month card)
+        # Year-over-year same-period (month card). The "full month last year"
+        # figure was dropped in v1.9 — it's reachable via the period drill-down.
         "same_month_last_year_kwh": round(same_month_ly_kwh, 3),
-        "same_month_last_year_total_kwh": round(same_month_ly_total_kwh, 3),
         "same_month_last_year_iso": same_month_ly_start.strftime("%Y-%m"),
 
         # Lifetime + peak
