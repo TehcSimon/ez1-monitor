@@ -1,9 +1,11 @@
 """SQLite database layer for EZ1 measurements."""
 import logging
 import aiosqlite
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as date_cls
 from pathlib import Path
 from typing import Optional
+
+from .date_helpers import iso_week_monday
 
 logger = logging.getLogger(__name__)
 
@@ -967,3 +969,96 @@ class Database:
             if cumulative >= target_kwh:
                 return r[0]
         return last_date
+
+    # --- v1.9 history: weekly buckets, arbitrary daily ranges, summaries ----
+    # All three read from daily_aggregates (full history, survives raw-row
+    # pruning), so anchored views of old weeks/months work even after their
+    # raw measurements are gone. Dates are ISO 'YYYY-MM-DD'; BETWEEN is a
+    # lexicographic string compare, which is correct for zero-padded ISO dates.
+
+    async def get_daily_series(self, start_iso: str, end_iso: str) -> list[dict]:
+        """Per-day totals in [start_iso, end_iso] inclusive."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT date, total_kwh, peak_w FROM daily_aggregates
+                   WHERE date BETWEEN ? AND ? ORDER BY date ASC""",
+                (start_iso, end_iso),
+            )
+            rows = await cur.fetchall()
+        return [
+            {"date": r["date"], "kwh": round(float(r["total_kwh"] or 0), 3),
+             "peak_w": r["peak_w"]}
+            for r in rows
+        ]
+
+    async def get_weekly_totals(self, start_iso: str, end_iso: str) -> list[dict]:
+        """ISO-week totals for every week that has a day in [start_iso, end_iso].
+
+        ISO grouping is done in Python (via date.isocalendar) to match the
+        semantics used by get_best_week and the rest of the codebase — SQLite's
+        %W would disagree on the year-boundary weeks.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT date, total_kwh, peak_w FROM daily_aggregates
+                   WHERE date BETWEEN ? AND ? ORDER BY date ASC""",
+                (start_iso, end_iso),
+            )
+            rows = await cur.fetchall()
+        from collections import defaultdict
+        tot: dict[tuple, float] = defaultdict(float)
+        peak: dict[tuple, float] = defaultdict(float)
+        days: dict[tuple, int] = defaultdict(int)
+        for r in rows:
+            try:
+                d = date_cls.fromisoformat(r["date"])
+            except ValueError:
+                continue
+            iso_year, iso_week, _ = d.isocalendar()
+            key = (iso_year, iso_week)
+            tot[key] += float(r["total_kwh"] or 0)
+            peak[key] = max(peak[key], float(r["peak_w"] or 0))
+            days[key] += 1
+        out = []
+        for key in sorted(tot.keys()):
+            iso_year, iso_week = key
+            out.append({
+                "iso_year": iso_year,
+                "iso_week": iso_week,
+                "week_start": iso_week_monday(iso_year, iso_week).isoformat(),
+                "kwh": round(tot[key], 3),
+                "peak_w": round(peak[key], 1),
+                "days": days[key],
+            })
+        return out
+
+    async def get_range_summary(self, start_iso: str, end_iso: str) -> dict:
+        """Total kWh, day count, per-day average and best day over
+        daily_aggregates in [start_iso, end_iso]. Powers the period
+        Kennzahl-Zeile. Returns zero/None fields when the range has no data."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT COUNT(*) AS days, COALESCE(SUM(total_kwh), 0) AS total_kwh
+                   FROM daily_aggregates WHERE date BETWEEN ? AND ?""",
+                (start_iso, end_iso),
+            )
+            agg = await cur.fetchone()
+            cur2 = await db.execute(
+                """SELECT date, total_kwh FROM daily_aggregates
+                   WHERE date BETWEEN ? AND ?
+                   ORDER BY total_kwh DESC, date ASC LIMIT 1""",
+                (start_iso, end_iso),
+            )
+            best = await cur2.fetchone()
+        days = agg["days"] or 0
+        total = float(agg["total_kwh"] or 0)
+        return {
+            "total_kwh": round(total, 3),
+            "days": days,
+            "avg_per_day": round(total / days, 3) if days else 0.0,
+            "best_date": best["date"] if best else None,
+            "best_kwh": round(float(best["total_kwh"]), 3) if best and best["total_kwh"] is not None else None,
+        }
