@@ -7,16 +7,16 @@
 
   <!-- Favicons (multi-size for various browser contexts) -->
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.8.0" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.8.0" />
-  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.8.0" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png?v=1.9.0" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=1.9.0" />
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/icons/favicon-64.png?v=1.9.0" />
 
   <!-- Apple home-screen icons. When the user adds the page to their iOS
        home screen, iOS picks the closest size match. The 180px one is the
        modern standard, 167 is for iPad Pro, 152 for older iPads. -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.8.0" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.8.0" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.8.0" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=1.9.0" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png?v=1.9.0" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png?v=1.9.0" />
 
   <!-- iOS standalone-mode tweaks. When the user "Add to Home Screen"s the
        site and opens it from there, iOS strips its browser chrome. The
@@ -43,22 +43,22 @@
   <meta name="description" content="Self-hosted dashboard for APsystems EZ1-M solar microinverter" />
 
   <!-- Fonts (self-hosted — no third-party requests, see vendor/fonts.css) -->
-  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.8.0" />
+  <link rel="stylesheet" href="/static/vendor/fonts.css?v=1.9.0" />
 
   <!-- Own styles (cache-busted) -->
-  <link rel="stylesheet" href="/static/style.css?v=1.8.0" />
+  <link rel="stylesheet" href="/static/style.css?v=1.9.0" />
 
   <!-- Chart.js 4.4.4 + date-fns adapter 3.0.0 (vendored) -->
-  <script src="/static/vendor/chart.umd.min.js?v=1.8.0"></script>
-  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.8.0"></script>
+  <script src="/static/vendor/chart.umd.min.js?v=1.9.0"></script>
+  <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js?v=1.9.0"></script>
 
   <!-- Flatpickr 4.6.13 day picker (vendored) -->
-  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.8.0">
-  <script src="/static/vendor/flatpickr.min.js?v=1.8.0"></script>
-  <script src="/static/vendor/flatpickr-de.js?v=1.8.0"></script>
+  <link rel="stylesheet" href="/static/vendor/flatpickr.min.css?v=1.9.0">
+  <script src="/static/vendor/flatpickr.min.js?v=1.9.0"></script>
+  <script src="/static/vendor/flatpickr-de.js?v=1.9.0"></script>
 
   <!-- Own scripts (cache-busted) -->
-  <script src="/static/i18n.js?v=1.8.0"></script>
+  <script src="/static/i18n.js?v=1.9.0"></script>
 </head>
 <body>
 <div class="grain"></div>
@@ -237,6 +237,9 @@
       </div>
       <div class="stat-sub"><span data-i18n="stats.lastWeekUntilNow">same period last week</span>: <span id="stat-last-week-until-now">—</span> kWh</div>
       <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.lastWeekFull">last week total</span>: <span id="stat-last-week-full">—</span> kWh</div>
+      <div class="stat-sub stat-sub-yoy" id="stat-week-yoy-row" style="display: none;">
+        <span id="stat-same-week-ly-label">—</span>: <span class="stat-sub-yoy-tail"><span id="stat-same-week-ly">—</span> kWh <span class="stat-compare" id="stat-same-week-ly-compare"></span></span>
+      </div>
     </div>
 
     <!-- MONTH (with YoY block) -->
@@ -257,13 +260,8 @@
       </div>
       <div class="stat-sub"><span data-i18n="stats.lastMonthUntilProgress">same period last month</span>: <span id="stat-last-month-until-progress">—</span> kWh</div>
       <div class="stat-sub stat-sub-anchor"><span data-i18n="stats.lastMonthFull">last month total</span>: <span id="stat-last-month-full">—</span> kWh</div>
-      <div class="stat-sub stat-sub-yoy">
-        <div class="stat-sub-yoy-line">
-          <span id="stat-same-month-ly-label">—</span>: <span class="stat-sub-yoy-tail"><span id="stat-same-month-ly">—</span> kWh <span class="stat-compare" id="stat-same-month-ly-compare"></span></span>
-        </div>
-        <div class="stat-sub-yoy-total">
-          <span id="stat-same-month-ly-total-label">—</span>: <span id="stat-same-month-ly-total">—</span> kWh
-        </div>
+      <div class="stat-sub stat-sub-yoy" id="stat-month-yoy-row" style="display: none;">
+        <span id="stat-same-month-ly-label">—</span>: <span class="stat-sub-yoy-tail"><span id="stat-same-month-ly">—</span> kWh <span class="stat-compare" id="stat-same-month-ly-compare"></span></span>
       </div>
     </div>
 
@@ -316,7 +314,24 @@
       </div>
       <div class="granularity-tabs" id="granularity-tabs" style="display: none;">
         <button class="gran-tab active" data-gran="daily" data-i18n="chart.granDaily">Daily</button>
+        <button class="gran-tab" data-gran="weekly" data-i18n="chart.granWeekly">Weekly</button>
         <button class="gran-tab" data-gran="monthly" data-i18n="chart.granMonthly">Monthly</button>
+      </div>
+    </div>
+    <!-- Period Kennzahl-Zeile: only shown inside an anchored week/month
+         drill-down. Head = period label + back button; then figures; then
+         the (data-gated) previous-period and year-over-year delta pills. -->
+    <div class="history-summary" id="history-summary" style="display: none;">
+      <div class="history-summary-head">
+        <button class="summary-back" id="history-summary-back" type="button">
+          <span aria-hidden="true">‹</span> <span data-i18n="summary.back">Back to overview</span>
+        </button>
+        <span class="history-summary-label" id="history-summary-label">—</span>
+      </div>
+      <div class="history-summary-figures" id="history-summary-figures">—</div>
+      <div class="history-summary-deltas">
+        <span class="summary-pill" id="history-summary-prev" style="display: none;"></span>
+        <span class="summary-pill" id="history-summary-yoy" style="display: none;"></span>
       </div>
     </div>
     <div class="chart-wrap">
@@ -331,28 +346,28 @@
         <h2 data-i18n="hof.title">Hall of Fame</h2>
       </div>
       <div class="hof-grid">
-        <div class="hof-slot" id="hof-day">
+        <div class="hof-slot" id="hof-day" role="button" tabindex="0">
           <div class="hof-icon">🥇</div>
           <div class="hof-period" data-i18n="hof.bestDay">Best Day</div>
           <div class="hof-date" id="hof-day-date">—</div>
           <div class="hof-value"><span id="hof-day-value">—</span> kWh</div>
           <span class="hof-new-badge" data-i18n="hof.newBadge">NEW</span>
         </div>
-        <div class="hof-slot" id="hof-week">
+        <div class="hof-slot" id="hof-week" role="button" tabindex="0">
           <div class="hof-icon">🥇</div>
           <div class="hof-period" data-i18n="hof.bestWeek">Best Week</div>
           <div class="hof-date" id="hof-week-date">—</div>
           <div class="hof-value"><span id="hof-week-value">—</span> kWh</div>
           <span class="hof-new-badge" data-i18n="hof.newBadge">NEW</span>
         </div>
-        <div class="hof-slot" id="hof-month">
+        <div class="hof-slot" id="hof-month" role="button" tabindex="0">
           <div class="hof-icon">🥇</div>
           <div class="hof-period" data-i18n="hof.bestMonth">Best Month</div>
           <div class="hof-date" id="hof-month-date">—</div>
           <div class="hof-value"><span id="hof-month-value">—</span> kWh</div>
           <span class="hof-new-badge" data-i18n="hof.newBadge">NEW</span>
         </div>
-        <div class="hof-slot" id="hof-year">
+        <div class="hof-slot" id="hof-year" role="button" tabindex="0">
           <div class="hof-icon">🥇</div>
           <div class="hof-period" data-i18n="hof.bestYear">Best Year</div>
           <div class="hof-date" id="hof-year-date">—</div>
@@ -419,6 +434,6 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
-<script src="/static/app.js?v=1.8.0"></script>
+<script src="/static/app.js?v=1.9.0"></script>
 </body>
 </html>
