@@ -13,7 +13,7 @@ No cloud, no account, no telemetry. Localized for English and German.
 
 ## Features
 
-- Polls the EZ1-M every 60 s via the official `apsystems-ez1` library
+- Polls the EZ1-M via the official `apsystems-ez1` library
 - Persists PV1/PV2 power, today's energy, lifetime energy, online status
 - **Live dashboard**: hero card with total + per-channel power, today's
   peak (with timestamp), and average power during today's production window
@@ -26,10 +26,13 @@ No cloud, no account, no telemetry. Localized for English and German.
   (best day this week, best day last week, etc.)
 - **Hall of Fame**: all-time best day / week / month / year with subtle
   amber glow when records are fresh. Tier-unlocked so a new install
-  doesn't blink permanently while it accumulates comparison data
-- **History chart**: Week / Month / Year (with daily↔monthly toggle) and
-  Multi-year — the latter is served from long-term aggregate tables that
-  **survive retention pruning**
+  doesn't blink permanently while it accumulates comparison data. Click a
+  tile to jump straight to that period in the history view
+- **History chart**: Week / Month / Year (with daily / weekly / monthly
+  toggle) and Multi-year. Click any weekly or monthly bar to drill into that
+  exact period — daily bars plus a total / average / best-day / year-over-year
+  summary — then into a single day's curve. Multi-year is served from
+  long-term aggregate tables that **survive retention pruning**
 - **Live grid CO₂ intensity** (optional) via Electricity Maps — each
   measurement is stamped with the grid factor active at the time, so the
   lifetime CO₂ value is historically accurate. Three-tier fallback
@@ -244,6 +247,9 @@ For integrations and scripts:
 | `GET /api/history?range=day\|week\|month\|year` | Historical data points |
 | `GET /api/history?range=day&date=YYYY-MM-DD` | Specific day's intraday curve |
 | `GET /api/history?range=year&granularity=monthly` | Year view aggregated by month |
+| `GET /api/history?range=year&granularity=weekly` | Year view aggregated by ISO week |
+| `GET /api/history?range=week&week=YYYY-Www` | A specific historical ISO week (daily bars + summary) |
+| `GET /api/history?range=month&month=YYYY-MM` | A specific historical month (daily bars + summary) |
 | `GET /api/history?range=multiyear&granularity=monthly\|yearly` | All years |
 | `GET /api/stats` | Aggregated statistics with same-period and YoY comparisons |
 | `GET /api/highscores` | All-time best day/week/month/year with animation state |
@@ -285,6 +291,31 @@ read-while-write). The Unraid appdata-backup plugin handles this
 automatically.
 
 ## Upgrading
+
+### From v1.8.x to v1.9.0
+
+No manual steps, no database migration. A feature release — everything is
+computed from the existing `daily_aggregates` table (which survives raw-row
+pruning), so anchored views of old weeks/months work even after their raw
+measurements are gone.
+
+- **Weekly history view.** The Year range on the History card gains a third
+  granularity, **Weekly** (≈52 ISO-week bars), alongside Daily and Monthly —
+  the most readable density between 365 daily and 12 monthly bars. Rolling
+  (last 52 weeks) and calendar (this year) both apply.
+- **Drill into any week or month.** Click a weekly or monthly bar to open that
+  exact period as daily bars, with a **summary line**: total, average per day,
+  best day, and data-gated deltas vs. the previous period and vs. the same
+  period last year. A "back" link returns to the overview; clicking a day
+  drills further into its intraday curve.
+- **Hall of Fame is now navigable.** Click the best-day / week / month tile to
+  jump to that period (best-year opens the all-years overview). Tiles are
+  keyboard-focusable buttons.
+- **Harmonized stat cards.** The Week card gains a year-over-year line ("same
+  ISO week last year") to match the Month card — both are now data-gated
+  (hidden on young installs with nothing to compare). The Month card's "full
+  month last year" line was removed; that figure is reachable via the new
+  drill-down.
 
 ### From v1.7.0 to v1.8.0
 
