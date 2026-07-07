@@ -1205,6 +1205,84 @@ function renderAnchoredDaily(data) {
   }, chartSig("anchored"));
 }
 
+// --- Anchored-period navigation (v1.11) ------------------------------------
+//
+// Arrow buttons in the summary head step through adjacent weeks/months, so
+// browsing periods feels like browsing days in the day picker. All date math
+// happens client-side; the backend already accepts arbitrary week=/month=
+// anchors. ISO week helpers are client-side twins of date_helpers.py.
+
+// Thursday trick: a date's ISO week/year is that of its week's Thursday.
+function isoWeekInfo(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3);   // this week's Thursday
+  const isoYear = d.getFullYear();
+  const jan4 = new Date(isoYear, 0, 4);
+  const week1Thu = new Date(isoYear, 0, 4 - ((jan4.getDay() + 6) % 7) + 3);
+  // Both are local midnights; Math.round absorbs a DST hour in between.
+  return { isoYear, isoWeek: 1 + Math.round((d - week1Thu) / 604800000) };
+}
+
+function isoWeekMondayJs(isoYear, isoWeek) {
+  const jan4 = new Date(isoYear, 0, 4);
+  return new Date(isoYear, 0, 4 - ((jan4.getDay() + 6) % 7) + (isoWeek - 1) * 7);
+}
+
+function periodKeyOf(ap) {
+  return ap.kind === "week" ? ap.week : ap.month;
+}
+
+// Key of the currently RUNNING week/month — the upper navigation bound.
+// Zero-padded ISO strings compare correctly as plain strings.
+function currentPeriodKey(kind) {
+  const now = new Date();
+  if (kind === "week") {
+    const w = isoWeekInfo(now);
+    return `${w.isoYear}-W${String(w.isoWeek).padStart(2, "0")}`;
+  }
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftAnchoredPeriod(delta) {
+  const ap = state.anchoredPeriod;
+  if (!ap) return;
+  let next;
+  if (ap.kind === "week") {
+    const monday = isoWeekMondayJs(parseInt(ap.week.slice(0, 4), 10),
+                                   parseInt(ap.week.slice(6), 10));
+    monday.setDate(monday.getDate() + delta * 7);
+    const w = isoWeekInfo(monday);
+    next = { kind: "week",
+             week: `${w.isoYear}-W${String(w.isoWeek).padStart(2, "0")}` };
+  } else {
+    const [y, m] = ap.month.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);   // JS rolls year boundaries
+    next = { kind: "month",
+             month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` };
+  }
+  // Never step past the currently running period. (The running period
+  // itself is a valid target — its pace pill simply hides there.)
+  if (delta > 0 && periodKeyOf(next) > currentPeriodKey(ap.kind)) return;
+  setAnchoredPeriod(next, false);
+}
+
+// Localized titles + disabled state for the arrows. Called from
+// renderSummary on every anchored render (period comes from the API).
+function updateSummaryNavButtons(period) {
+  const prevBtn = document.getElementById("summary-prev-period");
+  const nextBtn = document.getElementById("summary-next-period");
+  if (!prevBtn || !nextBtn) return;
+  const isWeek = period && period.kind === "week";
+  const prevLabel = window.i18n.t(state.lang, isWeek ? "summary.prevWeek" : "summary.prevMonth");
+  const nextLabel = window.i18n.t(state.lang, isWeek ? "summary.nextWeek" : "summary.nextMonth");
+  prevBtn.title = prevLabel;
+  prevBtn.setAttribute("aria-label", prevLabel);
+  nextBtn.title = nextLabel;
+  nextBtn.setAttribute("aria-label", nextLabel);
+  nextBtn.disabled = !!state.anchoredPeriod
+    && periodKeyOf(state.anchoredPeriod) >= currentPeriodKey(state.anchoredPeriod.kind);
+}
+
 function formatPeriodLabel(period) {
   if (!period) return "";
   if (period.kind === "week") {
@@ -1245,6 +1323,8 @@ function renderSummary(summary, period) {
 
   const labelEl = document.getElementById("history-summary-label");
   if (labelEl) labelEl.textContent = formatPeriodLabel(period);
+
+  updateSummaryNavButtons(period);
 
   const T = (k, v) => window.i18n.t(state.lang, k, v);
   const parts = [
@@ -1724,6 +1804,11 @@ document.getElementById("history-summary-back")?.addEventListener("click", () =>
   state.anchoredPeriod = null;
   loadHistoryChart(state.currentRange);
 });
+
+// Step through adjacent anchored periods (v1.11) — like the day picker,
+// but for the week/month drill-down.
+document.getElementById("summary-prev-period")?.addEventListener("click", () => shiftAnchoredPeriod(-1));
+document.getElementById("summary-next-period")?.addEventListener("click", () => shiftAnchoredPeriod(+1));
 
 
 // --- Theme management (smart toggle: system default, click toggles light/dark) ---
