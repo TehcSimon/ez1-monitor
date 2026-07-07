@@ -208,3 +208,41 @@ class TestTodayPanelEnergy:
         pv1, pv2 = await db.get_today_panel_energy()
         assert pv1 == 0.0
         assert pv2 == 0.0
+
+
+class TestBackfillPreRetentionFill:
+    """Days at/before the retention boundary WITHOUT a stored aggregate must
+    still be captured from the remaining raw rows. Regression guard for the
+    v1.9.0 data-loss: on databases whose measurements reach further back
+    than RETENTION_DAYS (imports, upgrades from pre-aggregate versions),
+    those days were skipped by the backfill and their raw rows then pruned
+    for good. Existing rows stay frozen — see TestBackfillRetentionBoundary."""
+
+    async def test_missing_pre_boundary_day_is_created(self, db):
+        await _seed_day(db, "2024-05-10", 2.5, 2.5, peak_w=400)
+        written = await db.backfill_daily_aggregates(since_iso="2025-06-16")
+        assert written == 1
+        row = await _read_daily_aggregate(db, "2024-05-10")
+        assert row is not None
+        assert abs(row["total_kwh"] - 5.0) < 0.01
+        assert row["peak_w"] == 400
+
+    async def test_existing_pre_boundary_day_writes_nothing(self, db):
+        await _seed_day(db, "2024-05-10", 2.5, 2.5, peak_w=400)
+        await db.backfill_daily_aggregates()
+        # Re-running with the day behind the boundary must not touch it.
+        written = await db.backfill_daily_aggregates(since_iso="2025-06-16")
+        assert written == 0
+
+
+class TestExistingMonthKeys:
+
+    async def test_empty_db_has_no_keys(self, db):
+        assert await db.get_existing_month_keys() == set()
+
+    async def test_reports_aggregated_months(self, db):
+        await _seed_day(db, "2024-05-10", 2.5, 2.5)
+        await db.recompute_month_aggregate(2024, 5)
+        keys = await db.get_existing_month_keys()
+        assert (2024, 5) in keys
+        assert (2024, 6) not in keys
