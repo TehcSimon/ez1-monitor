@@ -46,6 +46,15 @@ let todayChart, historyChart;
 let liveTimer, statsTimer, todayTimer, historyTimer, highscoresTimer;
 let dayPicker = null;  // flatpickr instance
 
+// Monotonic request tokens for the two chart loaders. Rapid tab/day
+// switches can make an earlier, slower response resolve AFTER the latest
+// one — rendering a stale chart over the current view. Each loader bumps
+// its token on entry and drops any response that is no longer the newest.
+// (A token check beats AbortController here: no error-path noise, and the
+// browser still warms its cache with the completed response.)
+let todayReqSeq = 0;
+let historyReqSeq = 0;
+
 const fmt = {
   power: v => (v == null ? "—" : Math.round(Number(v)).toString()),
   kwh:   v => (v == null ? "—" : Number(v).toFixed(2)),
@@ -218,7 +227,8 @@ const yearBoundaryPlugin = {
 
 function applyStatus(statusState) {
   const pill = document.getElementById("status-pill");
-  pill.classList.remove("online", "offline", "standby", "error", "noData");
+  pill.classList.remove("online", "offline", "standby", "error", "noData",
+                        "connectionError");
   pill.classList.add(statusState);
   document.getElementById("status-text").textContent =
     window.i18n.t(state.lang, `status.${statusState}`);
@@ -317,8 +327,14 @@ async function loadLive() {
       scheduleTimers();
     }
   } catch (e) {
+    // The fetch itself failed — the BACKEND is unreachable (network blip,
+    // laptop waking up, container restarting). That says nothing about the
+    // inverter, so show the distinct amber "connection error" pill instead
+    // of the red inverter-error state. state.statusState is deliberately
+    // left untouched: the timer cadence keeps working off the last known
+    // inverter state, and the next successful loadLive() repaints the pill.
     console.error("loadLive:", e);
-    applyStatus("error");
+    applyStatus("connectionError");
   }
 }
 
@@ -882,12 +898,14 @@ function shiftViewedDay(deltaDays) {
 // --- Today chart ------------------------------------------------------
 
 async function loadTodayChart() {
+  const seq = ++todayReqSeq;
   try {
     const dateParam = state.viewedDay
       ? `&date=${fmt.isoDay(state.viewedDay)}`
       : "";
     const res = await fetch(`/api/history?range=day${dateParam}`);
     const data = await res.json();
+    if (seq !== todayReqSeq) return;   // a newer request superseded this one
     const points = (data.points || []).filter(p => p.online);
     const labels = points.map(p => p.timestamp * 1000);
     const series = points.map(p => (p.p1 || 0) + (p.p2 || 0));
@@ -901,14 +919,12 @@ async function loadTodayChart() {
     // Update card title meta with chosen day (if not today)
     // (We re-use the meta slot via the day-picker, so nothing extra here)
 
-    if (todayChart) todayChart.destroy();
     const ctx = document.getElementById("chart-today").getContext("2d");
-
     const grad = ctx.createLinearGradient(0, 0, 0, 280);
     grad.addColorStop(0, COLORS.accent + "55");
     grad.addColorStop(1, COLORS.accent + "00");
 
-    todayChart = new Chart(ctx, {
+    todayChart = upsertChart(todayChart, "chart-today", {
       type: "line",
       data: {
         labels,
@@ -926,7 +942,7 @@ async function loadTodayChart() {
         }],
       },
       options: timeChartOptions("HH:mm"),
-    });
+    }, chartSig("today", state.dayScaleMode));
   } catch (e) {
     console.error("loadTodayChart:", e);
   }
@@ -968,6 +984,7 @@ function padMonthlyCalendar(data) {
 }
 
 async function loadHistoryChart(range) {
+  const seq = ++historyReqSeq;
   try {
     const modeToggle = document.getElementById("history-mode-toggle");
     const granTabs = document.getElementById("granularity-tabs");
@@ -983,6 +1000,7 @@ async function loadHistoryChart(range) {
         : `/api/history?range=month&month=${ap.month}`;
       const res = await fetch(url);
       const data = await res.json();
+      if (seq !== historyReqSeq) return;   // superseded by a newer request
       renderAnchoredDaily(data);
       return;
     }
@@ -999,6 +1017,7 @@ async function loadHistoryChart(range) {
         : "/api/history?range=multiyear&granularity=monthly";
       const res = await fetch(url);
       const data = await res.json();
+      if (seq !== historyReqSeq) return;
       if (state.multiYearGranularity === "yearly") {
         renderYearlyHistory(data);
       } else {
@@ -1017,6 +1036,7 @@ async function loadHistoryChart(range) {
     if (isYear && gran === "weekly") {
       const res = await fetch(`/api/history?range=year&granularity=weekly&mode=${mode}`);
       const data = await res.json();
+      if (seq !== historyReqSeq) return;
       renderWeeklyHistory(data);
       if (granTabs) granTabs.style.display = "";
       updateGranularityTabsForRange("year");
@@ -1029,6 +1049,7 @@ async function loadHistoryChart(range) {
       : `/api/history?range=${range}&mode=${mode}`;
     const res = await fetch(url);
     const data = await res.json();
+    if (seq !== historyReqSeq) return;
     if (useMonthly) {
       renderMonthlyHistory(padMonthlyCalendar(data));
     } else {
@@ -1097,9 +1118,7 @@ function renderWeeklyHistory(data) {
     prevYear = w.iso_year;
   });
 
-  if (historyChart) historyChart.destroy();
-  const ctx = document.getElementById("chart-history").getContext("2d");
-  historyChart = new Chart(ctx, {
+  historyChart = upsertChart(historyChart, "chart-history", {
     type: "bar",
     data: { labels, datasets: [{ label: "kWh", data: series, backgroundColor: backgroundColors, borderColor: COLORS.accent, borderWidth: 1, borderRadius: 3 }] },
     options: {
@@ -1129,7 +1148,7 @@ function renderWeeklyHistory(data) {
       },
     },
     plugins: [yearBoundaryPlugin],
-  });
+  }, chartSig("weekly"));
 }
 
 function renderAnchoredDaily(data) {
@@ -1138,9 +1157,7 @@ function renderAnchoredDaily(data) {
   const series = points.map(p => p.kwh);
   renderSummary(data.summary, data.period);
 
-  if (historyChart) historyChart.destroy();
-  const ctx = document.getElementById("chart-history").getContext("2d");
-  historyChart = new Chart(ctx, {
+  historyChart = upsertChart(historyChart, "chart-history", {
     type: "bar",
     data: { labels, datasets: [{ label: "kWh", data: series, backgroundColor: COLORS.accent + "cc", borderColor: COLORS.accent, borderWidth: 1, borderRadius: 3 }] },
     options: {
@@ -1171,7 +1188,7 @@ function renderAnchoredDaily(data) {
         y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
       },
     },
-  });
+  }, chartSig("anchored"));
 }
 
 function formatPeriodLabel(period) {
@@ -1286,9 +1303,7 @@ function renderYearlyHistory(data) {
     parseInt(l, 10) === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55"
   );
 
-  if (historyChart) historyChart.destroy();
-  const ctx = document.getElementById("chart-history").getContext("2d");
-  historyChart = new Chart(ctx, {
+  historyChart = upsertChart(historyChart, "chart-history", {
     type: "bar",
     data: {
       labels,
@@ -1316,7 +1331,7 @@ function renderYearlyHistory(data) {
         y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
       },
     },
-  });
+  }, chartSig("yearly"));
 }
 
 function renderDailyHistory(data, isYear) {
@@ -1374,10 +1389,7 @@ function renderDailyHistory(data, isYear) {
   borderColors = labels.map(l => (l === viewedDayKey) ? COLORS.good : COLORS.accent);
   borderWidths = labels.map(l => (l === viewedDayKey) ? 2 : 1);
 
-  if (historyChart) historyChart.destroy();
-  const ctx = document.getElementById("chart-history").getContext("2d");
-
-  historyChart = new Chart(ctx, {
+  historyChart = upsertChart(historyChart, "chart-history", {
     type: "bar",
     data: {
       labels,
@@ -1461,7 +1473,7 @@ function renderDailyHistory(data, isYear) {
       },
     },
     plugins: [yearBoundaryPlugin],
-  });
+  }, chartSig("daily", isYear));
 }
 
 function renderMonthlyHistory(data) {
@@ -1485,10 +1497,7 @@ function renderMonthlyHistory(data) {
     previousYear = y;
   });
 
-  if (historyChart) historyChart.destroy();
-  const ctx = document.getElementById("chart-history").getContext("2d");
-
-  historyChart = new Chart(ctx, {
+  historyChart = upsertChart(historyChart, "chart-history", {
     type: "bar",
     data: {
       labels,
@@ -1544,7 +1553,41 @@ function renderMonthlyHistory(data) {
       },
     },
     plugins: [yearBoundaryPlugin],
-  });
+  }, chartSig("monthly"));
+}
+
+// --- Chart upsert: update-in-place instead of destroy + rebuild -----------
+//
+// Rebuilding a chart on every refresh (destroy + new Chart) flickers and
+// churns GC — the today chart alone refreshes every 10-60 s. If the existing
+// chart matches the structural signature (renderer plus everything baked
+// into closures: language, theme, scale mode), we swap data and options in
+// place and let Chart.js animate the diff. options are replaced wholesale so
+// tooltip/tick/click closures never reference stale data arrays. Any
+// signature change (view switch, language, theme) falls back to a rebuild.
+function upsertChart(existing, canvasId, cfg, signature) {
+  if (existing && existing.__sig === signature && existing.config.type === cfg.type) {
+    existing.data.labels = cfg.data.labels;
+    cfg.data.datasets.forEach((ds, i) => {
+      if (existing.data.datasets[i]) Object.assign(existing.data.datasets[i], ds);
+      else existing.data.datasets.push(ds);
+    });
+    existing.data.datasets.length = cfg.data.datasets.length;
+    existing.options = cfg.options;
+    existing.update();
+    return existing;
+  }
+  if (existing) existing.destroy();
+  const ctx = document.getElementById(canvasId).getContext("2d");
+  const chart = new Chart(ctx, cfg);
+  chart.__sig = signature;
+  return chart;
+}
+
+// Structural signature for upsertChart. lang and theme are always included
+// because every renderer bakes them into its closures (labels, colors).
+function chartSig(...parts) {
+  return parts.join("|") + "|" + state.lang + "|" + getResolvedTheme();
 }
 
 function timeChartOptions(timeFormat) {
