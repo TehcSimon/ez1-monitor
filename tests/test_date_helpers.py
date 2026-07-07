@@ -5,11 +5,11 @@ touching the database or HTTP layer. The edge cases that motivated this
 suite are leap-year handling for shift_year() and month-length variations
 for last_day_of_month().
 """
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
-from app.date_helpers import last_day_of_month, shift_year
+from app.date_helpers import last_day_of_month, same_progress_slice, shift_year
 
 
 class TestShiftYear:
@@ -146,3 +146,50 @@ class TestCombinedUsage:
         assert last_day_of_month(feb_start) == datetime(
             2025, 2, 28, 23, 59, 59, 999999
         )
+
+
+class TestSameProgressSlice:
+    """Record-pace ranges: an anchored past period cut to today's progress
+    vs. the currently running period (v1.10 drill-down pill)."""
+
+    def test_week_slice_on_a_wednesday(self):
+        # Anchored: KW 26/2026 (Mon Jun 22). Today: Wed Jul 8, 2026 (KW 28).
+        anchored = date(2026, 6, 22)
+        today = date(2026, 7, 8)  # Wednesday, isoweekday 3
+        (s_start, s_end), (c_start, c_end) = same_progress_slice(
+            "week", anchored, today
+        )
+        assert (s_start, s_end) == (date(2026, 6, 22), date(2026, 6, 24))  # Mon-Wed
+        assert (c_start, c_end) == (date(2026, 7, 6), today)               # this Mon-today
+
+    def test_week_returns_none_for_current_week(self):
+        today = date(2026, 7, 8)                   # Wednesday of KW 28
+        this_monday = date(2026, 7, 6)
+        assert same_progress_slice("week", this_monday, today) is None
+
+    def test_week_sunday_covers_full_anchored_week(self):
+        anchored = date(2026, 6, 22)
+        today = date(2026, 7, 12)                  # Sunday, isoweekday 7
+        (s_start, s_end), _ = same_progress_slice("week", anchored, today)
+        assert (s_start, s_end) == (date(2026, 6, 22), date(2026, 6, 28))
+
+    def test_month_slice_mid_month(self):
+        anchored = date(2026, 5, 1)
+        today = date(2026, 7, 10)
+        (s_start, s_end), (c_start, c_end) = same_progress_slice(
+            "month", anchored, today
+        )
+        assert (s_start, s_end) == (date(2026, 5, 1), date(2026, 5, 10))
+        assert (c_start, c_end) == (date(2026, 7, 1), today)
+
+    def test_month_slice_clamps_to_short_anchored_month(self):
+        # Comparing February against the 30th of the running month must not
+        # produce Feb 30 — the slice clamps to all of February.
+        anchored = date(2026, 2, 1)
+        today = date(2026, 7, 30)
+        (s_start, s_end), _ = same_progress_slice("month", anchored, today)
+        assert (s_start, s_end) == (date(2026, 2, 1), date(2026, 2, 28))
+
+    def test_month_returns_none_for_current_month(self):
+        today = date(2026, 7, 10)
+        assert same_progress_slice("month", date(2026, 7, 1), today) is None
