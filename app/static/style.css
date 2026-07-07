@@ -38,6 +38,10 @@
   --hof-badge-bg:    #f59e0b;
   --hof-badge-text:  #1c1207;
   --hof-title-color: #fbbf24;   /* amber-400 — slot titles in gold */
+  /* Record-chase pill: stays amber in BOTH themes. Deliberately NOT
+     --accent-warm, which the light theme redefines to blue — the chase
+     state is thematically tied to the amber Hall-of-Fame glow. */
+  --record-chase:    #fb923c;
 }
 
 /* Light theme — applied when user explicitly chose light, OR when the
@@ -84,6 +88,7 @@
     --hof-badge-bg:    #d97706;
     --hof-badge-text:  #ffffff;
     --hof-title-color: #b45309;   /* amber-700 — slot titles in gold */
+    --record-chase:    #b45309;   /* amber-700 — readable on white */
   }
 }
 
@@ -120,6 +125,7 @@ html[data-theme="light"] {
   --hof-badge-bg:    #d97706;
   --hof-badge-text:  #ffffff;
   --hof-title-color: #b45309;
+  --record-chase:    #b45309;
 }
 
 /* Dark theme override (explicit user choice) — same as :root defaults */
@@ -734,8 +740,8 @@ main {
    4px→16px, and a slower cycle), so it whispers "Rekordkurs" instead of
    shouting. */
 .summary-pill.chase {
-  color: var(--accent-warm);
-  border-color: var(--accent-warm);
+  color: var(--record-chase);
+  border-color: var(--record-chase);
   animation: pill-chase 3.5s ease-in-out infinite;
 }
 
