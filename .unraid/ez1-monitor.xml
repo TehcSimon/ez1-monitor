@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>ez1-monitor</Name>
-  <Repository>ghcr.io/thecsimon/ez1-monitor:latest</Repository>
-  <Registry>https://github.com/ThecSimon/ez1-monitor/pkgs/container/ez1-monitor</Registry>
+  <Repository>ghcr.io/tehcsimon/ez1-monitor:latest</Repository>
+  <Registry>https://github.com/TehcSimon/ez1-monitor/pkgs/container/ez1-monitor</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/ThecSimon/ez1-monitor/issues</Support>
-  <Project>https://github.com/ThecSimon/ez1-monitor</Project>
+  <Support>https://github.com/TehcSimon/ez1-monitor/issues</Support>
+  <Project>https://github.com/TehcSimon/ez1-monitor</Project>
   <Overview>
     Local-only monitoring dashboard for the APsystems EZ1-M microinverter.
     Polls the inverter's local API every minute (configurable), stores all
@@ -25,8 +25,8 @@
   </Overview>
   <Category>HomeAutomation: Productivity: Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/ThecSimon/ez1-monitor/main/.unraid/ez1-monitor.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/ThecSimon/ez1-monitor/main/.unraid/icon.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/TehcSimon/ez1-monitor/main/.unraid/ez1-monitor.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/TehcSimon/ez1-monitor/main/.unraid/icon.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>
