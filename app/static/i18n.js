@@ -99,6 +99,7 @@ const TRANSLATIONS = {
       moneyPotential: "max. {amount} bei 100 % Eigennutzung",
       amortTitle: "Amortisation",
       amortBadge: "AMORTISIERT",
+      amortEta: "voraussichtlich amortisiert: {date}",
     },
     summary: {
       total: "gesamt",
@@ -107,6 +108,9 @@ const TRANSLATIONS = {
       vsPrevWeek: "vs. Vorwoche",
       vsPrevMonth: "vs. Vormonat",
       vsLastYear: "vs. Vorjahr",
+      vsCurrentWeek: "vs. lfd. Woche (gleicher Stand)",
+      vsCurrentMonth: "vs. lfd. Monat (gleicher Stand)",
+      recordPace: "Rekordkurs!",
       back: "Zurück zur Übersicht",
     },
     footer: {
@@ -217,6 +221,7 @@ const TRANSLATIONS = {
       moneyPotential: "max. {amount} at 100 % self-use",
       amortTitle: "Payback",
       amortBadge: "PAID OFF",
+      amortEta: "projected break-even: {date}",
     },
     summary: {
       total: "total",
@@ -225,6 +230,9 @@ const TRANSLATIONS = {
       vsPrevWeek: "vs. prev. week",
       vsPrevMonth: "vs. prev. month",
       vsLastYear: "vs. last year",
+      vsCurrentWeek: "vs. current week (same progress)",
+      vsCurrentMonth: "vs. current month (same progress)",
+      recordPace: "Record pace!",
       back: "Back to overview",
     },
     footer: {
