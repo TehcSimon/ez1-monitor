@@ -51,6 +51,13 @@ HA_ENDPOINT = "https://api.electricitymap.org/v3/home-assistant"
 # allows 50 req/hour, so we have 50× headroom for retries / restarts.
 POLL_INTERVAL_S = 3600
 
+# After a failed poll, retry sooner than the hourly cadence: 5 min, then
+# 10 / 20 / 40, capped at POLL_INTERVAL_S. Most relevant for the very first
+# poll after container start — a single hiccup there otherwise left the
+# static fallback active for a full hour. Worst case (permanent outage)
+# settles at one request per hour again, far inside the 50/h budget.
+POLL_RETRY_BASE_S = 300
+
 # Three-tier cascade thresholds (in seconds since last successful poll).
 FRESH_AGE_S  = 6 * 3600       # 0-6h:  "Live"
 STALE_AGE_S  = 48 * 3600      # 6-48h: "Letzter Wert · vor Nh"
@@ -194,7 +201,17 @@ async def poll_loop(state: CarbonState, interval_s: int = POLL_INTERVAL_S):
 
     while True:
         try:
-            await asyncio.sleep(interval_s)
+            if state.consecutive_failures > 0:
+                # Exponential backoff after failures instead of waiting the
+                # full hour: 300s, 600s, 1200s, 2400s, then the regular
+                # interval. poll_once resets the counter on success.
+                delay = min(
+                    interval_s,
+                    POLL_RETRY_BASE_S * (2 ** min(state.consecutive_failures - 1, 4)),
+                )
+            else:
+                delay = interval_s
+            await asyncio.sleep(delay)
             await poll_once(state)
         except asyncio.CancelledError:
             break
