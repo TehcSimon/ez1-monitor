@@ -186,12 +186,18 @@ async def backfill_aggregates() -> None:
     each month's aggregate. Then recomputes each year's aggregate from
     its monthly rows.
 
-    IMPORTANT: months that start before the retention boundary are
-    skipped. Their raw measurements have been (partially) pruned, so
-    recomputing them from raw data would overwrite the stored complete
-    aggregate with a reduced partial value — defeating the entire point
-    of the long-term aggregate tables. Those months keep the value that
-    was computed while their data was still complete.
+    IMPORTANT: months that start before the retention boundary are only
+    skipped when a stored aggregate row ALREADY EXISTS. Their raw
+    measurements have been (partially) pruned, so recomputing them from
+    raw data would overwrite the stored complete aggregate with a reduced
+    partial value — defeating the entire point of the long-term aggregate
+    tables. Those months keep the value that was computed while their data
+    was still complete. A pre-retention month WITHOUT a stored row (first
+    run after upgrading from a pre-aggregate version, or an imported
+    database whose history reaches further back than RETENTION_DAYS) is
+    still computed from whatever raw rows remain — skipping it would lose
+    the month entirely, because the retention task prunes those raw rows
+    for good ~60s after startup.
     """
     earliest, latest = await db.get_measurements_date_range()
     if earliest is None:
@@ -208,10 +214,12 @@ async def backfill_aggregates() -> None:
     logger.info(
         f"Aggregate backfill: recomputing months from {start_date.isoformat()} "
         f"to {end_date.isoformat()}"
-        + (f" (skipping months starting before {retention_cutoff.isoformat()})"
+        + (f" (already-aggregated months before {retention_cutoff.isoformat()} "
+           f"stay frozen)"
            if retention_cutoff else "")
     )
 
+    existing_months = await db.get_existing_month_keys()
     current_year = start_date.year
     current_month = start_date.month
     years_touched = set()
@@ -219,9 +227,12 @@ async def backfill_aggregates() -> None:
     months_skipped = 0
     while (current_year, current_month) <= (end_date.year, end_date.month):
         month_start = datetime(current_year, current_month, 1).date()
-        if retention_cutoff is not None and month_start < retention_cutoff:
+        if (retention_cutoff is not None and month_start < retention_cutoff
+                and (current_year, current_month) in existing_months):
             # Raw data for this month is no longer complete — keep the
-            # frozen aggregate from when it was.
+            # frozen aggregate from when it was. (Months without a stored
+            # aggregate fall through and get computed from the remaining
+            # raw rows before retention prunes them.)
             months_skipped += 1
         else:
             await db.recompute_month_aggregate(current_year, current_month)
@@ -241,7 +252,9 @@ async def backfill_aggregates() -> None:
     # retention boundary is passed down so the day at the pruning edge
     # (whose intraday rows may be partially deleted) keeps its stored
     # complete aggregate — relevant for peak_w, which unlike the
-    # cumulative e1/e2 counters does not survive partial pruning.
+    # cumulative e1/e2 counters does not survive partial pruning. Days
+    # at/before the boundary that have NO stored row yet are still filled
+    # in from the remaining raw rows (same rationale as the months above).
     daily_since = retention_cutoff.isoformat() if retention_cutoff else None
     daily_rows = await db.backfill_daily_aggregates(since_iso=daily_since)
 
@@ -283,6 +296,8 @@ async def aggregate_refresh_task():
                 frozen = (
                     RETENTION_DAYS > 0
                     and ended_start < (now - timedelta(days=RETENTION_DAYS)).date()
+                    and (ended_year, ended_month)
+                        in await db.get_existing_month_keys()
                 )
                 if not frozen:
                     await db.recompute_month_aggregate(ended_year, ended_month)
@@ -1042,8 +1057,6 @@ async def _populate_metrics() -> None:
             _m_current_power_w.set(p1 + p2)
             _m_pv1_power_w.set(p1)
             _m_pv2_power_w.set(p2)
-            _m_pv1_today_kwh.set(latest.get("e1") or 0)
-            _m_pv2_today_kwh.set(latest.get("e2") or 0)
         else:
             _m_current_power_w.set(0)
             _m_pv1_power_w.set(0)
@@ -1055,6 +1068,13 @@ async def _populate_metrics() -> None:
 
     stats = await get_stats()
     _m_today_kwh.set(stats.get("today_kwh") or 0)
+    # Per-panel day totals come from stats (DB-derived, like the dashboard's
+    # PV cards) rather than from the latest live reading: the live e1/e2
+    # gauges were only updated while online, so they kept yesterday's
+    # counters all night while ez1_today_kwh already rolled over to 0 at
+    # local midnight.
+    _m_pv1_today_kwh.set(stats.get("pv1_kwh_today") or 0)
+    _m_pv2_today_kwh.set(stats.get("pv2_kwh_today") or 0)
     _m_this_week_kwh.set(stats.get("this_week_kwh") or 0)
     _m_this_month_kwh.set(stats.get("this_month_kwh") or 0)
     _m_this_year_kwh.set(stats.get("this_year_kwh") or 0)
