@@ -724,6 +724,29 @@ main {
 .summary-pill.up   { color: var(--good); border-color: var(--good); }
 .summary-pill.down { color: var(--bad);  border-color: var(--bad); }
 
+/* Record-chase state of the pace pill: the running week/month is beating
+   the all-time record's pace. Celebratory, not alarming — warm accent plus
+   a deliberately subtle endless glow (2px→8px vs. the Hall of Fame's
+   4px→16px, and a slower cycle), so it whispers "Rekordkurs" instead of
+   shouting. */
+.summary-pill.chase {
+  color: var(--accent-warm);
+  border-color: var(--accent-warm);
+  animation: pill-chase 3.5s ease-in-out infinite;
+}
+
+@keyframes pill-chase {
+  0%, 100% { box-shadow: 0 0 2px var(--hof-glow-soft); }
+  50%      { box-shadow: 0 0 8px var(--hof-glow-soft); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summary-pill.chase {
+    animation: none;
+    box-shadow: 0 0 4px var(--hof-glow-soft);
+  }
+}
+
 /* Hall-of-Fame tiles are navigable (v1.9): lift slightly on hover and show a
    focus ring for keyboard users. */
 .hof-slot[role="button"] {
