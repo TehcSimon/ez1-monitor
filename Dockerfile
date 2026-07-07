@@ -3,11 +3,11 @@
 # - runtime: copies just the installed packages, no pip metadata,
 #   no build tools, no compiler caches
 #
-# Alpine was chosen over python:3.12-slim because all our dependencies
+# Alpine was chosen over python:3.14-slim because all our dependencies
 # (FastAPI, uvicorn, aiosqlite, apsystems-ez1, prometheus-client) have
 # pre-built musl wheels available, so no compiler is needed at install
 # time. If a future dependency drops musl wheel support, fall back to
-# python:3.12-slim by changing both stages' base image.
+# python:3.14-slim by changing both stages' base image.
 
 # --- Builder stage ----------------------------------------------------
 FROM python:3.14-alpine AS builder
