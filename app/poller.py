@@ -43,6 +43,10 @@ class Poller:
         # Have we already written one offline marker since the last successful poll?
         # If yes, we skip writing further offline rows until the inverter comes back.
         self._offline_marker_written = False
+        # Has device info (serial, firmware, AC limit) been stored this
+        # process lifetime? Retried after every successful data poll until
+        # it succeeds once — see _loop.
+        self._device_info_ok = False
 
     @property
     def standby_interval(self) -> int:
@@ -61,26 +65,37 @@ class Poller:
             except asyncio.CancelledError:
                 pass
 
+    async def _try_update_device_info(self) -> bool:
+        """Fetch device info from the inverter and store it. Returns True on
+        success. Failures are logged at DEBUG only — the caller retries on
+        the next successful data poll anyway."""
+        try:
+            info = await self.inverter.get_device_info()
+        except Exception as e:
+            logger.debug(f"Device info fetch failed: {e}")
+            return False
+        if not info:
+            return False
+        await self.db.update_device_info(
+            device_id=info.deviceId or "",
+            firmware=info.devVer or "",
+            min_power=info.minPower or 0,
+            max_power=info.maxPower or 800,
+        )
+        logger.info(
+            f"Connected to inverter {info.deviceId} "
+            f"(FW {info.devVer}), max {info.maxPower}W"
+        )
+        return True
+
     async def _loop(self):
-        # Initial device info fetch (retry a few times until inverter is reachable)
-        for attempt in range(10):
-            try:
-                info = await self.inverter.get_device_info()
-                if info:
-                    await self.db.update_device_info(
-                        device_id=info.deviceId or "",
-                        firmware=info.devVer or "",
-                        min_power=info.minPower or 0,
-                        max_power=info.maxPower or 800,
-                    )
-                    logger.info(
-                        f"Connected to inverter {info.deviceId} "
-                        f"(FW {info.devVer}), max {info.maxPower}W"
-                    )
-                    break
-            except Exception as e:
-                logger.warning(f"Initial connect attempt {attempt+1} failed: {e}")
-                await asyncio.sleep(min(30, 2 ** attempt))
+        # Device info: try once at start, then keep retrying after every
+        # successful data poll until it lands. The previous fixed 10-attempt
+        # startup loop gave up after ~3 minutes, so a container (re)started
+        # at night — inverter sleeping — showed placeholder device data
+        # (S/N, firmware, and the 800 W AC-limit fallback that also scales
+        # the fixed day-chart axis) until the next restart.
+        self._device_info_ok = await self._try_update_device_info()
 
         while not self._stop:
             ts = int(datetime.now().timestamp())
@@ -107,6 +122,10 @@ class Poller:
                         price_per_kwh=self.price_per_kwh,
                     )
                     logger.debug(f"Polled: p1={data.p1}W p2={data.p2}W co2={co2_g:.0f}")
+                    if not self._device_info_ok:
+                        # Inverter is clearly reachable now — fill in the
+                        # device info we couldn't get at startup.
+                        self._device_info_ok = await self._try_update_device_info()
                     # Online: reset offline marker, use normal interval
                     self._offline_marker_written = False
                     sleep_seconds = self.interval
