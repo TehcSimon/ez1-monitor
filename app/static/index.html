@@ -323,16 +323,21 @@
          the (data-gated) previous-period and year-over-year delta pills. -->
     <div class="history-summary" id="history-summary" style="display: none;">
       <div class="history-summary-head">
-        <button class="summary-back" id="history-summary-back" type="button">
-          <span aria-hidden="true">‹</span> <span data-i18n="summary.back">Back to overview</span>
-        </button>
+        <!-- Prev/next period arrows (v1.11) — same controls as the day
+             picker, so browsing weeks/months feels like browsing days.
+             Labels/aria are localized in updateSummaryNavButtons(). -->
+        <button class="day-nav-btn" id="summary-prev-period" type="button" title="" aria-label="">‹</button>
         <span class="history-summary-label" id="history-summary-label">—</span>
+        <button class="day-nav-btn" id="summary-next-period" type="button" title="" aria-label="">›</button>
       </div>
       <div class="history-summary-figures" id="history-summary-figures">—</div>
       <div class="history-summary-deltas">
         <span class="summary-pill" id="history-summary-prev" style="display: none;"></span>
         <span class="summary-pill" id="history-summary-yoy" style="display: none;"></span>
         <span class="summary-pill" id="history-summary-current" style="display: none;"></span>
+        <button class="summary-back summary-back-inline" id="history-summary-back" type="button">
+          <span aria-hidden="true">‹</span> <span data-i18n="summary.back">Back to overview</span>
+        </button>
       </div>
     </div>
     <div class="chart-wrap">
