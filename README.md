@@ -33,8 +33,9 @@ No cloud, no account, no telemetry. Localized for English and German.
   exact period — daily bars plus a total / average / best-day summary with
   deltas vs. the previous period, the same period last year, and the
   currently running period at equal progress (record pace) — then into a
-  single day's curve. Multi-year is served from long-term aggregate tables
-  that **survive retention pruning**
+  single day's curve. Arrow buttons step through adjacent weeks/months.
+  Multi-year is served from long-term aggregate tables that **survive
+  retention pruning**
 - **Live grid CO₂ intensity** (optional) via Electricity Maps — each
   measurement is stamped with the grid factor active at the time, so the
   lifetime CO₂ value is historically accurate. Three-tier fallback
@@ -294,6 +295,17 @@ read-while-write). The Unraid appdata-backup plugin handles this
 automatically.
 
 ## Upgrading
+
+### From v1.10.0 to v1.11.0
+
+No manual steps, no database migration. A small frontend-only release.
+
+- **Arrow navigation in the period drill-down.** The anchored week/month
+  view gains prev/next arrows around the period label (`‹ KW 26 / 2026 ›`),
+  matching the day picker — step through adjacent weeks or months without
+  going back to the overview first. The forward arrow stops at the
+  currently running period. "Zurück zur Übersicht" moved into the pill
+  row to make space.
 
 ### From v1.9.1 to v1.10.0
 
