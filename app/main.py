@@ -20,8 +20,10 @@ from prometheus_client import (
 from .database import Database
 from .poller import Poller
 from .co2 import CarbonState, resolve_current, poll_loop
-from .date_helpers import shift_year, last_day_of_month, iso_week_monday
-from .money import compute_money_saved
+from .date_helpers import (
+    shift_year, last_day_of_month, iso_week_monday, same_progress_slice,
+)
+from .money import compute_money_saved, estimate_breakeven_date
 from . import __version__
 
 logging.basicConfig(
@@ -88,6 +90,12 @@ INSTALL_COST = float(os.getenv("INSTALL_COST", "0"))
 #   beyond       → "settled": static, no glow
 AMORT_GLOW_FRESH_DAYS = 7
 AMORT_GLOW_RECENT_DAYS = 28
+# Projected break-even date: only shown once at least this many calendar
+# days of data exist. Below a full year the average savings rate is
+# seasonally biased (a summer-only history predicts far too early), so the
+# card shows nothing rather than nonsense — same philosophy as the
+# Hall-of-Fame tier unlocks. See money.estimate_breakeven_date.
+AMORT_ETA_MIN_DAYS = 365
 
 # Electricity Maps integration (optional)
 ELECTRICITY_MAPS_TOKEN = os.getenv("ELECTRICITY_MAPS_TOKEN", "").strip()
@@ -410,15 +418,17 @@ async def get_live(request: Request):
     }
 
 
-async def _period_summary(cur_start, cur_end, prev_start, prev_end,
+async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
                           yoy_start, yoy_end) -> dict:
     """Assemble the Kennzahl-Zeile summary for an anchored week/month view.
 
-    Returns the current period's figures plus data-gated deltas vs. the
-    previous period and vs. the same period one year earlier. All ranges are
-    ISO 'YYYY-MM-DD' strings. A comparison with no data reports
-    available=False so the client hides that pill (young installs, the
-    earliest period, or an ISO week 53 that didn't exist last year).
+    kind is "week" or "month". Returns the anchored period's figures plus
+    data-gated deltas vs. the previous period, vs. the same period one year
+    earlier, and vs. the currently RUNNING period at equal progress (the
+    "record pace" pill — see below). All ranges are ISO 'YYYY-MM-DD'
+    strings. A comparison with no data reports available=False so the
+    client hides that pill (young installs, the earliest period, or an ISO
+    week 53 that didn't exist last year).
     """
     cur = await db.get_range_summary(cur_start, cur_end)
     prev = await db.get_range_summary(prev_start, prev_end)
@@ -435,6 +445,47 @@ async def _period_summary(cur_start, cur_end, prev_start, prev_end,
             ),
         }
 
+    # Record-pace comparison: the anchored period cut down to today's
+    # progress vs. the currently running week/month so far — i.e. "is the
+    # running period on track to beat this one?". Most interesting when the
+    # anchored period is an all-time best opened from the Hall of Fame
+    # (comparing a COMPLETE record week against a half-run current week
+    # would be unfair, hence equal progress). Positive delta = the anchored
+    # period is ahead of the running one, consistent with the other pills.
+    # Unavailable when the anchored period IS the running one, or when the
+    # running period has no data yet (early Monday morning).
+    pace = {"available": False}
+    slices = same_progress_slice(
+        kind, date_cls.fromisoformat(cur_start), datetime.now().date()
+    )
+    if slices:
+        (s_start, s_end), (c_start, c_end) = slices
+        rec_slice = await db.get_range_summary(s_start.isoformat(), s_end.isoformat())
+        running = await db.get_range_summary(c_start.isoformat(), c_end.isoformat())
+        if running["total_kwh"] > 0 and rec_slice["days"] > 0:
+            rec_total = rec_slice["total_kwh"]
+            pace = {
+                "available": True,
+                "total_kwh": running["total_kwh"],
+                "delta_pct": round(
+                    (rec_total - running["total_kwh"])
+                    / running["total_kwh"] * 100, 1
+                ),
+                # The same comparison re-based on the anchored slice: how far
+                # the RUNNING period is ahead of (+) or behind (−) the
+                # anchored period at equal progress. The UI's record-chase
+                # pill shows THIS number ("Rekordkurs! +10 %") because a
+                # "−9 %" with the running period as base reads backwards
+                # exactly when the user is winning. None when the anchored
+                # slice is all zeros (no meaningful base).
+                "running_delta_pct": (
+                    round(
+                        (running["total_kwh"] - rec_total) / rec_total * 100, 1
+                    ) if rec_total > 0 else None
+                ),
+                "progress_days": (s_end - s_start).days + 1,
+            }
+
     return {
         "total_kwh": cur["total_kwh"],
         "avg_per_day": cur["avg_per_day"],
@@ -443,6 +494,7 @@ async def _period_summary(cur_start, cur_end, prev_start, prev_end,
         "best_kwh": cur["best_kwh"],
         "prev": delta(prev),
         "yoy": delta(yoy),
+        "current_pace": pace,
     }
 
 
@@ -540,9 +592,19 @@ async def get_history(
         yoy_mon = iso_week_monday(iso_year - 1, iso_week)
         points = await db.get_daily_series(monday.isoformat(), sunday.isoformat())
         summary = await _period_summary(
+            "week",
             monday.isoformat(), sunday.isoformat(),
             prev_mon.isoformat(), (prev_mon + timedelta(days=6)).isoformat(),
             yoy_mon.isoformat(), (yoy_mon + timedelta(days=6)).isoformat(),
+        )
+        # Is this anchored week the all-time best? Gates the celebratory
+        # "Rekordkurs" styling of the pace pill — beating the pace of some
+        # arbitrary old week is unremarkable and stays a plain delta.
+        best_week = await db.get_best_week()
+        summary["is_record_period"] = bool(
+            best_week
+            and best_week["iso_year"] == iso_year
+            and best_week["iso_week"] == iso_week
         )
         return {
             "range": "week", "anchored": True, "granularity": "daily",
@@ -565,9 +627,15 @@ async def get_history(
         y_last = last_day_of_month(datetime(y - 1, m, 1)).date()
         points = await db.get_daily_series(first.isoformat(), last.isoformat())
         summary = await _period_summary(
+            "month",
             first.isoformat(), last.isoformat(),
             p_first.isoformat(), p_last.isoformat(),
             y_first.isoformat(), y_last.isoformat(),
+        )
+        # Same record gate as the anchored week view above.
+        best_month = await db.get_best_month()
+        summary["is_record_period"] = bool(
+            best_month and best_month["year"] == y and best_month["month"] == m
         )
         return {
             "range": "month", "anchored": True, "granularity": "daily",
@@ -767,6 +835,7 @@ async def get_stats():
     # after expanding the array) simply recomputes — nothing is persisted.
     amortization_pct = None
     amortization_state = None
+    amortization_eta_date = None
     if INSTALL_COST > 0:
         amortization_pct = round(money_saved / INSTALL_COST * 100.0, 1)
         if money_saved >= INSTALL_COST:
@@ -783,6 +852,22 @@ async def get_stats():
                     elif days_since <= AMORT_GLOW_RECENT_DAYS:
                         amortization_state = "recent"
                 except (ValueError, TypeError):
+                    pass
+        else:
+            # Not amortized yet → projected break-even date, linearly
+            # extrapolated from the average savings rate over the whole
+            # history. Only after a full year of data (AMORT_ETA_MIN_DAYS);
+            # once broken even the real date takes over above.
+            extent = await db.get_data_extent()
+            if extent["first_date"]:
+                try:
+                    first_date = date_cls.fromisoformat(extent["first_date"])
+                    eta = estimate_breakeven_date(
+                        INSTALL_COST, money_saved, first_date, now.date(),
+                        min_days=AMORT_ETA_MIN_DAYS,
+                    )
+                    amortization_eta_date = eta.isoformat() if eta else None
+                except ValueError:
                     pass
 
     peak_w_today, peak_today_ts = await db.get_peak_today_with_time()
@@ -844,6 +929,7 @@ async def get_stats():
         "money_saved_full": round(money_saved_full, 2),
         "amortization_pct": amortization_pct,
         "amortization_state": amortization_state,
+        "amortization_eta_date": amortization_eta_date,
     }
 
 
