@@ -563,6 +563,20 @@ function renderAmortization(s) {
   const sub = document.getElementById("amort-sub");
   if (sub) sub.textContent = `${fmt.money(s.money_saved)} / ${fmt.money(state.installCost)}`;
 
+  // Projected break-even date. Backend sends it only before break-even and
+  // only after a full year of data (seasonal bias below that). Month/year
+  // precision on purpose — a day-exact date would be false precision for a
+  // linear extrapolation. Empty string collapses via the :empty CSS rule.
+  const eta = document.getElementById("amort-eta");
+  if (eta) {
+    eta.textContent = (s.amortization_eta_date && pct < 100)
+      ? window.i18n.t(state.lang, "lifetime.amortEta", {
+          date: new Date(s.amortization_eta_date + "T00:00:00")
+            .toLocaleDateString(state.locale, { month: "long", year: "numeric" }),
+        })
+      : "";
+  }
+
   // "amort-done" keeps the bar in the calm good tone once broken even. The
   // glow classes mirror the HoF: fresh = endless pulse + AMORTISIERT badge,
   // recent = one ~60s pulse. Remove first so each render restarts the pulse,
@@ -1200,11 +1214,23 @@ function formatPeriodLabel(period) {
   return fmt.monthYear(`${period.year}-${String(period.month).padStart(2, "0")}`);
 }
 
-function renderSummaryDelta(elId, delta, labelKey) {
+function renderSummaryDelta(elId, delta, labelKey, opts) {
   const el = document.getElementById(elId);
   if (!el) return;
   if (!delta || !delta.available) { el.style.display = "none"; el.textContent = ""; return; }
   el.style.display = "";
+  // Record-chase state (pace pill only, opts.chase): the running period is
+  // beating the all-time record's pace. A red "down" would read as alarm at
+  // the most exciting moment the dashboard has — so this renders as a warm
+  // amber pill with a subtle glow instead, and the percentage is re-based
+  // on the record slice so it reads "Rekordkurs! +10 %" ("10 % better than
+  // the record at this point") rather than a backwards "−9 %".
+  if (opts && opts.chase && delta.delta_pct < 0 && delta.running_delta_pct != null) {
+    const chaseSign = delta.running_delta_pct > 0 ? "+" : "";
+    el.textContent = `${window.i18n.t(state.lang, "summary.recordPace")} ${chaseSign}${delta.running_delta_pct} %`;
+    el.className = "summary-pill chase";
+    return;
+  }
   const sign = delta.delta_pct > 0 ? "+" : "";
   el.textContent = `${window.i18n.t(state.lang, labelKey)} ${sign}${delta.delta_pct} %`;
   el.className = "summary-pill " + (delta.delta_pct > 0 ? "up" : delta.delta_pct < 0 ? "down" : "");
@@ -1235,6 +1261,17 @@ function renderSummary(summary, period) {
   const prevKey = period && period.kind === "week" ? "summary.vsPrevWeek" : "summary.vsPrevMonth";
   renderSummaryDelta("history-summary-prev", summary.prev, prevKey);
   renderSummaryDelta("history-summary-yoy", summary.yoy, "summary.vsLastYear");
+  // Record-pace pill: the anchored period cut to today's progress vs. the
+  // currently running week/month — "is the running period on record pace?".
+  // Positive (green) = the anchored period is still ahead. When the running
+  // period beats the pace AND the anchored period is the all-time record,
+  // the pill flips into the amber "Rekordkurs" chase state instead of a
+  // harsh red (see renderSummaryDelta). Hidden by the backend when the
+  // anchored period IS the running one.
+  const curKey = period && period.kind === "week"
+    ? "summary.vsCurrentWeek" : "summary.vsCurrentMonth";
+  renderSummaryDelta("history-summary-current", summary.current_pace, curKey,
+                     { chase: !!summary.is_record_period });
 }
 
 // Hall-of-Fame tile → history/today navigation.
