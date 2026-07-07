@@ -53,3 +53,43 @@ def last_day_of_month(dt: datetime) -> datetime:
     else:
         next_month = datetime(dt.year, dt.month + 1, 1)
     return next_month - timedelta(microseconds=1)
+
+
+def same_progress_slice(kind: str, anchored_start: date_cls, today: date_cls):
+    """Date ranges to compare an anchored past week/month against the
+    currently RUNNING week/month at equal progress ("record pace").
+
+    kind is "week" (anchored_start = that week's Monday) or "month"
+    (anchored_start = the 1st of that month). Returns a pair of inclusive
+    date ranges:
+
+        ((slice_start, slice_end), (current_start, current_end))
+
+    where the first range is the anchored period cut down to today's
+    progress (weekday number resp. day-of-month, clamped to the anchored
+    period's length — comparing February against the 30th of the running
+    month yields all of February), and the second is the running period so
+    far. Returns None when the anchored period IS the running one —
+    comparing a period against itself is meaningless.
+
+    Day-granular by design: the pace pill sums daily_aggregates rows, and
+    anything finer would suggest a precision the hourly-refreshed daily
+    rows don't have.
+    """
+    if kind == "week":
+        iso_year, iso_week, _ = today.isocalendar()
+        current_start = iso_week_monday(iso_year, iso_week)
+        if anchored_start == current_start:
+            return None
+        slice_end = anchored_start + timedelta(days=today.isoweekday() - 1)
+    else:  # "month"
+        current_start = today.replace(day=1)
+        if anchored_start == current_start:
+            return None
+        anchored_last = last_day_of_month(
+            datetime(anchored_start.year, anchored_start.month, 1)
+        ).date()
+        slice_end = anchored_start + timedelta(days=today.day - 1)
+        if slice_end > anchored_last:
+            slice_end = anchored_last
+    return ((anchored_start, slice_end), (current_start, today))
