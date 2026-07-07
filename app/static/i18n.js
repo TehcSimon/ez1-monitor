@@ -112,6 +112,10 @@ const TRANSLATIONS = {
       vsCurrentMonth: "vs. lfd. Monat (gleicher Stand)",
       recordPace: "Rekordkurs!",
       back: "Zurück zur Übersicht",
+      prevWeek: "Vorherige Woche",
+      nextWeek: "Nächste Woche",
+      prevMonth: "Vorheriger Monat",
+      nextMonth: "Nächster Monat",
     },
     footer: {
       updateEvery: "Update alle {s} s",
@@ -234,6 +238,10 @@ const TRANSLATIONS = {
       vsCurrentMonth: "vs. current month (same progress)",
       recordPace: "Record pace!",
       back: "Back to overview",
+      prevWeek: "Previous week",
+      nextWeek: "Next week",
+      prevMonth: "Previous month",
+      nextMonth: "Next month",
     },
     footer: {
       updateEvery: "Update every {s} s",
