@@ -24,8 +24,6 @@ CREATE TABLE IF NOT EXISTS measurements (
     price_per_kwh REAL
 );
 
-CREATE INDEX IF NOT EXISTS idx_timestamp ON measurements(timestamp);
-
 CREATE TABLE IF NOT EXISTS device_info (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     device_id     TEXT,
@@ -87,6 +85,10 @@ MIGRATIONS = [
     "ALTER TABLE monthly_aggregates  ADD COLUMN avg_price_per_kwh REAL",
     "ALTER TABLE yearly_aggregates   ADD COLUMN avg_price_per_kwh REAL",
     "ALTER TABLE device_info         ADD COLUMN firmware TEXT",
+    # v1.9.1: drop the redundant timestamp index. `timestamp INTEGER PRIMARY
+    # KEY` is SQLite's rowid alias, so the table itself is already the btree
+    # keyed on timestamp — the extra index only doubled the write cost.
+    "DROP INDEX IF EXISTS idx_timestamp",
 ]
 
 
@@ -209,6 +211,11 @@ class Database:
         "today" window. online = 1 mirrors the other daily queries (offline
         rows carry NULL counters and were already SUM-ignored, but the
         explicit filter keeps the intent obvious and the query consistent).
+
+        Windows are half-open [start, end): adjacent windows share their
+        boundary instant (midnight, start-of-week, ...), so an inclusive
+        BETWEEN would count a measurement landing exactly on the boundary
+        into BOTH windows.
         """
         results: list[float] = []
         async with aiosqlite.connect(self.db_path) as db:
@@ -221,7 +228,7 @@ class Database:
                            MAX(e1) AS daily_e1,
                            MAX(e2) AS daily_e2
                          FROM measurements
-                         WHERE timestamp BETWEEN ? AND ?
+                         WHERE timestamp >= ? AND timestamp < ?
                            AND online = 1
                          GROUP BY date(timestamp, 'unixepoch', 'localtime')
                        )""",
@@ -240,6 +247,33 @@ class Database:
                        FROM measurements
                        WHERE timestamp BETWEEN ? AND ?
                        ORDER BY timestamp ASC""",
+                    (start_ts, end_ts),
+                )
+            elif bucket_seconds >= 86400:
+                # Daily buckets: group by LOCAL calendar day, not by epoch
+                # division (timestamp / 86400 = UTC days). West of UTC a
+                # UTC-day bucket spans one local day's evening plus most of
+                # the next day, so MAX(e1/e2) mixed two production days and
+                # the year view rendered max(day, next day) per bar. Same
+                # 'localtime' semantics as every other daily query in this
+                # module (the stats windows got this fix in v1.6.2; this
+                # chart path was missed). bucket_ts is the epoch of LOCAL
+                # midnight, so the frontend's local-date keying of buckets
+                # keeps working unchanged.
+                cur = await db.execute(
+                    """SELECT
+                          CAST(strftime('%s', date(timestamp, 'unixepoch', 'localtime'), 'utc') AS INTEGER) AS bucket_ts,
+                          AVG(p1) AS p1,
+                          AVG(p2) AS p2,
+                          MAX(e1) AS e1,
+                          MAX(e2) AS e2,
+                          MAX(te1) AS te1,
+                          MAX(te2) AS te2,
+                          MAX(online) AS online
+                       FROM measurements
+                       WHERE timestamp BETWEEN ? AND ?
+                       GROUP BY date(timestamp, 'unixepoch', 'localtime')
+                       ORDER BY bucket_ts ASC""",
                     (start_ts, end_ts),
                 )
             else:
@@ -604,6 +638,20 @@ class Database:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
+    async def get_existing_month_keys(self) -> set:
+        """(year, month) tuples that already have a monthly_aggregates row.
+
+        Used by the startup backfill (and the month-rollover finalizer) to
+        decide whether a month outside the retention window may be skipped:
+        only an EXISTING aggregate is frozen — a month without one still
+        needs its first aggregate computed from the remaining raw rows,
+        otherwise its history would be lost when retention prunes them.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute("SELECT year, month FROM monthly_aggregates")
+            rows = await cur.fetchall()
+            return {(r[0], r[1]) for r in rows}
+
     async def get_yearly_aggregates(self) -> list[dict]:
         """Read all yearly_aggregates ordered by year."""
         async with aiosqlite.connect(self.db_path) as db:
@@ -631,51 +679,51 @@ class Database:
         evening production to the wrong day for timezones west of UTC),
         and writes one row per day.
 
-        since_iso optionally restricts the rewrite to days strictly AFTER
-        that ISO date (date > since_iso). The caller passes the retention
-        boundary, which is the day whose early-morning raw rows have
-        already been pruned by delete_old_measurements (it deletes rows
-        with timestamp < cutoff_instant, and the cutoff instant falls
-        mid-day on the boundary date). That day therefore has incomplete
-        raw data, so recomputing it would overwrite its stored complete
-        aggregate with a reduced peak — exactly the regression this guard
-        prevents. Using `>` (not `>=`) leaves the boundary day and
-        everything before it frozen, and only rewrites the fully-present
-        days after it.
+        since_iso marks the retention boundary: the day whose early-morning
+        raw rows have already been pruned by delete_old_measurements (it
+        deletes rows with timestamp < cutoff_instant, and the cutoff
+        instant falls mid-day on the boundary date). Days strictly AFTER it
+        have complete raw data and are rewritten (INSERT OR REPLACE). Days
+        at/before it are only FILLED IN when missing (INSERT OR IGNORE): an
+        existing row was computed while the day's data was still complete
+        and must stay frozen — recomputing it from partially pruned rows
+        would lower its stored peak. A day WITHOUT a stored row (imported
+        database, upgrade from a pre-aggregate version) is still captured
+        from whatever raw rows remain: a possibly-partial value beats
+        silently losing the day right before the retention task prunes its
+        raw rows for good.
 
-        Returns the number of day rows written.
+        Returns the number of day rows actually written.
         """
-        params: list = []
-        since_clause = ""
-        if since_iso:
-            since_clause = "AND date(timestamp, 'unixepoch', 'localtime') > ?"
-            params.append(since_iso)
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
-                f"""SELECT date(timestamp, 'unixepoch', 'localtime') AS d,
+                """SELECT date(timestamp, 'unixepoch', 'localtime') AS d,
                           MAX(e1) AS e1, MAX(e2) AS e2,
                           MAX(COALESCE(p1, 0) + COALESCE(p2, 0)) AS peak
                    FROM measurements
-                   WHERE online = 1 {since_clause}
+                   WHERE online = 1
                    GROUP BY d
-                   ORDER BY d ASC""",
-                params,
+                   ORDER BY d ASC"""
             )
             rows = await cur.fetchall()
+            written = 0
             for r in rows:
                 d, e1, e2, peak = r
                 if d is None:
                     continue
                 total = float((e1 or 0) + (e2 or 0))
                 peak_w = int(peak or 0)
-                await db.execute(
-                    """INSERT OR REPLACE INTO daily_aggregates
+                frozen = since_iso is not None and d <= since_iso
+                cur2 = await db.execute(
+                    f"""INSERT {"OR IGNORE" if frozen else "OR REPLACE"}
+                       INTO daily_aggregates
                        (date, total_kwh, peak_w, last_updated)
                        VALUES (?, ?, ?, strftime('%s','now'))""",
                     (d, total, peak_w),
                 )
+                written += cur2.rowcount or 0
             await db.commit()
-            return len(rows)
+            return written
 
     async def get_best_day(self) -> Optional[dict]:
         """Return the all-time best day, or None if no data."""
@@ -721,13 +769,10 @@ class Database:
             iso_year, iso_week, _ = d.isocalendar()
             key = (iso_year, iso_week)
             by_week[key] += float(r["total_kwh"] or 0)
-            # Track the Monday of the week (earliest day in that ISO week)
+            # Track the Monday of the week — shared helper so the week
+            # boundaries can never drift from the rest of the codebase.
             if key not in by_week_start:
-                # Monday of this ISO week
-                jan4 = date_cls(iso_year, 1, 4)
-                week1_monday = jan4 - timedelta(days=jan4.isoweekday() - 1)
-                monday = week1_monday + timedelta(weeks=iso_week - 1)
-                by_week_start[key] = monday.isoformat()
+                by_week_start[key] = iso_week_monday(iso_year, iso_week).isoformat()
         if not by_week:
             return None
         best_key = max(by_week.keys(), key=lambda k: (by_week[k], k))
