@@ -298,7 +298,7 @@ automatically.
 
 ### From v1.10.0 to v1.11.0
 
-No manual steps, no database migration. A small frontend-only release.
+No manual steps, no database migration. A small feature release.
 
 - **Arrow navigation in the period drill-down.** The anchored week/month
   view gains prev/next arrows around the period label (`‹ KW 26 / 2026 ›`),
@@ -306,6 +306,15 @@ No manual steps, no database migration. A small frontend-only release.
   going back to the overview first. The forward arrow stops at the
   currently running period. "Zurück zur Übersicht" moved into the pill
   row to make space.
+- **Fair comparisons in the running period.** With the running week/month
+  now one arrow-click away, its "vs. Vorwoche" / "vs. Vorjahr" pills no
+  longer compare a few days against full reference totals (which read
+  "−70 %" all week). They are cut to the same progress — the first N days
+  of the reference — and say so: `vs. Vorwoche (Stand Di) +16.6 %`.
+- Mobile polish: shorter pace-pill label (`vs. lfd. Woche`), the summary
+  figures wrap as whole units instead of stranding a `· Bester Tag` on the
+  next line, and the "Rekordkurs!" pill stays amber in the light theme
+  instead of inheriting its blue accent.
 
 ### From v1.9.1 to v1.10.0
 
