@@ -9,10 +9,6 @@ and lifetime statistics.
 
 No cloud, no account, no telemetry. Localized for English and German.
 
-> **Project status: feature-complete (LTS).** v1.9.1 is the first
-> long-term-support release. The project is actively maintained with bug
-> fixes and dependency updates, but no new features are planned.
-
 <!-- TODO: add screenshot once dashboard is running with production data -->
 
 ## Features
@@ -34,9 +30,11 @@ No cloud, no account, no telemetry. Localized for English and German.
   tile to jump straight to that period in the history view
 - **History chart**: Week / Month / Year (with daily / weekly / monthly
   toggle) and Multi-year. Click any weekly or monthly bar to drill into that
-  exact period — daily bars plus a total / average / best-day / year-over-year
-  summary — then into a single day's curve. Multi-year is served from
-  long-term aggregate tables that **survive retention pruning**
+  exact period — daily bars plus a total / average / best-day summary with
+  deltas vs. the previous period, the same period last year, and the
+  currently running period at equal progress (record pace) — then into a
+  single day's curve. Multi-year is served from long-term aggregate tables
+  that **survive retention pruning**
 - **Live grid CO₂ intensity** (optional) via Electricity Maps — each
   measurement is stamped with the grid factor active at the time, so the
   lifetime CO₂ value is historically accurate. Three-tier fallback
@@ -137,7 +135,7 @@ All configuration via environment variables.
 | `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh. Stamped on every measurement, so historical "money saved" stays accurate across tariff changes — update the value when your tariff changes and only new production is valued at the new price. |
 | `SELF_CONSUMPTION_PCT` | `100` | Estimated share (%) of production you actually self-consume. Without a battery/smart control you can't use 100% — the rest is fed in. Affects only the realistic "money saved" and amortization; the kWh and CO₂ figures are unchanged. `100` reproduces the previous behaviour. |
 | `FEED_IN_TARIFF` | `0` | Feed-in compensation per kWh for the share you don't self-consume (same currency as `PRICE_PER_KWH`). Commonly `0` for a balcony plant. |
-| `INSTALL_COST` | `0` | One-off total cost of your installation. When set (> 0), a "Payback" card shows how far your savings have repaid it, with a break-even highlight. `0` hides the card. |
+| `INSTALL_COST` | `0` | One-off total cost of your installation. When set (> 0), a "Payback" card shows how far your savings have repaid it, with a break-even highlight — and, once a full year of data exists, a projected break-even date. `0` hides the card. |
 | `CO2_KG_PER_KWH` | `0.38` | Static grid CO₂ factor (fallback when Electricity Maps is off or unavailable) |
 | `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Optional. Enables live grid CO₂ intensity. |
 | `ELECTRICITY_MAPS_ZONE` | `DE` | ISO country code shown as zone label in the UI (the actual zone is bound to the token in the portal) |
@@ -297,11 +295,33 @@ automatically.
 
 ## Upgrading
 
+### From v1.9.1 to v1.10.0
+
+No manual steps, no database migration. A small feature release.
+
+- **Record-pace comparison in the period drill-down.** Anchored views of a
+  past week or month gain a third pill: **"vs. lfd. Woche/Monat (gleicher
+  Stand)"** — the anchored period cut down to today's progress (same
+  weekday resp. day-of-month) compared against the currently running
+  period. Opened from the Hall of Fame this answers the actual question:
+  is the running week on track to beat the record? A complete record week
+  is never compared against a half-run current week — equal progress only.
+  When the running period is actually beating the *all-time record's* pace,
+  the pill flips into a celebratory amber **"Rekordkurs!"** state with a
+  subtle glow (softer than the Hall-of-Fame record glow) and re-bases the
+  percentage on the record — `Rekordkurs! +10 %` instead of an alarming red
+  `−9 %`. The pill hides when the anchored period *is* the running one or
+  the running period has no data yet.
+- **Projected break-even date on the amortization card.** Once a full year
+  of data exists (shorter histories are seasonally biased, so nothing is
+  shown before that), the card shows the estimated month the installation
+  pays for itself: linear extrapolation of the average savings rate over
+  the whole history — `voraussichtlich amortisiert: März 2028`. The line
+  disappears at break-even, where the existing glow takes over.
+
 ### From v1.9.0 to v1.9.1
 
-No manual steps, no database migration. A bug-fix release — and the first
-**LTS release**: EZ1 Monitor is feature-complete, future versions contain
-bug fixes and dependency updates only.
+No manual steps, no database migration. A bug-fix release.
 
 - **The aggregate backfill no longer loses pre-retention history.** Months
   and days older than `RETENTION_DAYS` without a stored aggregate (imported
