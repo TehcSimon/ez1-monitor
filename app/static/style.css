@@ -284,6 +284,15 @@ h1 {
 }
 .status-pill.error { color: var(--bad); }
 
+/* Backend unreachable (the dashboard's own fetch failed) — distinct from
+   "error", which means the inverter dropped offline mid-production. Amber
+   and calm (no pulse): the inverter may be perfectly fine. */
+.status-pill.connectionError .status-dot {
+  background: var(--accent-warm);
+  box-shadow: 0 0 8px var(--accent-warm);
+}
+.status-pill.connectionError { color: var(--accent-warm); }
+
 .status-pill.noData .status-dot {
   background: var(--neutral);
 }
