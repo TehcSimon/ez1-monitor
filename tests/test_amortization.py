@@ -11,13 +11,13 @@ imports) so this test needs neither INVERTER_IP nor the apsystems-ez1 library.
 """
 import os
 import tempfile
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 import pytest_asyncio
 
 from app.database import Database
-from app.money import compute_money_saved
+from app.money import compute_money_saved, estimate_breakeven_date
 
 
 # --- Pure money model -----------------------------------------------------
@@ -111,3 +111,45 @@ class TestBreakevenDate:
         await _seed_day(db, "2024-01-01", 5.0)
         await db.backfill_daily_aggregates()
         assert await db.get_breakeven_date(0.0, 100.0) is None
+
+
+# --- Projected break-even date (v1.10) --------------------------------------
+
+class TestEstimateBreakevenDate:
+    """Pure linear ETA over the whole history, gated behind a full year of
+    data so the rate isn't seasonally biased."""
+
+    TODAY = date(2026, 7, 7)
+
+    def test_linear_extrapolation(self):
+        # 400 saved over exactly 2 years → rate = 400/730 per day.
+        # Remaining 400 → another 730 days.
+        first = self.TODAY - timedelta(days=730)
+        eta = estimate_breakeven_date(800.0, 400.0, first, self.TODAY)
+        assert eta == self.TODAY + timedelta(days=730)
+
+    def test_remaining_days_round_up(self):
+        # 300 saved over 400 days → rate 0.75/day; remaining 100 → 133.33
+        # days, rounded UP to 134 (never promise an earlier date).
+        first = self.TODAY - timedelta(days=400)
+        eta = estimate_breakeven_date(400.0, 300.0, first, self.TODAY)
+        assert eta == self.TODAY + timedelta(days=134)
+
+    def test_gated_below_one_year_of_data(self):
+        # 364 days of history → seasonally biased, no estimate.
+        first = self.TODAY - timedelta(days=364)
+        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY) is None
+        # Exactly 365 days → estimate appears.
+        first = self.TODAY - timedelta(days=365)
+        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY) is not None
+
+    def test_none_when_already_amortized(self):
+        # The real break-even date (get_breakeven_date) takes over here.
+        first = self.TODAY - timedelta(days=800)
+        assert estimate_breakeven_date(800.0, 800.0, first, self.TODAY) is None
+        assert estimate_breakeven_date(800.0, 900.0, first, self.TODAY) is None
+
+    def test_none_without_cost_or_savings(self):
+        first = self.TODAY - timedelta(days=800)
+        assert estimate_breakeven_date(0.0, 100.0, first, self.TODAY) is None
+        assert estimate_breakeven_date(800.0, 0.0, first, self.TODAY) is None
