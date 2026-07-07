@@ -1,6 +1,6 @@
 # EZ1 Monitor
 
-[![Build and push container image](https://github.com/ThecSimon/ez1-monitor/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/ThecSimon/ez1-monitor/actions/workflows/build-and-push.yml)
+[![Build and push container image](https://github.com/TehcSimon/ez1-monitor/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/TehcSimon/ez1-monitor/actions/workflows/build-and-push.yml)
 
 A lean, self-hosted monitoring dashboard for the **APsystems EZ1-M** microinverter.
 Polls the local API, stores all measurements in SQLite, and serves a web UI
@@ -8,6 +8,10 @@ with live data, historical charts, same-period and year-over-year comparisons,
 and lifetime statistics.
 
 No cloud, no account, no telemetry. Localized for English and German.
+
+> **Project status: feature-complete (LTS).** v1.9.1 is the first
+> long-term-support release. The project is actively maintained with bug
+> fixes and dependency updates, but no new features are planned.
 
 <!-- TODO: add screenshot once dashboard is running with production data -->
 
@@ -67,7 +71,7 @@ docker run -d \
   -p 8080:8080 \
   -v ez1-data:/data \
   -e INVERTER_IP=<EZ1-IP> \
-  ghcr.io/thecsimon/ez1-monitor:latest
+  ghcr.io/tehcsimon/ez1-monitor:latest
 ```
 
 `INVERTER_IP` is **required** — the container exits at startup without it.
@@ -84,14 +88,14 @@ docker compose up -d
 ### Unraid
 
 1. Docker tab → **Add Container**
-2. Repository: `ghcr.io/thecsimon/ez1-monitor:latest`
+2. Repository: `ghcr.io/tehcsimon/ez1-monitor:latest`
 3. Network Type: Bridge, Port `8080:8080`
 4. Path: `/mnt/user/appdata/ez1-monitor` → `/data`
 5. Set `INVERTER_IP` to your EZ1-M's IP
 6. Apply
 
 For one-click install, add this URL under **Apps → Settings → Template
-Repositories**: `https://github.com/ThecSimon/ez1-monitor`
+Repositories**: `https://github.com/TehcSimon/ez1-monitor`
 
 ### Kubernetes
 
@@ -104,7 +108,7 @@ spec:
     fsGroup: 0           # required for /data volume write access
   containers:
     - name: ez1-monitor
-      image: ghcr.io/thecsimon/ez1-monitor:latest
+      image: ghcr.io/tehcsimon/ez1-monitor:latest
       env:
         - { name: INVERTER_IP, value: "192.168.1.100" }
       volumeMounts:
@@ -129,7 +133,7 @@ All configuration via environment variables.
 | `DB_PATH` | `/data/ez1.db` | SQLite database file |
 | `INSTALL_KWP` | `1.0` | Installed peak power in kWp |
 | `DEFAULT_LANG` | *(empty)* | `""` = auto-detect from browser, or force `de`/`en` |
-| `CURRENCY` | `EUR` | `EUR` or `USD` |
+| `CURRENCY` | `EUR` | ISO 4217 code used for money formatting (e.g. `EUR`, `USD`, `CHF`) |
 | `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh. Stamped on every measurement, so historical "money saved" stays accurate across tariff changes — update the value when your tariff changes and only new production is valued at the new price. |
 | `SELF_CONSUMPTION_PCT` | `100` | Estimated share (%) of production you actually self-consume. Without a battery/smart control you can't use 100% — the rest is fed in. Affects only the realistic "money saved" and amortization; the kWh and CO₂ figures are unchanged. `100` reproduces the previous behaviour. |
 | `FEED_IN_TARIFF` | `0` | Feed-in compensation per kWh for the share you don't self-consume (same currency as `PRICE_PER_KWH`). Commonly `0` for a balcony plant. |
@@ -154,6 +158,7 @@ The dot in the top-right shows what the inverter is doing:
 | ⚪ **standby** (dim) | Offline, but production was already winding down (dusk, night, snow). No alarm. |
 | 🔴 **error** (pulsing) | Offline mid-production — real alarm |
 | ⚪ **no data** | Container just started, no successful poll yet |
+| 🟠 **connection error** | The dashboard can't reach its own backend (network blip, container restarting) — says nothing about the inverter |
 
 Standby vs error is decided by the 5-minute rolling average power: below
 ~5 W is treated as a graceful wind-down, above is treated as a problem.
@@ -292,6 +297,43 @@ automatically.
 
 ## Upgrading
 
+### From v1.9.0 to v1.9.1
+
+No manual steps, no database migration. A bug-fix release — and the first
+**LTS release**: EZ1 Monitor is feature-complete, future versions contain
+bug fixes and dependency updates only.
+
+- **The aggregate backfill no longer loses pre-retention history.** Months
+  and days older than `RETENTION_DAYS` without a stored aggregate (imported
+  databases, upgrades from pre-aggregate versions) were skipped at startup —
+  and their raw rows then pruned for good ~60 s later. They are now
+  aggregated from the remaining raw rows first; existing (frozen) aggregates
+  stay untouched, exactly as before.
+- **Year-view daily bars are now correct west of UTC.** The daily buckets of
+  `/api/history?range=year` grouped by UTC day, so at negative UTC offsets
+  each bar could show `max(day, next day)`. They now use the local calendar
+  day like every other daily query.
+- **Docs and templates pointed at a misspelled GitHub namespace**
+  (`ThecSimon` → `TehcSimon`): badge, `docker pull` commands, clone URL and
+  Unraid template links now match the real repository and GHCR image.
+- Device info (serial, firmware, AC limit) is retried after every successful
+  poll instead of only 10 attempts at startup — a container (re)started at
+  night no longer shows placeholders until the next restart.
+- `/metrics`: `ez1_pv1_today_kwh` / `ez1_pv2_today_kwh` are DB-derived like
+  the dashboard's PV cards and roll over to 0 at local midnight instead of
+  holding yesterday's counters overnight.
+- Stat windows are half-open, so a measurement landing exactly on a window
+  boundary (midnight) is no longer counted into two adjacent windows.
+- A calm amber **"connection error"** pill when the dashboard can't reach
+  its own backend, instead of the red inverter-error state.
+- Electricity Maps polling retries with backoff (5 → 40 min) after a failed
+  poll instead of silently waiting a full hour.
+- Charts update in place instead of being rebuilt on every refresh (no more
+  periodic flicker), and stale responses from rapid tab/day switches can no
+  longer overwrite the newest view.
+- Dropped a redundant SQLite index on `measurements` (the timestamp PRIMARY
+  KEY already is the table's btree).
+
 ### From v1.8.x to v1.9.0
 
 No manual steps, no database migration. A feature release — everything is
@@ -319,154 +361,50 @@ measurements are gone.
 
 ### From v1.7.0 to v1.8.0
 
-No manual steps, no database migration. A feature release.
-
-- **Realistic "money saved".** Two new optional variables make the savings
-  figure reflect a setup without a battery or smart control:
-  `SELF_CONSUMPTION_PCT` (the estimated share you actually self-consume,
-  default `100` = unchanged) and `FEED_IN_TARIFF` (what the fed-in remainder
-  earns, default `0`). The money card shows the realistic value with a
-  transparent subtitle (`bei 35 ct/kWh · 70 % Eigennutzung …`), plus the
-  100%-self-consumption ceiling as a second line when a self-consumption
-  estimate below 100% is set. The factor is global and applied at display
-  time, so adjusting it re-values the whole history. CO₂ and kWh figures are
-  deliberately unchanged — fed-in energy displaces grid generation just the
-  same, so it avoids CO₂ regardless of who consumes it.
-- **Amortization card.** Set `INSTALL_COST` to your installation's one-off
-  cost and a new lifetime card shows how far your savings have repaid it
-  (progress bar capped at 100%, the true percentage in the value). Crossing
-  break-even is celebrated with the Hall-of-Fame glow — a steady glow plus an
-  *AMORTISIERT* badge for the first week, then a one-off ~60 s pulse for the
-  following three weeks. Both the percentage and the break-even date are
-  derived live, so you can update `INSTALL_COST` later (e.g. after expanding
-  the array) and everything recomputes — nothing is persisted. `0` (default)
-  hides the card.
-- **Fixed/auto day-chart scale.** The Today's-curve card gains a small toggle
-  (left of the title, kept clear of the day picker) to pin the Y-axis to the
-  AC limit + 50 W instead of auto-fitting to the day's peak, so weak and
-  strong days are visually comparable at a glance. Fixed is the default; the
-  choice is remembered across reloads.
-- Two new Prometheus metrics: `ez1_money_saved` and `ez1_amortization_percent`.
+No manual steps, no database migration. Feature release: realistic "money
+saved" via `SELF_CONSUMPTION_PCT` + `FEED_IN_TARIFF` (defaults reproduce
+the old behaviour), the amortization card via `INSTALL_COST` (with
+break-even glow), a fixed/auto Y-axis toggle for the day chart, and two
+new Prometheus metrics (`ez1_money_saved`, `ez1_amortization_percent`).
+All three variables are described in the Configuration table above.
 
 ### From v1.6.3 to v1.7.0
 
-No manual steps, no database migration. A feature release.
-
-- **Rolling vs. calendar history views.** The Week / Month / Year charts gain a
-  small toggle (top-right of the History card) to switch between the rolling
-  window (last 7 / 30 / 365 days, the previous behaviour) and the calendar
-  period (current Mon–Sun, 1st–end of month, Jan–Dec). In calendar mode the
-  chart frames the whole period, so the days/months after today show as empty
-  slots and you can see how far into the period you are. The choice is
-  remembered across reloads. The All-years view is unchanged (it is already
-  calendar-based). No new data is stored — calendar views read the same
-  measurements and monthly aggregates.
-- **Clearer device header.** The header lines are reordered to serial number,
-  firmware, then output limit, and the output limit is now labelled **AC limit**
-  (German: *AC-Limit*) — it is the inverter's configurable AC output cap (read
-  from the inverter), not the panel rating.
-- **Day-picker icon now shows day dots**, matching its purpose (picking a single
-  day) and distinguishing it from the plain calendar used by the new mode toggle.
-- History-card layout tidied: the range tabs sit above the (optional) granularity
-  tabs instead of the other way round, so they no longer crowd each other.
+No manual steps, no database migration. Feature release: rolling vs.
+calendar mode for the Week / Month / Year charts (persisted toggle on the
+History card), the device header now labels the inverter's output cap as
+**AC limit**, plus day-picker icon and layout polish.
 
 ### From v1.6.2 to v1.6.3
 
-No manual steps, no database migration — a small bug-fix and polish release.
-
-- **Per-panel "today" production survives inverter standby.** The PV 1 / PV 2
-  cards read today's kWh from the live inverter reading, which is null once
-  the inverter drops to standby at night, so they showed "—" overnight while
-  peak and average (both DB-derived) stayed correct. The per-panel day total
-  is now read from the database (`MAX(e1)`/`MAX(e2)` for today) like the
-  other figures. No schema change — `e1`/`e2` were already stored per row.
-- **Shorter record-glow durations.** The Hall-of-Fame highlight now fades
-  sooner: day record glows for the set day + 1 (was + 2), week + 2 (was + 3),
-  month + 3 (was + 5). Year is unchanged (+ 7).
-- **Device header is now stacked and labeled.** Serial number, max output and
-  firmware were a single dense line under the title; they're now three labeled
-  lines (`S/N`, `max. output`, `Firmware`). The max output continues to be
-  read from the inverter, not hard-coded. On mobile the theme toggle and status
-  pill move into a compact right-hand column (toggle on top, status below) so
-  the multi-line header stays compact instead of stacking a third row.
-- **Day-chart time labels no longer overlap on mobile.** The x-axis now keeps
-  a minimum gap between time labels and drops as many as needed to fit, so the
-  hourly labels stop running together on narrow screens.
+No manual steps, no database migration. Bug-fix/polish release: per-panel
+"today" kWh survives inverter standby (now DB-derived), shorter
+Hall-of-Fame glow durations, a stacked labeled device header, and mobile
+time-axis labels that no longer overlap.
 
 ### From v1.6.1 to v1.6.2
 
-No manual steps, no database migration — a bug-fix and cleanup release.
-
-- **Energy windows now bucket by local calendar day** instead of by UTC
-  day. The four stat cards (today/week/month/year and their comparisons)
-  were correct in timezones near UTC, but in far-east offsets (e.g.
-  UTC+9/+10) the UTC-day boundary falls mid-morning local time, which
-  could double-count the morning production ramp in the "today" figure.
-- **The retention-boundary day stays frozen during daily-aggregate
-  backfill.** The boundary day's early rows are pruned by the time
-  backfill runs, so recomputing it could lower its stored peak. It is now
-  left at its complete stored value (`>` instead of `>=` on the boundary).
-- **Month-rollover gap closed.** The hourly aggregate refresh now
-  finalizes the month that just ended exactly once at rollover, instead
-  of waiting for the next container restart to pick up its final hour.
-- **Frontend date parsing fixed for the Americas.** History-chart tooltips
-  and the year-view month labels parsed `YYYY-MM-DD` as UTC midnight,
-  rendering the previous local day at negative UTC offsets; they now parse
-  at local midnight.
-- **`PRICE_PER_KWH=0` / `RETENTION_DAYS=0` are honored by the UI.** A
-  configured `0` no longer falls back to the default (nullish-coalescing
-  instead of truthy fallback); with retention disabled the day picker now
-  allows browsing the full history instead of clamping to today.
-- Removed unused database methods, pinned the Chart.js date adapter to a
-  fixed version, and moved the test suite to native async (`pytest-asyncio`)
-  so CI runs on the same Python (3.14) the runtime image ships.
-- **All front-end assets are now self-hosted** — Chart.js, the date-fns
-  adapter, flatpickr and the web fonts (Inter, JetBrains Mono, Bricolage
-  Grotesque, latin subset) ship inside the image under `app/static/vendor/`.
-  The dashboard now renders fully offline with zero third-party requests,
-  which also removes the Google Fonts hotlink (a documented GDPR issue in
-  Germany, since it leaks the visitor IP to Google). Adds ~450 KB to the
-  image.
-- **Window-chrome color is now neutral.** The macOS "Add to Dock" web-app
-  title bar (and Android PWA chrome) followed the amber accent
-  `theme-color`; it now matches the dashboard background per system scheme
-  (`#0c0a08` dark / `#f8fafc` light) so the window edge blends with the
-  header instead of showing an amber band. UI accent colors are unchanged.
+No manual steps, no database migration. Bug-fix/cleanup release: stat
+windows bucket by local calendar day (fixes double-counting in far-east
+timezones), the retention-boundary day stays frozen during backfill, the
+month-rollover gap in the hourly refresh was closed, frontend date parsing
+fixed for the Americas, and `PRICE_PER_KWH=0` / `RETENTION_DAYS=0` are
+honored by the UI. All frontend assets (Chart.js, flatpickr, fonts) are
+self-hosted since this release — the dashboard renders fully offline with
+zero third-party requests (which also removed the Google-Fonts GDPR
+issue).
 
 ### From v1.6.0 to v1.6.1
 
-No manual steps. On first start the container runs idempotent
-`ALTER TABLE` migrations adding the electricity-price columns
-(`price_per_kwh` on measurements, `avg_price_per_kwh` on the aggregate
-tables) and a `firmware` column on `device_info`. Existing rows keep
-`NULL` prices — the "money saved" calculation falls back to the current
-`PRICE_PER_KWH` for that unstamped portion, exactly like the CO₂
-calculation handles pre-v1.4 rows.
-
-Notable fixes in this release:
-
-- **Long-term aggregates are no longer overwritten with partial values**
-  when the startup backfill runs after raw measurements at the retention
-  boundary have been pruned. Months outside the retention window stay
-  frozen at the value computed while their data was complete.
-- **Daily aggregates (Hall of Fame) now group by local calendar date**
-  instead of UTC — for timezones west of UTC, evening production was
-  attributed to the wrong day.
-- **Lifetime CO₂ and money values are now derived from the monthly
-  aggregates** (plus the current month live), so they remain
-  historically accurate after raw rows are pruned.
-- Fixed a frontend interval leak that stacked up Hall-of-Fame refresh
-  timers on every online/standby status change.
-- Fixed the ambient background glow appearing as a "sticky shadow" when
-  scrolling on iOS Safari in dark mode.
-- The `ez1_info` Prometheus metric now exports the inverter firmware as
-  `firmware` (previously mislabeled `serial_number`), and the dashboard
-  shows the firmware version in the device subtitle.
-- The container image is roughly 40 MB smaller (~110 MB instead of
-  ~150 MB): plain `uvicorn` instead of `uvicorn[standard]` (uvloop,
-  websockets, watchfiles and httptools were never used), busybox `wget`
-  instead of `curl` for the healthcheck, and no pip in the runtime
-  stage. No functional change.
+No manual steps. On first start the container runs idempotent `ALTER
+TABLE` migrations (electricity-price columns, `firmware` on
+`device_info`); existing rows keep `NULL` prices and fall back to the
+current `PRICE_PER_KWH`, like the CO₂ handling of pre-v1.4 rows. Notable
+fixes: long-term aggregates are no longer overwritten with partial values
+at the retention boundary, daily aggregates group by local calendar date,
+lifetime CO₂/money stay accurate after pruning, a Hall-of-Fame timer leak
+and an iOS scroll artifact were fixed, `ez1_info` exports the firmware
+under the correct label, and the image shrank by ~40 MB.
 
 ### From v1.5.x to v1.6.x
 
@@ -523,7 +461,7 @@ docker compose up -d
 ## Development
 
 ```bash
-git clone https://github.com/ThecSimon/ez1-monitor.git
+git clone https://github.com/TehcSimon/ez1-monitor.git
 cd ez1-monitor
 docker build --platform linux/amd64 -t ez1-monitor:local .
 docker run --rm -p 8080:8080 -e INVERTER_IP=<your-ip> ez1-monitor:local
@@ -535,12 +473,13 @@ the result to GHCR.
 
 ### Tests
 
-Two suites: pure unit tests for the date-math helpers in
-`app/date_helpers.py` (leap years, month-end boundaries, century-year
-edge cases) and async integration tests in `tests/test_aggregates.py`
-that spin up a temporary SQLite database and verify the aggregate and
-Hall-of-Fame queries (including the retention-boundary freeze). Run them
-locally with:
+Four suites: pure unit tests for the date-math helpers
+(`test_date_helpers.py`) and the money/amortization model
+(`test_amortization.py`), plus async integration tests
+(`test_aggregates.py`, `test_history.py`) that spin up a temporary SQLite
+database and verify the aggregate, history and Hall-of-Fame queries —
+including the retention-boundary freeze and the pre-retention backfill
+regression guards. Run them locally with:
 
 ```bash
 pip install -r requirements-dev.txt
