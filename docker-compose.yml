@@ -2,7 +2,7 @@ services:
   ez1-monitor:
     build: .
     # Or, after the GitHub Actions workflow has pushed an image:
-    # image: ghcr.io/thecsimon/ez1-monitor:latest
+    # image: ghcr.io/tehcsimon/ez1-monitor:latest
     container_name: ez1-monitor
     restart: unless-stopped
     ports:
@@ -32,7 +32,7 @@ services:
 
       # --- Localization (leave DEFAULT_LANG empty to auto-detect) ---
       - DEFAULT_LANG=                    # "", "de" or "en"
-      - CURRENCY=EUR                     # "EUR" or "USD"
+      - CURRENCY=EUR                     # ISO 4217 code, e.g. EUR / USD / CHF
 
       # --- Economic / environmental factors ---
       - PRICE_PER_KWH=0.35               # local electricity price per kWh
