@@ -1283,6 +1283,17 @@ function updateSummaryNavButtons(period) {
     && periodKeyOf(state.anchoredPeriod) >= currentPeriodKey(state.anchoredPeriod.kind);
 }
 
+// Suffix for same-progress comparisons in the RUNNING period: names the
+// concrete cut-off — weekday for weeks ("(Stand Di)"), day-of-month for
+// months ("(Stand 7.)"). Localized via summary.samePoint.
+function samePointSuffix(kind) {
+  const now = new Date();
+  const d = kind === "week"
+    ? now.toLocaleDateString(state.locale, { weekday: "short" })
+    : (state.lang === "de" ? `${now.getDate()}.` : `day ${now.getDate()}`);
+  return window.i18n.t(state.lang, "summary.samePoint", { d });
+}
+
 function formatPeriodLabel(period) {
   if (!period) return "";
   if (period.kind === "week") {
@@ -1309,8 +1320,13 @@ function renderSummaryDelta(elId, delta, labelKey, opts) {
     el.className = "summary-pill chase";
     return;
   }
+  // same_progress (running period): the reference was cut to the first N
+  // days server-side — a short "(Stand Di)" suffix makes that visible
+  // without blowing up the pill width on phones.
+  let label = window.i18n.t(state.lang, labelKey);
+  if (delta.same_progress) label += " " + samePointSuffix(opts && opts.kind);
   const sign = delta.delta_pct > 0 ? "+" : "";
-  el.textContent = `${window.i18n.t(state.lang, labelKey)} ${sign}${delta.delta_pct} %`;
+  el.textContent = `${label} ${sign}${delta.delta_pct} %`;
   el.className = "summary-pill " + (delta.delta_pct > 0 ? "up" : delta.delta_pct < 0 ? "down" : "");
 }
 
@@ -1335,12 +1351,20 @@ function renderSummary(summary, period) {
     const bd = new Date(summary.best_date + "T00:00:00").toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
     parts.push(`${T("summary.bestDay")}: ${bd} ${fmt.kwh(summary.best_kwh)} kWh`);
   }
+  // Wrap-safe joining: spaces inside each figure are non-breaking so a
+  // figure wraps as one unit, and the separator is glued to the PRECEDING
+  // figure — a wrapped line can never start with a dangling "· Bester Tag".
   const figuresEl = document.getElementById("history-summary-figures");
-  if (figuresEl) figuresEl.textContent = parts.join("  ·  ");
+  if (figuresEl) {
+    figuresEl.textContent = parts
+      .map(p => p.replace(/ /g, "\u00a0"))
+      .join("\u00a0· ");
+  }
 
-  const prevKey = period && period.kind === "week" ? "summary.vsPrevWeek" : "summary.vsPrevMonth";
-  renderSummaryDelta("history-summary-prev", summary.prev, prevKey);
-  renderSummaryDelta("history-summary-yoy", summary.yoy, "summary.vsLastYear");
+  const pKind = period && period.kind === "week" ? "week" : "month";
+  const prevKey = pKind === "week" ? "summary.vsPrevWeek" : "summary.vsPrevMonth";
+  renderSummaryDelta("history-summary-prev", summary.prev, prevKey, { kind: pKind });
+  renderSummaryDelta("history-summary-yoy", summary.yoy, "summary.vsLastYear", { kind: pKind });
   // Record-pace pill: the anchored period cut to today's progress vs. the
   // currently running week/month — "is the running period on record pace?".
   // Positive (green) = the anchored period is still ahead. When the running
@@ -1348,10 +1372,10 @@ function renderSummary(summary, period) {
   // the pill flips into the amber "Rekordkurs" chase state instead of a
   // harsh red (see renderSummaryDelta). Hidden by the backend when the
   // anchored period IS the running one.
-  const curKey = period && period.kind === "week"
+  const curKey = pKind === "week"
     ? "summary.vsCurrentWeek" : "summary.vsCurrentMonth";
   renderSummaryDelta("history-summary-current", summary.current_pace, curKey,
-                     { chase: !!summary.is_record_period });
+                     { chase: !!summary.is_record_period, kind: pKind });
 }
 
 // Hall-of-Fame tile → history/today navigation.
