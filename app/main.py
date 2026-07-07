@@ -430,9 +430,35 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     client hides that pill (young installs, the earliest period, or an ISO
     week 53 that didn't exist last year).
     """
+    today = datetime.now().date()
+    anchored_start = date_cls.fromisoformat(cur_start)
+    if kind == "week":
+        iso_y, iso_w, _ = today.isocalendar()
+        running_start = iso_week_monday(iso_y, iso_w)
+        progress_days = today.isoweekday()
+    else:
+        running_start = today.replace(day=1)
+        progress_days = today.day
+    # Anchored view of the RUNNING period (one arrow-click away since the
+    # v1.11 navigation): comparing its few days so far against the full
+    # reference totals would read ~-70 % all week long, so prev/yoy are cut
+    # to the same progress — the first N days of the reference period, N =
+    # today's weekday resp. day-of-month (clamped to the reference month's
+    # length). Same semantics as the stat cards' "Vergleichszeitraum". The
+    # client shows a "(Stand Di)" suffix on those pills via same_progress.
+    is_running_period = anchored_start == running_start
+
+    def ref_range(start_iso, end_iso):
+        if not is_running_period:
+            return start_iso, end_iso
+        s = date_cls.fromisoformat(start_iso)
+        e = min(date_cls.fromisoformat(end_iso),
+                s + timedelta(days=progress_days - 1))
+        return start_iso, e.isoformat()
+
     cur = await db.get_range_summary(cur_start, cur_end)
-    prev = await db.get_range_summary(prev_start, prev_end)
-    yoy = await db.get_range_summary(yoy_start, yoy_end)
+    prev = await db.get_range_summary(*ref_range(prev_start, prev_end))
+    yoy = await db.get_range_summary(*ref_range(yoy_start, yoy_end))
 
     def delta(other):
         if other["days"] == 0 or other["total_kwh"] <= 0:
@@ -443,6 +469,7 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
             "delta_pct": round(
                 (cur["total_kwh"] - other["total_kwh"]) / other["total_kwh"] * 100, 1
             ),
+            "same_progress": is_running_period,
         }
 
     # Record-pace comparison: the anchored period cut down to today's
