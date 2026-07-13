@@ -445,7 +445,7 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     # to the same progress — the first N days of the reference period, N =
     # today's weekday resp. day-of-month (clamped to the reference month's
     # length). Same semantics as the stat cards' "Vergleichszeitraum". The
-    # client shows a "(Stand Di)" suffix on those pills via same_progress.
+    # client shows a "(lfd.)" suffix on those pills via same_progress.
     is_running_period = anchored_start == running_start
 
     def ref_range(start_iso, end_iso):
