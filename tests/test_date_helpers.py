@@ -149,47 +149,64 @@ class TestCombinedUsage:
 
 
 class TestSameProgressSlice:
-    """Record-pace ranges: an anchored past period cut to today's progress
-    vs. the currently running period (v1.10 drill-down pill)."""
+    """Record-pace ranges: an anchored past period vs. the currently
+    running period, COMPLETED days only on both sides (the started day
+    against a full reference day read "+2000 %" at breakfast)."""
 
     def test_week_slice_on_a_wednesday(self):
         # Anchored: KW 26/2026 (Mon Jun 22). Today: Wed Jul 8, 2026 (KW 28).
+        # Completed running days: Mon+Tue → compare 2 days on both sides,
+        # the running side ends YESTERDAY (the started Wednesday is out).
         anchored = date(2026, 6, 22)
         today = date(2026, 7, 8)  # Wednesday, isoweekday 3
         (s_start, s_end), (c_start, c_end) = same_progress_slice(
             "week", anchored, today
         )
-        assert (s_start, s_end) == (date(2026, 6, 22), date(2026, 6, 24))  # Mon-Wed
-        assert (c_start, c_end) == (date(2026, 7, 6), today)               # this Mon-today
+        assert (s_start, s_end) == (date(2026, 6, 22), date(2026, 6, 23))  # Mon-Tue
+        assert (c_start, c_end) == (date(2026, 7, 6), date(2026, 7, 7))    # Mon-Tue
 
     def test_week_returns_none_for_current_week(self):
         today = date(2026, 7, 8)                   # Wednesday of KW 28
         this_monday = date(2026, 7, 6)
         assert same_progress_slice("week", this_monday, today) is None
 
-    def test_week_sunday_covers_full_anchored_week(self):
+    def test_week_returns_none_on_monday(self):
+        # No completed day in the running week yet → no fair basis.
+        anchored = date(2026, 6, 22)
+        today = date(2026, 7, 6)                   # Monday, isoweekday 1
+        assert same_progress_slice("week", anchored, today) is None
+
+    def test_week_sunday_covers_six_completed_days(self):
         anchored = date(2026, 6, 22)
         today = date(2026, 7, 12)                  # Sunday, isoweekday 7
-        (s_start, s_end), _ = same_progress_slice("week", anchored, today)
-        assert (s_start, s_end) == (date(2026, 6, 22), date(2026, 6, 28))
+        (s_start, s_end), (c_start, c_end) = same_progress_slice(
+            "week", anchored, today
+        )
+        assert (s_start, s_end) == (date(2026, 6, 22), date(2026, 6, 27))  # Mon-Sat
+        assert (c_start, c_end) == (date(2026, 7, 6), date(2026, 7, 11))
 
     def test_month_slice_mid_month(self):
         anchored = date(2026, 5, 1)
-        today = date(2026, 7, 10)
+        today = date(2026, 7, 10)                  # 9 completed days
         (s_start, s_end), (c_start, c_end) = same_progress_slice(
             "month", anchored, today
         )
-        assert (s_start, s_end) == (date(2026, 5, 1), date(2026, 5, 10))
-        assert (c_start, c_end) == (date(2026, 7, 1), today)
+        assert (s_start, s_end) == (date(2026, 5, 1), date(2026, 5, 9))
+        assert (c_start, c_end) == (date(2026, 7, 1), date(2026, 7, 9))
 
     def test_month_slice_clamps_to_short_anchored_month(self):
         # Comparing February against the 30th of the running month must not
         # produce Feb 30 — the slice clamps to all of February.
         anchored = date(2026, 2, 1)
-        today = date(2026, 7, 30)
+        today = date(2026, 7, 30)                  # 29 completed days
         (s_start, s_end), _ = same_progress_slice("month", anchored, today)
         assert (s_start, s_end) == (date(2026, 2, 1), date(2026, 2, 28))
 
     def test_month_returns_none_for_current_month(self):
         today = date(2026, 7, 10)
         assert same_progress_slice("month", date(2026, 7, 1), today) is None
+
+    def test_month_returns_none_on_the_first(self):
+        anchored = date(2026, 5, 1)
+        today = date(2026, 7, 1)                   # day 1, nothing completed
+        assert same_progress_slice("month", anchored, today) is None
