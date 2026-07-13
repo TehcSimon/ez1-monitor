@@ -435,30 +435,42 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     if kind == "week":
         iso_y, iso_w, _ = today.isocalendar()
         running_start = iso_week_monday(iso_y, iso_w)
-        progress_days = today.isoweekday()
+        completed_days = today.isoweekday() - 1
     else:
         running_start = today.replace(day=1)
-        progress_days = today.day
+        completed_days = today.day - 1
     # Anchored view of the RUNNING period (one arrow-click away since the
     # v1.11 navigation): comparing its few days so far against the full
     # reference totals would read ~-70 % all week long, so prev/yoy are cut
-    # to the same progress — the first N days of the reference period, N =
-    # today's weekday resp. day-of-month (clamped to the reference month's
-    # length). Same semantics as the stat cards' "Vergleichszeitraum". The
-    # client shows a "(lfd.)" suffix on those pills via same_progress.
+    # to the same progress. COMPLETED days only, on BOTH sides: the started
+    # "today" competing against a full reference day read "+2000 %" at
+    # breakfast (day-granular data can't be fairer than whole days). On
+    # Monday resp. the 1st nothing is completed yet — the empty reference
+    # range makes delta() gate the pills off. The client shows a "(lfd.)"
+    # suffix on these pills via same_progress.
     is_running_period = anchored_start == running_start
 
     def ref_range(start_iso, end_iso):
+        # completed_days == 0 yields end < start → empty summary → gated.
         if not is_running_period:
             return start_iso, end_iso
         s = date_cls.fromisoformat(start_iso)
         e = min(date_cls.fromisoformat(end_iso),
-                s + timedelta(days=progress_days - 1))
+                s + timedelta(days=completed_days - 1))
         return start_iso, e.isoformat()
 
     cur = await db.get_range_summary(cur_start, cur_end)
     prev = await db.get_range_summary(*ref_range(prev_start, prev_end))
     yoy = await db.get_range_summary(*ref_range(yoy_start, yoy_end))
+
+    # Delta basis: in the running period the anchored side must also drop
+    # the started day, otherwise today's partial production would count
+    # for us while the reference ends at yesterday's completed day.
+    cur_cmp = cur
+    if is_running_period:
+        cur_cmp = await db.get_range_summary(
+            cur_start, (today - timedelta(days=1)).isoformat()
+        )
 
     def delta(other):
         if other["days"] == 0 or other["total_kwh"] <= 0:
@@ -467,7 +479,7 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
             "available": True,
             "total_kwh": other["total_kwh"],
             "delta_pct": round(
-                (cur["total_kwh"] - other["total_kwh"]) / other["total_kwh"] * 100, 1
+                (cur_cmp["total_kwh"] - other["total_kwh"]) / other["total_kwh"] * 100, 1
             ),
             "same_progress": is_running_period,
         }
