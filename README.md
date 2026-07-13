@@ -309,12 +309,14 @@ No manual steps, no database migration. A small feature release.
 - **Fair comparisons in the running period.** With the running week/month
   now one arrow-click away, its "vs. Vorwoche" / "vs. Vorjahr" pills no
   longer compare a few days against full reference totals (which read
-  "−70 %" all week). They are cut to the same progress and say so:
-  `vs. Vorwoche (lfd.) +16.6 %`. Completed days only, on both sides — the
-  started day never competes against a full reference day (that read
-  "+2000 %" for the record at breakfast). On Monday resp. the 1st there is
-  no completed day yet, so these pills (and the record-pace pill) stay
-  hidden until the first full day exists.
+  "−70 %" all week). They compare at equal clock progress — Tuesday 09:30
+  against the reference's Tuesday 09:30, from raw measurements, exactly
+  like the stat cards' "Vergleichszeitraum" — so today's partial
+  production counts on both sides and the pills are never a day behind.
+  Labeled `vs. Vorwoche (lfd.) +16.6 %`; the record-pace pill uses the
+  same basis. Only when a reference predates the retention window (raw
+  rows pruned) does the comparison fall back to completed days from the
+  daily aggregates.
 - Mobile polish: shorter pace-pill label (`vs. lfd. Woche`), the record
   pill leads with its subject (`lfd. Woche: Rekordkurs! +10 %`), the
   summary figures wrap as whole units instead of stranding a `· Bester
