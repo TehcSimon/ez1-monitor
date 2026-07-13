@@ -431,6 +431,7 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     week 53 that didn't exist last year).
     """
     today = datetime.now().date()
+    now_dt = datetime.now()
     anchored_start = date_cls.fromisoformat(cur_start)
     if kind == "week":
         iso_y, iso_w, _ = today.isocalendar()
@@ -439,91 +440,159 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     else:
         running_start = today.replace(day=1)
         completed_days = today.day - 1
-    # Anchored view of the RUNNING period (one arrow-click away since the
-    # v1.11 navigation): comparing its few days so far against the full
-    # reference totals would read ~-70 % all week long, so prev/yoy are cut
-    # to the same progress. COMPLETED days only, on BOTH sides: the started
-    # "today" competing against a full reference day read "+2000 %" at
-    # breakfast (day-granular data can't be fairer than whole days). On
-    # Monday resp. the 1st nothing is completed yet — the empty reference
-    # range makes delta() gate the pills off. The client shows a "(lfd.)"
-    # suffix on these pills via same_progress.
     is_running_period = anchored_start == running_start
+    running_start_dt = datetime.combine(running_start, time.min)
+    # Clock progress of the running period ("Tuesday 09:30"). Every
+    # same-progress comparison below cuts its reference to exactly this
+    # much elapsed time, so today's partial production counts on BOTH
+    # sides and the pills are never a day behind.
+    elapsed = now_dt - running_start_dt
+    retention_cutoff_dt = (
+        now_dt - timedelta(days=RETENTION_DAYS) if RETENTION_DAYS > 0 else None
+    )
 
-    def ref_range(start_iso, end_iso):
-        # completed_days == 0 yields end < start → empty summary → gated.
-        if not is_running_period:
-            return start_iso, end_iso
-        s = date_cls.fromisoformat(start_iso)
-        e = min(date_cls.fromisoformat(end_iso),
-                s + timedelta(days=completed_days - 1))
-        return start_iso, e.isoformat()
+    # kWh of the running period so far, from raw measurements — the live
+    # side of every same-progress comparison (prev/yoy in the running
+    # view, the pace pill in a past period's view).
+    running_kwh = (await db.get_energy_in_windows(
+        [(int(running_start_dt.timestamp()), int(now_dt.timestamp()))]
+    ))[0]
+
+    async def progress_kwh(start_iso: str, end_iso: str):
+        """kWh of the given period cut to the running period's clock
+        progress, from raw measurements — the same mechanics as the stat
+        cards' "Vergleichszeitraum". Returns None when the period starts
+        before the retention window: its raw rows are (partially) pruned,
+        so the caller falls back to the day-granular completed-days
+        comparison over daily_aggregates."""
+        s_dt = datetime.combine(date_cls.fromisoformat(start_iso), time.min)
+        if retention_cutoff_dt is not None and s_dt < retention_cutoff_dt:
+            return None
+        end_cap = datetime.combine(
+            date_cls.fromisoformat(end_iso), time.min
+        ) + timedelta(days=1)
+        until = min(s_dt + elapsed, end_cap)
+        return (await db.get_energy_in_windows(
+            [(int(s_dt.timestamp()), int(until.timestamp()))]
+        ))[0]
 
     cur = await db.get_range_summary(cur_start, cur_end)
-    prev = await db.get_range_summary(*ref_range(prev_start, prev_end))
-    yoy = await db.get_range_summary(*ref_range(yoy_start, yoy_end))
 
-    # Delta basis: in the running period the anchored side must also drop
-    # the started day, otherwise today's partial production would count
-    # for us while the reference ends at yesterday's completed day.
-    cur_cmp = cur
-    if is_running_period:
-        cur_cmp = await db.get_range_summary(
+    # Day-granular fallback basis: the running period's completed days.
+    cur_completed = None
+    if is_running_period and completed_days > 0:
+        cur_completed = await db.get_range_summary(
             cur_start, (today - timedelta(days=1)).isoformat()
         )
 
-    def delta(other):
-        if other["days"] == 0 or other["total_kwh"] <= 0:
+    async def ref_delta(start_iso, end_iso):
+        """Comparison pill against one reference period.
+
+        Completed anchored periods compare total vs. total. The RUNNING
+        period (one arrow-click away since the v1.11 navigation) compares
+        at equal clock progress instead — a few days against full
+        reference totals read ~-70 % all week. Preferred source: raw
+        measurements up to the same elapsed time, so today's partial
+        production counts on both sides. When the reference predates the
+        retention window the comparison falls back to completed days from
+        daily_aggregates (hidden on Monday resp. the 1st, when nothing is
+        completed yet). The client renders the "(lfd.)" suffix via
+        same_progress."""
+        if not is_running_period:
+            ref = await db.get_range_summary(start_iso, end_iso)
+            if ref["days"] == 0 or ref["total_kwh"] <= 0:
+                return {"available": False}
+            return {
+                "available": True,
+                "total_kwh": ref["total_kwh"],
+                "delta_pct": round(
+                    (cur["total_kwh"] - ref["total_kwh"]) / ref["total_kwh"] * 100, 1
+                ),
+            }
+        ref_kwh = await progress_kwh(start_iso, end_iso)
+        if ref_kwh is not None:
+            if ref_kwh <= 0:
+                return {"available": False}
+            return {
+                "available": True,
+                "total_kwh": round(ref_kwh, 3),
+                "delta_pct": round(
+                    (running_kwh - ref_kwh) / ref_kwh * 100, 1
+                ),
+                "same_progress": True,
+            }
+        if cur_completed is None:
+            return {"available": False}
+        s = date_cls.fromisoformat(start_iso)
+        e = min(date_cls.fromisoformat(end_iso),
+                s + timedelta(days=completed_days - 1))
+        ref = await db.get_range_summary(start_iso, e.isoformat())
+        if ref["days"] == 0 or ref["total_kwh"] <= 0:
             return {"available": False}
         return {
             "available": True,
-            "total_kwh": other["total_kwh"],
+            "total_kwh": ref["total_kwh"],
             "delta_pct": round(
-                (cur_cmp["total_kwh"] - other["total_kwh"]) / other["total_kwh"] * 100, 1
+                (cur_completed["total_kwh"] - ref["total_kwh"])
+                / ref["total_kwh"] * 100, 1
             ),
-            "same_progress": is_running_period,
+            "same_progress": True,
         }
 
-    # Record-pace comparison: the anchored period cut down to today's
-    # progress vs. the currently running week/month so far — i.e. "is the
-    # running period on track to beat this one?". Most interesting when the
-    # anchored period is an all-time best opened from the Hall of Fame
-    # (comparing a COMPLETE record week against a half-run current week
-    # would be unfair, hence equal progress). Positive delta = the anchored
-    # period is ahead of the running one, consistent with the other pills.
-    # Unavailable when the anchored period IS the running one, or when the
-    # running period has no data yet (early Monday morning).
+    prev = await ref_delta(prev_start, prev_end)
+    yoy = await ref_delta(yoy_start, yoy_end)
+
+    # Record-pace comparison — the mirror image of ref_delta: the anchored
+    # PAST period cut to the running period's clock progress vs. the
+    # running period so far ("is the running week on track to beat this
+    # one?"). Preferred source raw measurements; day-granular
+    # completed-days fallback when the anchored period predates the
+    # retention window. Unavailable in the running period's own view and
+    # while the running period has no production yet.
     pace = {"available": False}
-    slices = same_progress_slice(
-        kind, date_cls.fromisoformat(cur_start), datetime.now().date()
-    )
-    if slices:
-        (s_start, s_end), (c_start, c_end) = slices
-        rec_slice = await db.get_range_summary(s_start.isoformat(), s_end.isoformat())
-        running = await db.get_range_summary(c_start.isoformat(), c_end.isoformat())
-        if running["total_kwh"] > 0 and rec_slice["days"] > 0:
-            rec_total = rec_slice["total_kwh"]
-            pace = {
-                "available": True,
-                "total_kwh": running["total_kwh"],
-                "delta_pct": round(
-                    (rec_total - running["total_kwh"])
-                    / running["total_kwh"] * 100, 1
-                ),
-                # The same comparison re-based on the anchored slice: how far
-                # the RUNNING period is ahead of (+) or behind (−) the
-                # anchored period at equal progress. The UI's record-chase
-                # pill shows THIS number ("Rekordkurs! +10 %") because a
-                # "−9 %" with the running period as base reads backwards
-                # exactly when the user is winning. None when the anchored
-                # slice is all zeros (no meaningful base).
-                "running_delta_pct": (
-                    round(
-                        (running["total_kwh"] - rec_total) / rec_total * 100, 1
-                    ) if rec_total > 0 else None
-                ),
-                "progress_days": (s_end - s_start).days + 1,
-            }
+    if not is_running_period and running_kwh > 0:
+        rec_kwh = await progress_kwh(cur_start, cur_end)
+        if rec_kwh is not None:
+            if rec_kwh > 0:
+                pace = {
+                    "available": True,
+                    "total_kwh": round(running_kwh, 3),
+                    "delta_pct": round(
+                        (rec_kwh - running_kwh) / running_kwh * 100, 1
+                    ),
+                    "running_delta_pct": round(
+                        (running_kwh - rec_kwh) / rec_kwh * 100, 1
+                    ),
+                    # Fractional days of elapsed clock progress.
+                    "progress_days": round(elapsed.total_seconds() / 86400.0, 2),
+                }
+        else:
+            slices = same_progress_slice(kind, anchored_start, today)
+            if slices:
+                (s_start, s_end), (c_start, c_end) = slices
+                rec_slice = await db.get_range_summary(
+                    s_start.isoformat(), s_end.isoformat()
+                )
+                running_c = await db.get_range_summary(
+                    c_start.isoformat(), c_end.isoformat()
+                )
+                if running_c["total_kwh"] > 0 and rec_slice["days"] > 0:
+                    rec_total = rec_slice["total_kwh"]
+                    pace = {
+                        "available": True,
+                        "total_kwh": running_c["total_kwh"],
+                        "delta_pct": round(
+                            (rec_total - running_c["total_kwh"])
+                            / running_c["total_kwh"] * 100, 1
+                        ),
+                        "running_delta_pct": (
+                            round(
+                                (running_c["total_kwh"] - rec_total)
+                                / rec_total * 100, 1
+                            ) if rec_total > 0 else None
+                        ),
+                        "progress_days": (s_end - s_start).days + 1,
+                    }
 
     return {
         "total_kwh": cur["total_kwh"],
@@ -531,8 +600,8 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
         "days": cur["days"],
         "best_date": cur["best_date"],
         "best_kwh": cur["best_kwh"],
-        "prev": delta(prev),
-        "yoy": delta(yoy),
+        "prev": prev,
+        "yoy": yoy,
         "current_pace": pace,
     }
 
