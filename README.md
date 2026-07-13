@@ -310,10 +310,11 @@ No manual steps, no database migration. A small feature release.
   now one arrow-click away, its "vs. Vorwoche" / "vs. Vorjahr" pills no
   longer compare a few days against full reference totals (which read
   "−70 %" all week). They are cut to the same progress — the first N days
-  of the reference — and say so: `vs. Vorwoche (Stand Di) +16.6 %`.
-- Mobile polish: shorter pace-pill label (`vs. lfd. Woche`), the summary
-  figures wrap as whole units instead of stranding a `· Bester Tag` on the
-  next line, and the "Rekordkurs!" pill stays amber in the light theme
+  of the reference — and say so: `vs. Vorwoche (lfd.) +16.6 %`.
+- Mobile polish: shorter pace-pill label (`vs. lfd. Woche`), the record
+  pill leads with its subject (`lfd. Woche: Rekordkurs! +10 %`), the
+  summary figures wrap as whole units instead of stranding a `· Bester
+  Tag` on the next line, and the pill stays amber in the light theme
   instead of inheriting its blue accent.
 
 ### From v1.9.1 to v1.10.0
