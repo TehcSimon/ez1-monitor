@@ -65,12 +65,18 @@ def same_progress_slice(kind: str, anchored_start: date_cls, today: date_cls):
 
         ((slice_start, slice_end), (current_start, current_end))
 
-    where the first range is the anchored period cut down to today's
-    progress (weekday number resp. day-of-month, clamped to the anchored
-    period's length — comparing February against the 30th of the running
-    month yields all of February), and the second is the running period so
-    far. Returns None when the anchored period IS the running one —
-    comparing a period against itself is meaningless.
+    where the first range is the anchored period cut down to the running
+    period's COMPLETED days, and the second is the running period up to
+    and including yesterday.
+
+    Completed days only — the started "today" is deliberately excluded
+    from BOTH sides: comparing a few morning hours against the anchored
+    period's full day read "+2000 %" for the record at breakfast. So on a
+    Tuesday the comparison is Monday-vs-Monday (both complete); on Monday
+    (resp. the 1st) there is no fair day-granular basis yet and the
+    function returns None, as it does when the anchored period IS the
+    running one. The slice is clamped to the anchored period's length
+    (February vs. the 30th of the running month yields all of February).
 
     Day-granular by design: the pace pill sums daily_aggregates rows, and
     anything finer would suggest a precision the hourly-refreshed daily
@@ -81,15 +87,22 @@ def same_progress_slice(kind: str, anchored_start: date_cls, today: date_cls):
         current_start = iso_week_monday(iso_year, iso_week)
         if anchored_start == current_start:
             return None
-        slice_end = anchored_start + timedelta(days=today.isoweekday() - 1)
+        completed_days = today.isoweekday() - 1
+        if completed_days <= 0:
+            return None
+        slice_end = anchored_start + timedelta(days=completed_days - 1)
     else:  # "month"
         current_start = today.replace(day=1)
         if anchored_start == current_start:
             return None
+        completed_days = today.day - 1
+        if completed_days <= 0:
+            return None
         anchored_last = last_day_of_month(
             datetime(anchored_start.year, anchored_start.month, 1)
         ).date()
-        slice_end = anchored_start + timedelta(days=today.day - 1)
+        slice_end = anchored_start + timedelta(days=completed_days - 1)
         if slice_end > anchored_last:
             slice_end = anchored_last
-    return ((anchored_start, slice_end), (current_start, today))
+    return ((anchored_start, slice_end),
+            (current_start, today - timedelta(days=1)))
