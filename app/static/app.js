@@ -1283,17 +1283,6 @@ function updateSummaryNavButtons(period) {
     && periodKeyOf(state.anchoredPeriod) >= currentPeriodKey(state.anchoredPeriod.kind);
 }
 
-// Suffix for same-progress comparisons in the RUNNING period: names the
-// concrete cut-off — weekday for weeks ("(Stand Di)"), day-of-month for
-// months ("(Stand 7.)"). Localized via summary.samePoint.
-function samePointSuffix(kind) {
-  const now = new Date();
-  const d = kind === "week"
-    ? now.toLocaleDateString(state.locale, { weekday: "short" })
-    : (state.lang === "de" ? `${now.getDate()}.` : `day ${now.getDate()}`);
-  return window.i18n.t(state.lang, "summary.samePoint", { d });
-}
-
 function formatPeriodLabel(period) {
   if (!period) return "";
   if (period.kind === "week") {
@@ -1312,19 +1301,21 @@ function renderSummaryDelta(elId, delta, labelKey, opts) {
   // beating the all-time record's pace. A red "down" would read as alarm at
   // the most exciting moment the dashboard has — so this renders as a warm
   // amber pill with a subtle glow instead, and the percentage is re-based
-  // on the record slice so it reads "Rekordkurs! +10 %" ("10 % better than
+  // on the record slice reads subject-first ("lfd. Woche: Rekordkurs! +10 %" = "10 % better than
   // the record at this point") rather than a backwards "−9 %".
   if (opts && opts.chase && delta.delta_pct < 0 && delta.running_delta_pct != null) {
+    const chaseKey = opts.kind === "week"
+      ? "summary.recordPaceWeek" : "summary.recordPaceMonth";
     const chaseSign = delta.running_delta_pct > 0 ? "+" : "";
-    el.textContent = `${window.i18n.t(state.lang, "summary.recordPace")} ${chaseSign}${delta.running_delta_pct} %`;
+    el.textContent = `${window.i18n.t(state.lang, chaseKey)} ${chaseSign}${delta.running_delta_pct} %`;
     el.className = "summary-pill chase";
     return;
   }
   // same_progress (running period): the reference was cut to the first N
-  // days server-side — a short "(Stand Di)" suffix makes that visible
-  // without blowing up the pill width on phones.
+  // days server-side — the "(lfd.)" suffix marks it, mirroring the
+  // "vs. lfd. Woche" wording of the pace pill.
   let label = window.i18n.t(state.lang, labelKey);
-  if (delta.same_progress) label += " " + samePointSuffix(opts && opts.kind);
+  if (delta.same_progress) label += " " + window.i18n.t(state.lang, "summary.samePoint");
   const sign = delta.delta_pct > 0 ? "+" : "";
   el.textContent = `${label} ${sign}${delta.delta_pct} %`;
   el.className = "summary-pill " + (delta.delta_pct > 0 ? "up" : delta.delta_pct < 0 ? "down" : "");
@@ -1363,8 +1354,8 @@ function renderSummary(summary, period) {
 
   const pKind = period && period.kind === "week" ? "week" : "month";
   const prevKey = pKind === "week" ? "summary.vsPrevWeek" : "summary.vsPrevMonth";
-  renderSummaryDelta("history-summary-prev", summary.prev, prevKey, { kind: pKind });
-  renderSummaryDelta("history-summary-yoy", summary.yoy, "summary.vsLastYear", { kind: pKind });
+  renderSummaryDelta("history-summary-prev", summary.prev, prevKey);
+  renderSummaryDelta("history-summary-yoy", summary.yoy, "summary.vsLastYear");
   // Record-pace pill: the anchored period cut to today's progress vs. the
   // currently running week/month — "is the running period on record pace?".
   // Positive (green) = the anchored period is still ahead. When the running
