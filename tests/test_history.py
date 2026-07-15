@@ -100,3 +100,20 @@ class TestHistoryQueries:
         assert s["avg_per_day"] == 0.0
         assert s["best_date"] is None
         assert s["best_kwh"] is None
+
+
+class TestFirstDailyDate:
+    # get_first_daily_date is the lower bound for the drill-down period
+    # navigation (v1.11.1). It must return the earliest daily_aggregates
+    # date, and None on an empty database (which leaves the client's prev
+    # arrow unbounded).
+
+    async def test_returns_none_on_empty_db(self, db):
+        assert await db.get_first_daily_date() is None
+
+    async def test_returns_earliest_date(self, db):
+        # Seeded out of order on purpose — MIN must not depend on insert order.
+        for d, k in [("2026-05-02", 5), ("2026-04-30", 3), ("2026-05-01", 4)]:
+            await _seed(db, d, k)
+        await db.backfill_daily_aggregates()
+        assert await db.get_first_daily_date() == "2026-04-30"
