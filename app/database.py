@@ -725,6 +725,22 @@ class Database:
             await db.commit()
             return written
 
+    async def get_first_daily_date(self) -> Optional[str]:
+        """Earliest date (YYYY-MM-DD) in daily_aggregates, or None when no
+        day has been recorded yet.
+
+        The lower bound for the drill-down period navigation: daily
+        aggregates span the full history (they survive raw-row retention
+        pruning), so their MIN(date) marks the earliest period a user can
+        meaningfully anchor — everything before it is guaranteed empty.
+        MIN over the TEXT primary key is index-backed and cheap enough to
+        run on every anchored-view request.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute("SELECT MIN(date) FROM daily_aggregates")
+            row = await cur.fetchone()
+            return row[0] if row else None
+
     async def get_best_day(self) -> Optional[dict]:
         """Return the all-time best day, or None if no data."""
         async with aiosqlite.connect(self.db_path) as db:

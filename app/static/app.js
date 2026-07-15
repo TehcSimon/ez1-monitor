@@ -35,6 +35,7 @@ const state = {
   yearGranularity: "daily",          // daily | weekly | monthly
   multiYearGranularity: "monthly",   // monthly | yearly
   anchoredPeriod: null,              // {kind:'week',week} | {kind:'month',month} drill-down
+  firstDataDate: null,               // earliest daily_aggregates date (ISO) — lower nav bound
   statusState: "noData",
   pollInterval: 60,
   retentionDays: 730,
@@ -1169,6 +1170,11 @@ function renderAnchoredDaily(data) {
   const points = data.points || [];
   const labels = points.map(p => p.date);
   const series = points.map(p => p.kwh);
+  // Lower navigation bound, sent by the anchored endpoints (v1.11.1).
+  // Falsy (older backend, empty DB) leaves the prev arrow unbounded —
+  // the pre-v1.11.1 behaviour. Set BEFORE renderSummary so
+  // updateSummaryNavButtons sees it on the very first anchored render.
+  state.firstDataDate = data.first_data_date || null;
   renderSummary(data.summary, data.period);
 
   historyChart = upsertChart(historyChart, "chart-history", {
@@ -1243,6 +1249,21 @@ function currentPeriodKey(kind) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// Key of the period containing the first recorded day — the lower
+// navigation bound, mirror of currentPeriodKey. Everything before it is
+// guaranteed empty (daily_aggregates span the full history, surviving
+// retention pruning). null when unknown (older backend, empty DB), which
+// leaves the prev arrow unbounded.
+function earliestPeriodKey(kind) {
+  if (!state.firstDataDate) return null;
+  const [y, m, d] = state.firstDataDate.split("-").map(Number);
+  if (kind === "week") {
+    const w = isoWeekInfo(new Date(y, m - 1, d));
+    return `${w.isoYear}-W${String(w.isoWeek).padStart(2, "0")}`;
+  }
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
 function shiftAnchoredPeriod(delta) {
   const ap = state.anchoredPeriod;
   if (!ap) return;
@@ -1263,6 +1284,12 @@ function shiftAnchoredPeriod(delta) {
   // Never step past the currently running period. (The running period
   // itself is a valid target — its pace pill simply hides there.)
   if (delta > 0 && periodKeyOf(next) > currentPeriodKey(ap.kind)) return;
+  // ...and never step before the period of the first recorded day. (That
+  // period itself is a valid target, even if the data starts mid-week or
+  // mid-month.) Guards keyboard-speed clicks that outrun the disabled
+  // state, which updateSummaryNavButtons only refreshes per render.
+  const minKey = earliestPeriodKey(ap.kind);
+  if (delta < 0 && minKey && periodKeyOf(next) < minKey) return;
   setAnchoredPeriod(next, false);
 }
 
@@ -1281,6 +1308,13 @@ function updateSummaryNavButtons(period) {
   nextBtn.setAttribute("aria-label", nextLabel);
   nextBtn.disabled = !!state.anchoredPeriod
     && periodKeyOf(state.anchoredPeriod) >= currentPeriodKey(state.anchoredPeriod.kind);
+  // Symmetric lower bound: disable at the period of the first recorded
+  // day. A null bound (older backend, empty DB) keeps the arrow enabled —
+  // the pre-v1.11.1 behaviour.
+  const minKey = state.anchoredPeriod
+    ? earliestPeriodKey(state.anchoredPeriod.kind) : null;
+  prevBtn.disabled = !!minKey
+    && periodKeyOf(state.anchoredPeriod) <= minKey;
 }
 
 function formatPeriodLabel(period) {

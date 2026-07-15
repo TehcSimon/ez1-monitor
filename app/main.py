@@ -429,6 +429,11 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     strings. A comparison with no data reports available=False so the
     client hides that pill (young installs, the earliest period, or an ISO
     week 53 that didn't exist last year).
+
+    In the RUNNING period's view the head figures (total, per-day average)
+    come from the same live raw-measurement query as its comparison pills,
+    so the head number and the pill percentages can never disagree — see
+    the swap below for the mechanics and the retention guard.
     """
     today = datetime.now().date()
     now_dt = datetime.now()
@@ -477,6 +482,25 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
         ))[0]
 
     cur = await db.get_range_summary(cur_start, cur_end)
+
+    # Head figures of the RUNNING period: today's daily_aggregates row only
+    # refreshes hourly, so the aggregate total could trail the live pills
+    # (raw measurements) by up to an hour. Swap in the raw total the pills
+    # already use — identical per-day MAX(e1+e2) semantics, see
+    # get_energy_in_windows, so completed days are byte-for-byte unchanged
+    # and only today's staleness disappears. Guarded on raw coverage: with
+    # a RETENTION_DAYS shorter than the running period the pruned raw rows
+    # would undercount, and the frozen aggregates are the accurate source.
+    # Day-granular fields (days, best day) stay aggregate-based — they are
+    # day concepts, and a partial "today" leading the best-day slot for up
+    # to an hour would suggest a precision the daily rows don't have.
+    if is_running_period and (
+        retention_cutoff_dt is None or running_start_dt >= retention_cutoff_dt
+    ):
+        cur = dict(cur)
+        cur["total_kwh"] = round(running_kwh, 3)
+        if cur["days"]:
+            cur["avg_per_day"] = round(running_kwh / cur["days"], 3)
 
     # Day-granular fallback basis: the running period's completed days.
     cur_completed = None
@@ -714,6 +738,10 @@ async def get_history(
             and best_week["iso_year"] == iso_year
             and best_week["iso_week"] == iso_week
         )
+        # Earliest recorded day — the client clamps its prev-arrow
+        # navigation at the period containing it (mirror of the forward
+        # clamp at the running period, which is pure client-side date math).
+        first_data = await db.get_first_daily_date()
         return {
             "range": "week", "anchored": True, "granularity": "daily",
             "period": {"kind": "week", "iso_year": iso_year, "iso_week": iso_week,
@@ -721,6 +749,7 @@ async def get_history(
             "points": points, "summary": summary,
             "period_start_day": monday.isoformat(),
             "period_end_day": sunday.isoformat(),
+            "first_data_date": first_data,
         }
 
     # Anchored historical month: that month's daily bars plus the summary.
@@ -745,6 +774,8 @@ async def get_history(
         summary["is_record_period"] = bool(
             best_month and best_month["year"] == y and best_month["month"] == m
         )
+        # Same navigation lower bound as the anchored week view above.
+        first_data = await db.get_first_daily_date()
         return {
             "range": "month", "anchored": True, "granularity": "daily",
             "period": {"kind": "month", "year": y, "month": m,
@@ -752,6 +783,7 @@ async def get_history(
             "points": points, "summary": summary,
             "period_start_day": first.isoformat(),
             "period_end_day": last.isoformat(),
+            "first_data_date": first_data,
         }
 
     used_date: str | None = None
