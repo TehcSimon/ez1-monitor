@@ -296,6 +296,28 @@ automatically.
 
 ## Upgrading
 
+### From v1.11.0 to v1.11.1
+
+No manual steps, no database migration — a small bug-fix release.
+
+- **The drill-down's prev arrow now stops at the first recorded period.**
+  The anchored week/month navigation could step back past the beginning of
+  the data into endless empty periods; the arrow now disables at the
+  week/month containing the earliest recorded day — the mirror of the
+  forward clamp at the running period. The anchored endpoints expose the
+  bound as `first_data_date` (from the daily aggregates, so it reaches
+  back beyond the raw-row retention window); a missing field, as with an
+  older backend, simply keeps the old unbounded behaviour.
+- **The running period's head figures now match its pills.** In the
+  running week/month view the total and per-day average were read from
+  the hourly-refreshed daily aggregates while the comparison pills used
+  live raw measurements — so the head number could trail the pill
+  percentages by up to an hour. Both now come from the same raw query.
+  The two sources share identical per-day `MAX(e1+e2)` semantics, so
+  completed days are unchanged and only today's staleness disappears.
+  With a `RETENTION_DAYS` shorter than the running period the aggregates
+  remain the source, since pruned raw rows would undercount.
+
 ### From v1.10.0 to v1.11.0
 
 No manual steps, no database migration. A small feature release.
