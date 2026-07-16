@@ -845,7 +845,7 @@ async def get_history(
             start, end = now - timedelta(days=365), now
 
     points = await db.get_range(int(start.timestamp()), int(end.timestamp()), bucket)
-    return {
+    resp = {
         "range": range,
         "granularity": "daily" if range == "year" else "auto",
         "mode": mode,
@@ -855,6 +855,15 @@ async def get_history(
         "period_end_day": period_end_day,
         "points": points,
     }
+    if range == "day":
+        # Same navigation lower bound as the anchored views (v1.11.1). The
+        # client takes the LATER of this and the retention boundary as the
+        # earliest selectable day — the intraday curve reads raw
+        # measurements, which exist only within the retention window AND
+        # from the first recorded day on. See getEarliestSelectableDate()
+        # in app.js.
+        resp["first_data_date"] = await db.get_first_daily_date()
+    return resp
 
 
 @app.get("/api/stats")

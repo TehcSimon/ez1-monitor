@@ -146,7 +146,31 @@ function getEarliestSelectableDate() {
   const earliest = new Date();
   earliest.setHours(0, 0, 0, 0);
   earliest.setDate(earliest.getDate() - lookback);
+  // The intraday curve reads raw measurements, which exist only within
+  // the retention window AND from the first recorded day on — so the
+  // earliest selectable day is the LATER of the two. On installs younger
+  // than RETENTION_DAYS the first recorded day binds (v1.11.2), on older
+  // installs the retention boundary does, as before. An unknown bound
+  // (older backend, empty DB) keeps the retention-only behaviour.
+  if (state.firstDataDate) {
+    const [y, m, d] = state.firstDataDate.split("-").map(Number);
+    const firstDay = new Date(y, m - 1, d);
+    if (firstDay > earliest) return firstDay;
+  }
   return earliest;
+}
+
+// Store the navigation lower bound from an API response. Centralized
+// because two response types carry it (anchored week/month views since
+// v1.11.1, the day view since v1.11.2) and the day picker needs a nudge:
+// it is created at init — before the first response arrives — and would
+// otherwise keep its retention-only minDate until recreated.
+function setFirstDataDate(iso) {
+  const v = iso || null;
+  if (v === state.firstDataDate) return;
+  state.firstDataDate = v;
+  if (dayPicker) dayPicker.set("minDate", getEarliestSelectableDate());
+  updateDayPickerButtons();
 }
 
 // COLORS is populated from CSS variables. Re-call refreshChartColors() after
@@ -855,7 +879,12 @@ function updateDayPickerButtons() {
   const prevBtn = document.getElementById("day-prev");
   if (prevBtn) {
     const earliest = getEarliestSelectableDate();
-    const current = state.viewedDay || new Date();
+    // Compare at day granularity (midnight), exactly like shiftViewedDay's
+    // guard — "today" otherwise carries a time-of-day, and with the bound
+    // AT today (install day) the button would show enabled while the
+    // click is a no-op.
+    const current = state.viewedDay ? new Date(state.viewedDay) : new Date();
+    current.setHours(0, 0, 0, 0);
     prevBtn.disabled = (current <= earliest);
   }
   const todayBtn = document.getElementById("day-today");
@@ -921,6 +950,10 @@ async function loadTodayChart() {
     const res = await fetch(`/api/history?range=day${dateParam}`);
     const data = await res.json();
     if (seq !== todayReqSeq) return;   // a newer request superseded this one
+    // The day response carries the navigation lower bound (v1.11.2) — the
+    // day picker is reachable without ever opening a drill-down, so it
+    // must not depend on an anchored view having been loaded first.
+    setFirstDataDate(data.first_data_date);
     const points = (data.points || []).filter(p => p.online);
     const labels = points.map(p => p.timestamp * 1000);
     const series = points.map(p => (p.p1 || 0) + (p.p2 || 0));
@@ -1174,7 +1207,7 @@ function renderAnchoredDaily(data) {
   // Falsy (older backend, empty DB) leaves the prev arrow unbounded —
   // the pre-v1.11.1 behaviour. Set BEFORE renderSummary so
   // updateSummaryNavButtons sees it on the very first anchored render.
-  state.firstDataDate = data.first_data_date || null;
+  setFirstDataDate(data.first_data_date);
   renderSummary(data.summary, data.period);
 
   historyChart = upsertChart(historyChart, "chart-history", {
