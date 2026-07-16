@@ -296,6 +296,22 @@ automatically.
 
 ## Upgrading
 
+### From v1.11.1 to v1.11.2
+
+No manual steps, no database migration — a one-fix release.
+
+- **The day view's prev arrow now stops at the first recorded day.** Like
+  the week/month navigation fixed in v1.11.1, the day picker's back arrow —
+  and the calendar popup — could walk into empty days before the
+  installation. The day endpoint now carries the same `first_data_date`
+  bound, and the earliest selectable day is the **later** of it and the
+  retention boundary, because the intraday curve reads raw measurements:
+  on installs younger than `RETENTION_DAYS` the first recorded day binds,
+  on older installs the retention window does, as before. A missing field
+  (older backend) keeps the retention-only behaviour, and the arrow's
+  disabled state now matches its click guard exactly (day-granular
+  comparison).
+
 ### From v1.11.0 to v1.11.1
 
 No manual steps, no database migration — a small bug-fix release.
