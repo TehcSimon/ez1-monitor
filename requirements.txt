@@ -1,5 +1,5 @@
 fastapi==0.140.6
-uvicorn==0.51.0
+uvicorn==0.52.0
 apsystems-ez1==2.7.0
 aiosqlite==0.22.1
 prometheus-client==0.26.0
