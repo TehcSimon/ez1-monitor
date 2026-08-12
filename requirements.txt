@@ -1,4 +1,4 @@
-fastapi==0.140.6
+fastapi==0.141.1
 uvicorn==0.52.1
 apsystems-ez1==2.7.0
 aiosqlite==0.22.1
