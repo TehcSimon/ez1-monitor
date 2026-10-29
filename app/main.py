@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import (
     CollectorRegistry, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST,
@@ -1366,9 +1366,21 @@ async def metrics():
 
 # ---------------------------- Static frontend ----------------------------
 
+# index.html references its assets as /static/...?v=__ASSET_VERSION__ and the
+# token is replaced with the app version once at startup, so every release
+# busts browser caches automatically. The hand-maintained ?v= strings had
+# been stuck at 1.9.0 since that release, so browsers (and installed PWAs in
+# particular) could keep running a stale app.js/style.css after an upgrade.
+_INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
+    "__ASSET_VERSION__", __version__
+)
+
+
 @app.get("/")
 async def root():
-    return FileResponse(STATIC_DIR / "index.html")
+    # no-cache: the page itself is always revalidated, so a new release's
+    # asset URLs are picked up on the very next load. It's a few KB on the LAN.
+    return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache"})
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
