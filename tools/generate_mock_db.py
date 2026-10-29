@@ -3,8 +3,9 @@ test the Hall of Fame glow animations without waiting weeks for real
 data to accumulate.
 
 Writes one `measurements` row per day for the last 3 years plus a few
-extra rows for today. The today rows are spaced 15 minutes apart with
-an arc that peaks higher than any other day in the history, so the
+extra rows for today. The today rows are spaced two hours apart
+(06:00–20:00) with an arc that peaks higher than any other day in the
+history, so the
 all-time best-day slot in the Hall of Fame triggers "fresh" state and
 glows endlessly with the NEW badge.
 
@@ -31,8 +32,8 @@ startup via the standard backfill. So the workflow is:
 If you want different glow states, edit the constants at the top:
 - TODAY_BREAKS_DAY_RECORD       — fires "fresh" on the day tier
 - WEEK_RECORD_DAYS_AGO          — fires "recent" on the week tier
-- MONTH_RECORD_MONTHS_AGO       — fires "recent" on the month tier
-- YEAR_RECORD_DONE_YEARS_AGO    — fires "recent" on the year tier
+
+For realistic intraday data (README screenshots), see tools/screenshots/.
 """
 import math
 import os
