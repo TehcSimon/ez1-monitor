@@ -104,6 +104,7 @@ class TestDailyAggregates:
         assert extent["days_with_data"] == 6
         assert extent["first_date"] == "2025-06-16"
         assert extent["last_date"] == "2025-06-25"
+        assert extent["recorded_kwh"] == pytest.approx(6 * 3.5)
         # Whether weeks are "completed" depends on current date; just verify
         # the field exists and is non-negative
         assert extent["completed_weeks"] >= 0

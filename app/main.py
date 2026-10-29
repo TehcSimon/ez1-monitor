@@ -1015,7 +1015,9 @@ async def get_stats():
     if INSTALL_COST > 0:
         amortization_pct = round(money_saved / INSTALL_COST * 100.0, 1)
         if money_saved >= INSTALL_COST:
-            be_date = await db.get_breakeven_date(INSTALL_COST, money_saved)
+            be_date = await db.get_breakeven_date(
+                INSTALL_COST, money_saved, lifetime_kwh=total_kwh
+            )
             # Amortized but undatable (no daily aggregates at all) → quiet
             # "settled" state, no glow.
             amortization_state = "settled"
@@ -1038,9 +1040,18 @@ async def get_stats():
             if extent["first_date"]:
                 try:
                     first_date = date_cls.fromisoformat(extent["first_date"])
+                    # money_saved is valued from the inverter's lifetime
+                    # counter, which also holds production from before the
+                    # monitor was set up. Only the share earned inside the
+                    # recorded history describes the savings RATE.
+                    earned_in_span = (
+                        money_saved * min(1.0, extent["recorded_kwh"] / total_kwh)
+                        if total_kwh > 0 else 0.0
+                    )
                     eta = estimate_breakeven_date(
                         INSTALL_COST, money_saved, first_date, now.date(),
                         min_days=AMORT_ETA_MIN_DAYS,
+                        earned_in_span=earned_in_span,
                     )
                     amortization_eta_date = eta.isoformat() if eta else None
                 except ValueError:

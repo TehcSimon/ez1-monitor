@@ -27,15 +27,24 @@ def compute_money_saved(
 def estimate_breakeven_date(
     install_cost: float, money_saved: float,
     first_data_date: date, today: date, min_days: int = 365,
+    earned_in_span: Optional[float] = None,
 ) -> Optional[date]:
     """Projected calendar date on which cumulative savings reach
     install_cost, linearly extrapolated from the average savings rate over
     the WHOLE data history.
 
-    Deliberately naive-but-honest: the rate is money_saved divided by the
-    CALENDAR days since the first measurement — not days-with-data. Gaps
-    (outages, snow) produce nothing and must drag the rate down, otherwise
-    the projected date would be too optimistic.
+    Deliberately naive-but-honest: the rate is the money earned since the
+    first measurement divided by the CALENDAR days since then — not
+    days-with-data. Gaps (outages, snow) produce nothing and must drag the
+    rate down, otherwise the projected date would be too optimistic.
+
+    earned_in_span is the part of money_saved earned between
+    first_data_date and today — the basis of the rate. It defaults to
+    money_saved, which is only right when the monitor has recorded the
+    installation from its first day: money_saved is valued from the
+    inverter's lifetime counter, so any production from before the monitor
+    was set up would otherwise be divided by the monitor's shorter history
+    and inflate the rate (break-even projected far too early).
 
     Gated behind min_days (default 365): with less than a full year of
     data the rate is seasonally biased — a summer-only history predicts a
@@ -51,6 +60,9 @@ def estimate_breakeven_date(
     span_days = (today - first_data_date).days
     if span_days < min_days:
         return None
-    rate_per_day = money_saved / span_days
+    earned = money_saved if earned_in_span is None else earned_in_span
+    if earned <= 0:
+        return None
+    rate_per_day = earned / span_days
     remaining_days = ceil((install_cost - money_saved) / rate_per_day)
     return today + timedelta(days=remaining_days)

@@ -858,13 +858,15 @@ class Database:
             cur = await db.execute(
                 """SELECT MIN(date) AS first_date,
                           MAX(date) AS last_date,
-                          COUNT(*) AS days
+                          COUNT(*) AS days,
+                          COALESCE(SUM(total_kwh), 0) AS recorded_kwh
                    FROM daily_aggregates"""
             )
             row = await cur.fetchone()
             first = row["first_date"] if row else None
             last = row["last_date"] if row else None
             days = row["days"] if row else 0
+            recorded_kwh = float(row["recorded_kwh"]) if row else 0.0
 
             # Distinct completed ISO weeks (excluding the currently-running one)
             cur2 = await db.execute("SELECT date FROM daily_aggregates")
@@ -894,6 +896,10 @@ class Database:
             "first_date": first,
             "last_date": last,
             "days_with_data": days,
+            # Energy the monitor itself has recorded (sum of the daily
+            # aggregates). Unlike the inverter's lifetime counter it
+            # excludes production from before the monitor was set up.
+            "recorded_kwh": recorded_kwh,
             "completed_weeks": len(completed_weeks),
             "completed_months": len(completed_months),
             "completed_years": len(completed_years),
@@ -1007,7 +1013,8 @@ class Database:
             }
 
     async def get_breakeven_date(
-        self, install_cost: float, total_savings: float
+        self, install_cost: float, total_savings: float,
+        lifetime_kwh: Optional[float] = None,
     ) -> Optional[str]:
         """Local date (YYYY-MM-DD) on which cumulative savings first reached
         install_cost, or None if the installation hasn't broken even.
@@ -1024,6 +1031,16 @@ class Database:
         install is never left undatable. Assumes a roughly stable
         value-per-kWh over time; a changed tariff shifts the date slightly,
         which is fine for a cosmetic glow.
+
+        lifetime_kwh is the inverter's lifetime counter that total_savings
+        is valued from. Whatever it holds beyond the recorded daily
+        aggregates — mostly production from before the monitor was set up
+        — counts as already accrued on the first recorded day; without it
+        that pre-monitor share would push the crossover too late. If the
+        installation had paid for itself before the first recorded day,
+        the date is unknown and None is returned (the caller then shows the
+        calm "settled" state). Omitted, the recorded energy is taken as the
+        whole history.
         """
         if install_cost <= 0 or total_savings <= 0:
             return None
@@ -1035,11 +1052,15 @@ class Database:
                 "SELECT date, total_kwh FROM daily_aggregates ORDER BY date ASC"
             )
             rows = await cur.fetchall()
-        total_kwh = sum((r[1] or 0.0) for r in rows)
-        if total_kwh <= 0:
+        recorded_kwh = sum((r[1] or 0.0) for r in rows)
+        if recorded_kwh <= 0:
             return None
-        target_kwh = fraction * total_kwh
-        cumulative = 0.0
+        basis_kwh = max(lifetime_kwh or 0.0, recorded_kwh)
+        pre_monitor_kwh = basis_kwh - recorded_kwh
+        target_kwh = fraction * basis_kwh
+        if target_kwh <= pre_monitor_kwh:
+            return None
+        cumulative = pre_monitor_kwh
         last_date = None
         for r in rows:
             cumulative += r[1] or 0.0

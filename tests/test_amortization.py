@@ -112,6 +112,25 @@ class TestBreakevenDate:
         await db.backfill_daily_aggregates()
         assert await db.get_breakeven_date(0.0, 100.0) is None
 
+    async def test_pre_monitor_energy_counts_as_accrued(self, db):
+        # 20 kWh recorded (4 × 5), but the lifetime counter says 40: 20 kWh
+        # were produced before the monitor was set up.
+        for day in ("2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"):
+            await _seed_day(db, day, 5.0)
+        await db.backfill_daily_aggregates()
+        # Cost = 75 % of savings → crossover at 30 of 40 kWh = 10 recorded
+        # kWh in → day 2. Ignoring the pre-monitor share said day 3.
+        assert await db.get_breakeven_date(75.0, 100.0, lifetime_kwh=40.0) == "2024-01-02"
+        assert await db.get_breakeven_date(75.0, 100.0) == "2024-01-03"
+
+    async def test_none_when_paid_off_before_monitoring(self, db):
+        for day in ("2024-01-01", "2024-01-02"):
+            await _seed_day(db, day, 5.0)
+        await db.backfill_daily_aggregates()
+        # 90 of 100 kWh predate the monitor; cost = 50 % of savings was
+        # reached before the first recorded day → no datable crossover.
+        assert await db.get_breakeven_date(50.0, 100.0, lifetime_kwh=100.0) is None
+
 
 # --- Projected break-even date (v1.10) --------------------------------------
 
@@ -153,3 +172,17 @@ class TestEstimateBreakevenDate:
         first = self.TODAY - timedelta(days=800)
         assert estimate_breakeven_date(0.0, 100.0, first, self.TODAY) is None
         assert estimate_breakeven_date(800.0, 0.0, first, self.TODAY) is None
+
+    def test_rate_uses_only_savings_earned_in_the_recorded_span(self):
+        # 400 saved in total, but 200 of it predates the monitor (lifetime
+        # counter). Over the 365 recorded days only 200 were earned → the
+        # remaining 400 take 730 days, not 365.
+        first = self.TODAY - timedelta(days=365)
+        eta = estimate_breakeven_date(800.0, 400.0, first, self.TODAY,
+                                      earned_in_span=200.0)
+        assert eta == self.TODAY + timedelta(days=730)
+
+    def test_nothing_earned_in_span_gives_no_estimate(self):
+        first = self.TODAY - timedelta(days=400)
+        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY,
+                                       earned_in_span=0.0) is None
