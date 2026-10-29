@@ -182,6 +182,47 @@ class TestProductionWindow:
         assert last is None
 
 
+class TestTodayWindowQueries:
+    """The "today" queries filter by a [local midnight, next local midnight)
+    timestamp range instead of date(timestamp, 'localtime') on every row
+    (which forced a full table scan). Guards that the range keeps exactly
+    the old local-day semantics at both edges."""
+
+    async def _seed_around_today(self, db):
+        midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        ts = lambda dt: int(dt.timestamp())
+        # Last second of yesterday and first second of tomorrow carry the
+        # biggest numbers — they must NOT leak into today's figures.
+        await db.insert_measurement(ts(midnight - timedelta(seconds=1)), 900, 900,
+                                    9.0, 9.0, 50, 50, online=True)
+        await db.insert_measurement(ts(midnight + timedelta(days=1)), 800, 800,
+                                    8.0, 8.0, 60, 60, online=True)
+        await db.insert_measurement(ts(midnight), 2, 1, 0.0, 0.0, 51, 51, online=True)
+        await db.insert_measurement(ts(midnight + timedelta(hours=12)), 300, 250,
+                                    1.5, 1.2, 52, 52, online=True)
+        await db.insert_measurement(ts(midnight + timedelta(hours=17)), 40, 30,
+                                    2.4, 2.0, 53, 53, online=True)
+        return midnight
+
+    async def test_peak_today_ignores_neighbouring_days(self, db):
+        midnight = await self._seed_around_today(db)
+        peak, peak_ts = await db.get_peak_today_with_time()
+        assert peak == 550.0
+        assert peak_ts == int((midnight + timedelta(hours=12)).timestamp())
+
+    async def test_panel_energy_ignores_neighbouring_days(self, db):
+        await self._seed_around_today(db)
+        pv1, pv2 = await db.get_today_panel_energy()
+        assert (pv1, pv2) == (2.4, 2.0)
+
+    async def test_production_window_ignores_neighbouring_days(self, db):
+        midnight = await self._seed_around_today(db)
+        first, last = await db.get_today_production_window(threshold_w=5)
+        # The 00:00 row (3 W) is below the threshold; 12:00 and 17:00 count.
+        assert first == int((midnight + timedelta(hours=12)).timestamp())
+        assert last == int((midnight + timedelta(hours=17)).timestamp())
+
+
 class TestLastOnlineAvgPower:
     """Status input: the average power right before the inverter went quiet.
     Regression guard — the window used to be anchored at "now", so it ran

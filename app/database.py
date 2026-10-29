@@ -1,13 +1,28 @@
 """SQLite database layer for EZ1 measurements."""
 import logging
 import aiosqlite
-from datetime import datetime, timedelta, date as date_cls
+from datetime import datetime, timedelta, time, date as date_cls
 from pathlib import Path
 from typing import Optional
 
 from .date_helpers import iso_week_monday
 
 logger = logging.getLogger(__name__)
+
+
+def _today_bounds() -> tuple[int, int]:
+    """Half-open [start, end) unix timestamps of the current LOCAL day.
+
+    Same semantics as `date(timestamp, 'unixepoch', 'localtime') =
+    date('now', 'localtime')` (Python and SQLite both resolve local time
+    via the TZ env), but as a plain timestamp range the query can use the
+    rowid btree instead of evaluating date() on every row of the table.
+    The naive local midnights make DST days 23 or 25 hours long, as they
+    should be.
+    """
+    start = datetime.combine(date_cls.today(), time.min)
+    end = start + timedelta(days=1)
+    return int(start.timestamp()), int(end.timestamp())
 
 
 SCHEMA = """
@@ -376,10 +391,11 @@ class Database:
             cur = await db.execute(
                 """SELECT COALESCE(p1, 0) + COALESCE(p2, 0) AS power, timestamp
                    FROM measurements
-                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+                   WHERE timestamp >= ? AND timestamp < ?
                      AND online = 1
                    ORDER BY power DESC, timestamp ASC
-                   LIMIT 1"""
+                   LIMIT 1""",
+                _today_bounds(),
             )
             row = await cur.fetchone()
             if not row or row[0] is None or row[0] == 0:
@@ -401,8 +417,9 @@ class Database:
             cur = await db.execute(
                 """SELECT MAX(e1), MAX(e2)
                    FROM measurements
-                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
-                     AND online = 1"""
+                   WHERE timestamp >= ? AND timestamp < ?
+                     AND online = 1""",
+                _today_bounds(),
             )
             row = await cur.fetchone()
             e1 = row[0] if row and row[0] is not None else 0.0
@@ -422,10 +439,10 @@ class Database:
             cur = await db.execute(
                 """SELECT MIN(timestamp), MAX(timestamp)
                    FROM measurements
-                   WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+                   WHERE timestamp >= ? AND timestamp < ?
                      AND online = 1
                      AND (COALESCE(p1, 0) + COALESCE(p2, 0)) >= ?""",
-                (threshold_w,),
+                (*_today_bounds(), threshold_w),
             )
             row = await cur.fetchone()
             if not row or row[0] is None:
