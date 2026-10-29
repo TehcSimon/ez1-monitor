@@ -24,4 +24,5 @@ is easy to review.
 - [ ] Tests pass locally (`pytest`)
 - [ ] Container builds (`docker build .`)
 - [ ] No new dependencies, OR added ones are pinned in `requirements.txt`
-- [ ] README updated if user-visible behavior changes
+- [ ] README / UPGRADING.md updated if user-visible behavior changes
+- [ ] Screenshots regenerated (`tools/screenshots/run.sh`) if the UI changed visibly

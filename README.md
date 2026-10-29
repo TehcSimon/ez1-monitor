@@ -1,104 +1,147 @@
+<div align="center">
+
+<img src="app/static/icons/icon-192.png" alt="EZ1 Monitor logo" width="104">
+
 # EZ1 Monitor
 
+**A lean, self-hosted dashboard for the APsystems EZ1-M microinverter.**
+Live power, every day's curve, fair comparisons and long-term records —
+straight from the inverter's local API. No cloud, no account, no telemetry.
+
 [![Build and push container image](https://github.com/TehcSimon/ez1-monitor/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/TehcSimon/ez1-monitor/actions/workflows/build-and-push.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Python 3.14](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Image on GHCR](https://img.shields.io/badge/ghcr.io-ez1--monitor-2496ED?logo=docker&logoColor=white)](https://github.com/TehcSimon/ez1-monitor/pkgs/container/ez1-monitor)
+[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-lightgrey)](#install-paths)
+[![Unraid template](https://img.shields.io/badge/Unraid-template-F15A2C?logo=unraid&logoColor=white)](#install-paths)
 
-A lean, self-hosted monitoring dashboard for the **APsystems EZ1-M** microinverter.
-Polls the local API, stores all measurements in SQLite, and serves a web UI
-with live data, historical charts, same-period and year-over-year comparisons,
-and lifetime statistics.
+</div>
 
-No cloud, no account, no telemetry. Localized for English and German.
+---
 
-<!-- TODO: add screenshot once dashboard is running with production data -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.webp">
+    <img src="docs/screenshots/dashboard-light.webp" alt="EZ1 Monitor dashboard: live power, today's curve and the comparison cards" width="900">
+  </picture>
+  <br><i>Live power, today's curve and calendar-aligned comparisons — <a href="docs/screenshots/full-dark.webp">see the whole dashboard</a>.</i>
+</p>
 
-## Features
+## Why
 
-- Polls the EZ1-M via the official `apsystems-ez1` library
-- Persists PV1/PV2 power, today's energy, lifetime energy, online status
-- **Live dashboard**: hero card with total + per-channel power, today's
-  peak (with timestamp), and average power during today's production window
-- **Today's intraday curve** with a day picker for browsing any past day
-  within the retention window (arrow navigation, calendar icon, or
-  drill-down from the history chart)
-- **Same-period (calendar-aligned) comparisons** on all four time-range cards
-  (Today / Week / Month / Year), plus year-over-year on the month card
-- **Best-day-per-period highlights** on the Week / Month / Year cards
-  (best day this week, best day last week, etc.)
-- **Hall of Fame**: all-time best day / week / month / year with subtle
-  amber glow when records are fresh. Tier-unlocked so a new install
-  doesn't blink permanently while it accumulates comparison data. Click a
-  tile to jump straight to that period in the history view
-- **History chart**: Week / Month / Year (with daily / weekly / monthly
-  toggle) and Multi-year. Click any weekly or monthly bar to drill into that
-  exact period — daily bars plus a total / average / best-day summary with
-  deltas vs. the previous period, the same period last year, and the
-  currently running period at equal progress (record pace) — then into a
-  single day's curve. Arrow buttons step through adjacent weeks/months.
-  Multi-year is served from long-term aggregate tables that **survive
-  retention pruning**
-- **Live grid CO₂ intensity** (optional) via Electricity Maps — each
-  measurement is stamped with the grid factor active at the time, so the
-  lifetime CO₂ value is historically accurate. Three-tier fallback
-  cascade (live → stale → rolling avg → static) keeps the display sensible
-  if the API is unavailable
-- **Smart status indicator** with dusk/standby detection (no false alarms
-  at night) and adaptive polling (slows down 10× when offline)
-- **Prometheus `/metrics`** endpoint for Grafana, Home Assistant, etc.
-- **Themes**: system / light / dark, persisted in `localStorage`
-- **PWA support**: installable on iOS and Android with branded icons
-- **UID-agnostic non-root container** — runs on Docker, Kubernetes, and
-  OpenShift with any UID
+The EZ1-M has a local HTTP API, but on its own it only knows *right now*
+and *today*. EZ1 Monitor polls it, keeps every reading in SQLite and turns
+them into the dashboard a balcony-plant owner actually wants: how today
+compares to yesterday *at the same time*, whether this is a record week,
+what the plant has saved so far and when it will have paid for itself.
 
-## Prerequisites
+Everything runs in one small container on your own hardware — a NAS, an
+Unraid box, a Raspberry Pi. Nothing leaves your network unless you opt in
+to live grid CO₂ data.
 
-1. EZ1-M is on your network with a known IP (DHCP reservation recommended)
-2. **Local API is enabled** on the inverter — in the AP EasyPower app under
-   the inverter settings, set "Local Mode" to **Continuous**
-3. The local API responds:
-   ```bash
-   curl http://<EZ1-IP>:8050/getDeviceInfo
-   ```
+## What you get
 
-## Quick Start
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/mobile-dark.webp">
+  <img align="right" width="220" src="docs/screenshots/mobile-light.webp" alt="EZ1 Monitor on a phone">
+</picture>
 
-### Docker
+- ⚡ **Live view.** Total and per-input power, today's peak with its time
+  and the average while producing — refreshed every 10 s while the sun is up.
+- 📈 **Every day, browsable.** Today's curve plus a day picker for every
+  recorded day in the retention window — or jump there from a history bar.
+- ⚖️ **Fair comparisons.** Today vs. yesterday until the same clock time;
+  week, month and year vs. the same point of the previous period, plus
+  year-over-year.
+- 🔍 **History drill-down.** Week, month, year (daily · weekly · monthly)
+  and all-time. Click a bar to open that week or month with totals, best day
+  and comparison pills — including a *record pace* check against your best
+  period.
+- 🏆 **Hall of Fame.** All-time best day, week, month and year, with a
+  subtle glow while a record is fresh.
+- 💶 **Savings & payback.** Realistic money saved (self-consumption share,
+  feed-in tariff, tariff history) and a payback card with the projected
+  break-even month.
+- 🌱 **CO₂ avoided.** Static factor or live grid intensity from
+  Electricity Maps, stamped onto every reading.
+- 🚦 **Smart status.** Tells dusk from a real outage — no false alarms at
+  night — and polls 10× slower while the inverter sleeps.
+- 📊 **Prometheus `/metrics`** for Grafana, Home Assistant & co.
+- 📱 **PWA, themes, two languages.** Installable on iOS and Android, light
+  and dark theme, English and German.
+- 🔒 **Self-contained.** All assets self-hosted (no CDN, no Google Fonts),
+  non-root and UID-agnostic image for Docker, Kubernetes and OpenShift.
+
+<br clear="right">
+
+### A closer look
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/drilldown-dark.webp" alt="Drill-down into a month with comparison pills"></td>
+    <td width="50%"><img src="docs/screenshots/records-dark.webp" alt="Hall of Fame and lifetime cards"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Drill-down.</b> Any week or month as daily bars — compared with the previous period, last year, and whether the running period is on record pace.</sub></td>
+    <td><sub><b>Records & lifetime.</b> All-time bests, total energy, CO₂ avoided, realistic savings and payback progress.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/year-weekly-dark.webp" alt="Year view with weekly bars"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><sub><b>The year at a glance.</b> 52 weekly bars across the year boundary — click one to drill into that week.</sub></td>
+  </tr>
+</table>
+
+<sub>All screenshots show synthetic demo data — see [Development → Screenshots](#screenshots).</sub>
+
+## Quickstart
+
+**You need** an EZ1-M on your network with a fixed IP (DHCP reservation)
+and its **local API switched on**: in the AP EasyPower app, set the
+inverter's *Local Mode* to **Continuous**. Check that it answers:
 
 ```bash
-docker run -d \
-  --name ez1-monitor \
-  --restart unless-stopped \
-  -p 8080:8080 \
-  -v ez1-data:/data \
+curl http://<EZ1-IP>:8050/getDeviceInfo
+```
+
+Then start the monitor:
+
+```bash
+docker run -d --name ez1-monitor --restart unless-stopped \
+  -p 8080:8080 -v ez1-data:/data \
   -e INVERTER_IP=<EZ1-IP> \
+  -e TZ=Europe/Berlin \
   ghcr.io/tehcsimon/ez1-monitor:latest
 ```
 
-`INVERTER_IP` is **required** — the container exits at startup without it.
-Open the dashboard at `http://<host>:8080`.
+Open `http://<host>:8080`. `INVERTER_IP` is required — the container exits
+without it. Set `TZ` to your timezone: it decides where days, weeks and
+months begin (the default is UTC).
 
-### Docker Compose
+### Install paths
 
-Edit `docker-compose.yml` (set `INVERTER_IP` and local values), then:
+| | How |
+|---|---|
+| **Docker** | The command above. Multi-arch image (`amd64`, `arm64`) for NAS, mini PC or Raspberry Pi. |
+| **Docker Compose** | Clone the repo, set `INVERTER_IP` and friends in [`docker-compose.yml`](docker-compose.yml), then `docker compose up -d`. |
+| **Unraid** | One click: add `https://github.com/TehcSimon/ez1-monitor` under *Apps → Settings → Template Repositories* and install **ez1-monitor** — or set it up by hand, see below. |
+| **Kubernetes / OpenShift** | UID-agnostic non-root image, works under OpenShift's restricted SCC. Snippet below. |
 
-```bash
-docker compose up -d
-```
-
-### Unraid
+<details>
+<summary><b>Unraid by hand</b></summary>
 
 1. Docker tab → **Add Container**
 2. Repository: `ghcr.io/tehcsimon/ez1-monitor:latest`
 3. Network Type: Bridge, Port `8080:8080`
 4. Path: `/mnt/user/appdata/ez1-monitor` → `/data`
-5. Set `INVERTER_IP` to your EZ1-M's IP
+5. Variables: `INVERTER_IP` = your EZ1-M's IP, `TZ` = your timezone
 6. Apply
 
-For one-click install, add this URL under **Apps → Settings → Template
-Repositories**: `https://github.com/TehcSimon/ez1-monitor`
+</details>
 
-### Kubernetes
-
-The image is UID-agnostic. Minimal pod snippet:
+<details>
+<summary><b>Kubernetes pod snippet</b></summary>
 
 ```yaml
 spec:
@@ -110,6 +153,7 @@ spec:
       image: ghcr.io/tehcsimon/ez1-monitor:latest
       env:
         - { name: INVERTER_IP, value: "192.168.1.100" }
+        - { name: TZ, value: "Europe/Berlin" }
       volumeMounts:
         - { name: data, mountPath: /data }
       ports:
@@ -118,152 +162,162 @@ spec:
         httpGet: { path: /health, port: 8080 }
 ```
 
-Works out of the box on OpenShift with the default restricted SCC.
+</details>
+
+## How it works
+
+```mermaid
+graph LR
+    EZ1["☀️ EZ1-M<br/>local API :8050"]
+    EM["🌍 Electricity Maps<br/>(optional)"]
+
+    subgraph Box["🐳 ez1-monitor"]
+        Poller["Poller<br/>every 60 s · adaptive"]
+        DB[("SQLite<br/>readings + aggregates")]
+        API["FastAPI :8080"]
+    end
+
+    UI["🖥️ Dashboard · 📱 PWA"]
+    Prom["📊 Prometheus · Grafana<br/>Home Assistant"]
+
+    EZ1 -->|"power & energy counters"| Poller
+    EM -.->|"grid g CO₂/kWh, hourly"| Poller
+    Poller -->|"stamped with CO₂ factor & price"| DB
+    DB --> API
+    API -->|"/api/*"| UI
+    API -->|"/metrics"| Prom
+```
+
+- **Every reading is stamped** with the CO₂ factor and electricity price
+  active at that moment. A tariff change only affects new production, and
+  with Electricity Maps the cleaner noon grid counts exactly when your
+  panels produce.
+- **Raw readings are pruned** after `RETENTION_DAYS` (default: two years).
+  Daily, monthly and yearly aggregates are kept forever — they feed the
+  all-time view, the Hall of Fame and drill-downs into any past week or month.
+- **Comparisons are calendar-aligned.** Tuesday 09:30 is compared with last
+  Tuesday 09:30, the 12th of a month with the 12th of the previous one —
+  never a half day against a full one.
 
 ## Configuration
 
-All configuration via environment variables.
+All configuration is done via environment variables.
 
-| Variable | Default | Description |
+| Variable | Default | What it does |
 |---|---|---|
 | `INVERTER_IP` | **required** | IP address or hostname of the EZ1-M |
-| `INVERTER_PORT` | `8050` | Local API port |
-| `POLL_INTERVAL` | `60` | Seconds between polls (auto-slowed 10× when offline) |
+| `TZ` | `Etc/UTC` | IANA timezone (e.g. `Europe/Berlin`) — where days, weeks and months begin |
+| `INVERTER_PORT` | `8050` | Port of the inverter's local API |
+| `POLL_INTERVAL` | `60` | Seconds between polls; 10× slower (max. 5 min) while the inverter is offline |
+| `PRICE_PER_KWH` | `0.35` | Your electricity price per kWh, stamped on every reading — update it when your tariff changes |
+| `CURRENCY` | `EUR` | ISO 4217 code for money formatting (`EUR`, `USD`, `CHF`, …) |
+| `SELF_CONSUMPTION_PCT` | `100` | Share (%) of production you use yourself; only affects money and payback |
+| `FEED_IN_TARIFF` | `0` | Compensation per fed-in kWh, same currency (often `0` for balcony plants) |
+| `INSTALL_COST` | `0` | Total installation cost; `> 0` shows the payback card |
+| `CO2_KG_PER_KWH` | `0.38` | Static grid CO₂ factor — the fallback without Electricity Maps |
+| `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Enables [live grid intensity](#live-grid-intensity-electricity-maps) |
+| `ELECTRICITY_MAPS_ZONE` | `DE` | Zone label for the UI (the actual zone is bound to the token) |
+| `RETENTION_DAYS` | `730` | Days of raw readings to keep (`0` = forever); aggregates are always kept |
+| `DEFAULT_LANG` | *(empty)* | Force `de` or `en`; empty = browser language |
 | `DB_PATH` | `/data/ez1.db` | SQLite database file |
-| `INSTALL_KWP` | `1.0` | Installed peak power in kWp |
-| `DEFAULT_LANG` | *(empty)* | `""` = auto-detect from browser, or force `de`/`en` |
-| `CURRENCY` | `EUR` | ISO 4217 code used for money formatting (e.g. `EUR`, `USD`, `CHF`) |
-| `PRICE_PER_KWH` | `0.35` | Local electricity price per kWh. Stamped on every measurement, so historical "money saved" stays accurate across tariff changes — update the value when your tariff changes and only new production is valued at the new price. |
-| `SELF_CONSUMPTION_PCT` | `100` | Estimated share (%) of production you actually self-consume. Without a battery/smart control you can't use 100% — the rest is fed in. Affects only the realistic "money saved" and amortization; the kWh and CO₂ figures are unchanged. `100` reproduces the previous behaviour. |
-| `FEED_IN_TARIFF` | `0` | Feed-in compensation per kWh for the share you don't self-consume (same currency as `PRICE_PER_KWH`). Commonly `0` for a balcony plant. |
-| `INSTALL_COST` | `0` | One-off total cost of your installation. When set (> 0), a "Payback" card shows how far your savings have repaid it, with a break-even highlight — and, once a full year of data exists, a projected break-even date. `0` hides the card. |
-| `CO2_KG_PER_KWH` | `0.38` | Static grid CO₂ factor (fallback when Electricity Maps is off or unavailable) |
-| `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Optional. Enables live grid CO₂ intensity. |
-| `ELECTRICITY_MAPS_ZONE` | `DE` | ISO country code shown as zone label in the UI (the actual zone is bound to the token in the portal) |
-| `TZ` | `Etc/UTC` | IANA timezone (e.g. `Europe/Berlin`) |
-| `RETENTION_DAYS` | `730` | Days to keep raw measurements. 0 = disable pruning. |
-| `LOG_LEVEL` | `INFO` | Python log level (DEBUG, INFO, WARNING) |
+| `INSTALL_KWP` | `1.0` | Installed peak power in kWp (currently only exposed via `/api/live`) |
+| `LOG_LEVEL` | `INFO` | Python log level (`DEBUG`, `INFO`, `WARNING`) |
 
-> **Security note:** No built-in authentication. Run on a trusted LAN only,
-> or put it behind a reverse proxy with auth before exposing it publicly.
+> **Security note:** there is no built-in authentication. Run it on a
+> trusted LAN, or put it behind a reverse proxy with auth before exposing
+> it publicly.
 
 ## Status indicator
 
-The dot in the top-right shows what the inverter is doing:
-
 | Indicator | Meaning |
 |---|---|
-| 🟢 **online** (pulsing) | Inverter responds, everything fine |
-| ⚪ **standby** (dim) | Offline, but production was already winding down (dusk, night, snow). No alarm. |
-| 🔴 **error** (pulsing) | Offline mid-production — real alarm |
-| ⚪ **no data** | Container just started, no successful poll yet |
+| 🟢 **online** (pulsing) | The inverter responds, everything is fine |
+| ⚪ **standby** (dim) | Offline, but production had already wound down (dusk, night, snow) — no alarm |
+| 🔴 **error** (pulsing) | Went offline mid-production — a real alarm |
+| ⚪ **no data** | Just started, no successful poll yet |
 | 🟠 **connection error** | The dashboard can't reach its own backend (network blip, container restarting) — says nothing about the inverter |
 
-Standby vs error is decided by the 5-minute rolling average power: below
-~5 W is treated as a graceful wind-down, above is treated as a problem.
+Standby vs. error is decided by how production looked when the inverter
+went quiet: an average below ~5 W over its last five minutes online is a
+graceful wind-down, anything above is an outage — and stays red until the
+inverter answers again.
 
-## Live grid CO₂ intensity (optional)
+## Savings, payback & CO₂
 
-By default the CO₂-avoided counter uses the static `CO2_KG_PER_KWH` factor.
-That's a yearly average and tends to overstate emissions because solar
-panels produce precisely when the grid is cleanest (sunny daylight hours).
+**Money saved** values every kWh at the price stamped on its reading.
+Without a battery you won't use all of it yourself: `SELF_CONSUMPTION_PCT`
+scales the savings to the share you consume, the fed-in rest earns
+`FEED_IN_TARIFF`. With a share below 100 %, the card shows the realistic
+figure and, below it, the ceiling at full self-consumption.
 
-With the Electricity Maps integration enabled, the container fetches the
-**live grid carbon intensity** for your zone hourly and **stamps each
-measurement** with the factor that was active at the time. The lifetime CO₂
-value is then a sum over all stamped measurements, which automatically
-gives solar production its correctly low-CO₂ profile.
+**Payback** (with `INSTALL_COST` set) shows how much of the installation
+has been earned back and highlights the break-even. Once a full year of
+data exists — shorter histories are skewed by the season — it also
+projects the month the installation will have paid for itself.
 
-### Setup
+**CO₂ avoided** uses the static `CO2_KG_PER_KWH` by default. That is a
+yearly average and tends to overstate it, because solar panels produce
+precisely when the grid is cleanest.
 
-1. Sign up at <https://www.electricitymaps.com/free-tier-api>.
-2. Choose the **Home Assistant** path — that's the free tier with permanent
-   API access. (Despite the name, the key works with any HTTP client.)
-3. Select your grid zone (e.g. `DE`). The zone is **locked for 30 days**
-   after first selection, so pick correctly.
-4. Set the env vars on your container:
-   ```
-   ELECTRICITY_MAPS_TOKEN=your_api_key_here
-   ELECTRICITY_MAPS_ZONE=DE
-   ```
-   `ELECTRICITY_MAPS_ZONE` is for the UI label only — the actual zone is
-   bound to your token server-side.
+### Live grid intensity (Electricity Maps)
 
-### Fallback cascade
+With a token, the container fetches your grid's live carbon intensity once
+an hour and stamps it onto every reading, so the lifetime CO₂ figure
+reflects the grid as it was when your panels produced.
 
-| Time since last successful poll | Source   | UI label                                  |
-|---------------------------------|----------|-------------------------------------------|
-| 0 – 6 h                         | `live`   | "Live (DE) · 117 g/kWh · 22:00"           |
-| 6 – 48 h                        | `stale`  | "Last value (DE) · 117 g/kWh · 12 h ago"  |
-| > 48 h                          | `avg`    | "Average (DE) · 248 g/kWh · over N polls" |
-| no token / no data ever         | `static` | "Static · 380 g/kWh"                      |
+1. Sign up at <https://www.electricitymaps.com/free-tier-api> and choose
+   the **Home Assistant** path — the free tier with permanent API access
+   (the key works with any HTTP client).
+2. Select your grid zone (e.g. `DE`). It is **locked for 30 days**, so pick
+   carefully.
+3. Set `ELECTRICITY_MAPS_TOKEN=<your key>` (and `ELECTRICITY_MAPS_ZONE=DE`
+   for the UI label — the real zone is bound to the token).
 
-The rolling average is built from every successful poll since container
-start, so it naturally reflects when the API was reachable.
+<details>
+<summary><b>Fallback cascade</b> — what the CO₂ card shows when the API is unavailable</summary>
 
-### Endpoint used
+| Time since the last successful poll | Source | UI label |
+|---|---|---|
+| 0 – 6 h | `live` | "Live (DE) · 117 g/kWh · 22:00" |
+| 6 – 48 h | `stale` | "Last value (DE) · 117 g/kWh · 12 h ago" |
+| > 48 h | `avg` | "Average (DE) · 248 g/kWh · over N polls" |
+| no token / no data ever | `static` | "Static · 380 g/kWh" |
 
-Free Home-Assistant tier endpoint (no `zone` parameter — zone is server-side):
+The average is built from every successful poll since the container
+started. Failed polls are retried with backoff (5 → 40 min). The container
+calls `GET https://api.electricitymap.org/v3/home-assistant` with your
+token — 1 request per hour against a limit of 50.
 
-```
-GET https://api.electricitymap.org/v3/home-assistant
-    -H "auth-token: <TOKEN>"
-```
+</details>
 
-Returns `data.carbonIntensity` in gCO₂eq/kWh plus `fossilFuelPercentage`
-and `countryCode`. Rate-limited to 50 req/h; the container polls hourly,
-so there's 50× headroom.
+## API & metrics
 
-## Long-term aggregates
+All endpoints return JSON except `/metrics`. Like the dashboard, they're
+unauthenticated — meant for the LAN.
 
-Raw measurements are pruned after `RETENTION_DAYS` (default 730 = 2 years),
-but their summaries are kept indefinitely in two tables:
-
-- `monthly_aggregates`: total kWh, peak W, days with data, energy-weighted
-  avg CO₂ factor and avg electricity price — per (year, month)
-- `yearly_aggregates`: same fields rolled up per year
-
-These are populated on container start (backfill from existing measurements)
-and kept current by a background task that refreshes the current month's
-aggregate hourly. The History chart's **Multi-year** view reads from them,
-so it shows every year you've collected data for — even after the raw rows
-have been pruned.
-
-## Themes
-
-Three theme modes via the toggle in the top bar:
-
-- **System** (default): follows the OS color scheme via `prefers-color-scheme`
-- **Light**: cool slate-white background with electric-blue accent
-- **Dark**: deep brown background with warm amber accent
-
-The choice persists in `localStorage`. Switching re-renders the charts
-with the active theme colors.
-
-## API Endpoints
-
-For integrations and scripts:
+<details>
+<summary><b>REST endpoints</b></summary>
 
 | Endpoint | Description |
 |---|---|
 | `GET /health` | Container health check |
 | `GET /api/live` | Latest measurement + device info + status + runtime config |
 | `GET /api/history?range=day\|week\|month\|year` | Historical data points |
-| `GET /api/history?range=day&date=YYYY-MM-DD` | Specific day's intraday curve |
-| `GET /api/history?range=year&granularity=monthly` | Year view aggregated by month |
-| `GET /api/history?range=year&granularity=weekly` | Year view aggregated by ISO week |
-| `GET /api/history?range=week&week=YYYY-Www` | A specific historical ISO week (daily bars + summary) |
-| `GET /api/history?range=month&month=YYYY-MM` | A specific historical month (daily bars + summary) |
+| `GET /api/history?range=day&date=YYYY-MM-DD` | A specific day's intraday curve |
+| `GET /api/history?range=year&granularity=monthly\|weekly` | Year view aggregated by month or ISO week |
+| `GET /api/history?range=week&week=YYYY-Www` | A specific ISO week (daily bars + summary) |
+| `GET /api/history?range=month&month=YYYY-MM` | A specific month (daily bars + summary) |
 | `GET /api/history?range=multiyear&granularity=monthly\|yearly` | All years |
 | `GET /api/stats` | Aggregated statistics with same-period and YoY comparisons |
 | `GET /api/highscores` | All-time best day/week/month/year with animation state |
-| `GET /api/aggregates` | Long-term yearly aggregates (survives retention) |
+| `GET /api/aggregates` | Long-term yearly aggregates (survive retention) |
 | `GET /api/aggregates?year=YYYY` | Monthly aggregates for a specific year |
-| `GET /metrics` | Prometheus-format metrics |
+| `GET /metrics` | Prometheus exposition format |
 
-All endpoints return JSON. `/metrics` returns Prometheus exposition format.
+</details>
 
-### Prometheus metrics
+<details>
+<summary><b>Prometheus metrics</b></summary>
 
 ```
 ez1_current_power_watts
@@ -282,298 +336,97 @@ ez1_status{state="online|standby|error|noData"}
 ez1_info{device_id="...", firmware="...", version="..."}
 ```
 
-No authentication. LAN-only by design — put it behind your reverse proxy
-with auth if you need to expose it publicly.
+</details>
 
-## Database
+## Data & backups
 
-SQLite at `/data/ez1.db` in WAL mode. With normal day/night cycles and
-60 s polling, expect ~20 MB per year on disk.
-
-Backups: copy the file while the container is running (WAL is safe for
-read-while-write). The Unraid appdata-backup plugin handles this
-automatically.
+A single SQLite file (`/data/ez1.db`, WAL mode). With normal day/night
+cycles and 60 s polling, expect about 20 MB per year. To back it up, copy
+the file — safe while the container is running. The Unraid appdata backup
+plugin handles this automatically.
 
 ## Upgrading
 
-### From v1.11.1 to v1.11.2
-
-No manual steps, no database migration — a one-fix release.
-
-- **The day view's prev arrow now stops at the first recorded day.** Like
-  the week/month navigation fixed in v1.11.1, the day picker's back arrow —
-  and the calendar popup — could walk into empty days before the
-  installation. The day endpoint now carries the same `first_data_date`
-  bound, and the earliest selectable day is the **later** of it and the
-  retention boundary, because the intraday curve reads raw measurements:
-  on installs younger than `RETENTION_DAYS` the first recorded day binds,
-  on older installs the retention window does, as before. A missing field
-  (older backend) keeps the retention-only behaviour, and the arrow's
-  disabled state now matches its click guard exactly (day-granular
-  comparison).
-
-### From v1.11.0 to v1.11.1
-
-No manual steps, no database migration — a small bug-fix release.
-
-- **The drill-down's prev arrow now stops at the first recorded period.**
-  The anchored week/month navigation could step back past the beginning of
-  the data into endless empty periods; the arrow now disables at the
-  week/month containing the earliest recorded day — the mirror of the
-  forward clamp at the running period. The anchored endpoints expose the
-  bound as `first_data_date` (from the daily aggregates, so it reaches
-  back beyond the raw-row retention window); a missing field, as with an
-  older backend, simply keeps the old unbounded behaviour.
-- **The running period's head figures now match its pills.** In the
-  running week/month view the total and per-day average were read from
-  the hourly-refreshed daily aggregates while the comparison pills used
-  live raw measurements — so the head number could trail the pill
-  percentages by up to an hour. Both now come from the same raw query.
-  The two sources share identical per-day `MAX(e1+e2)` semantics, so
-  completed days are unchanged and only today's staleness disappears.
-  With a `RETENTION_DAYS` shorter than the running period the aggregates
-  remain the source, since pruned raw rows would undercount.
-
-### From v1.10.0 to v1.11.0
-
-No manual steps, no database migration. A small feature release.
-
-- **Arrow navigation in the period drill-down.** The anchored week/month
-  view gains prev/next arrows around the period label (`‹ KW 26 / 2026 ›`),
-  matching the day picker — step through adjacent weeks or months without
-  going back to the overview first. The forward arrow stops at the
-  currently running period. "Zurück zur Übersicht" moved into the pill
-  row to make space.
-- **Fair comparisons in the running period.** With the running week/month
-  now one arrow-click away, its "vs. Vorwoche" / "vs. Vorjahr" pills no
-  longer compare a few days against full reference totals (which read
-  "−70 %" all week). They compare at equal clock progress — Tuesday 09:30
-  against the reference's Tuesday 09:30, from raw measurements, exactly
-  like the stat cards' "Vergleichszeitraum" — so today's partial
-  production counts on both sides and the pills are never a day behind.
-  Labeled `vs. Vorwoche (lfd.) +16.6 %`; the record-pace pill uses the
-  same basis. Only when a reference predates the retention window (raw
-  rows pruned) does the comparison fall back to completed days from the
-  daily aggregates.
-- Mobile polish: shorter pace-pill label (`vs. lfd. Woche`), the record
-  pill leads with its subject (`lfd. Woche: Rekordkurs! +10 %`), the
-  summary figures wrap as whole units instead of stranding a `· Bester
-  Tag` on the next line, and the pill stays amber in the light theme
-  instead of inheriting its blue accent.
-
-### From v1.9.1 to v1.10.0
-
-No manual steps, no database migration. A small feature release.
-
-- **Record-pace comparison in the period drill-down.** Anchored views of a
-  past week or month gain a third pill: **"vs. lfd. Woche/Monat (gleicher
-  Stand)"** — the anchored period cut down to today's progress (same
-  weekday resp. day-of-month) compared against the currently running
-  period. Opened from the Hall of Fame this answers the actual question:
-  is the running week on track to beat the record? A complete record week
-  is never compared against a half-run current week — equal progress only.
-  When the running period is actually beating the *all-time record's* pace,
-  the pill flips into a celebratory amber **"Rekordkurs!"** state with a
-  subtle glow (softer than the Hall-of-Fame record glow) and re-bases the
-  percentage on the record — `Rekordkurs! +10 %` instead of an alarming red
-  `−9 %`. The pill hides when the anchored period *is* the running one or
-  the running period has no data yet.
-- **Projected break-even date on the amortization card.** Once a full year
-  of data exists (shorter histories are seasonally biased, so nothing is
-  shown before that), the card shows the estimated month the installation
-  pays for itself: linear extrapolation of the average savings rate over
-  the whole history — `voraussichtlich amortisiert: März 2028`. The line
-  disappears at break-even, where the existing glow takes over.
-
-### From v1.9.0 to v1.9.1
-
-No manual steps, no database migration. A bug-fix release.
-
-- **The aggregate backfill no longer loses pre-retention history.** Months
-  and days older than `RETENTION_DAYS` without a stored aggregate (imported
-  databases, upgrades from pre-aggregate versions) were skipped at startup —
-  and their raw rows then pruned for good ~60 s later. They are now
-  aggregated from the remaining raw rows first; existing (frozen) aggregates
-  stay untouched, exactly as before.
-- **Year-view daily bars are now correct west of UTC.** The daily buckets of
-  `/api/history?range=year` grouped by UTC day, so at negative UTC offsets
-  each bar could show `max(day, next day)`. They now use the local calendar
-  day like every other daily query.
-- **Docs and templates pointed at a misspelled GitHub namespace**
-  (`ThecSimon` → `TehcSimon`): badge, `docker pull` commands, clone URL and
-  Unraid template links now match the real repository and GHCR image.
-- Device info (serial, firmware, AC limit) is retried after every successful
-  poll instead of only 10 attempts at startup — a container (re)started at
-  night no longer shows placeholders until the next restart.
-- `/metrics`: `ez1_pv1_today_kwh` / `ez1_pv2_today_kwh` are DB-derived like
-  the dashboard's PV cards and roll over to 0 at local midnight instead of
-  holding yesterday's counters overnight.
-- Stat windows are half-open, so a measurement landing exactly on a window
-  boundary (midnight) is no longer counted into two adjacent windows.
-- A calm amber **"connection error"** pill when the dashboard can't reach
-  its own backend, instead of the red inverter-error state.
-- Electricity Maps polling retries with backoff (5 → 40 min) after a failed
-  poll instead of silently waiting a full hour.
-- Charts update in place instead of being rebuilt on every refresh (no more
-  periodic flicker), and stale responses from rapid tab/day switches can no
-  longer overwrite the newest view.
-- Dropped a redundant SQLite index on `measurements` (the timestamp PRIMARY
-  KEY already is the table's btree).
-
-### From v1.8.x to v1.9.0
-
-No manual steps, no database migration. A feature release — everything is
-computed from the existing `daily_aggregates` table (which survives raw-row
-pruning), so anchored views of old weeks/months work even after their raw
-measurements are gone.
-
-- **Weekly history view.** The Year range on the History card gains a third
-  granularity, **Weekly** (≈52 ISO-week bars), alongside Daily and Monthly —
-  the most readable density between 365 daily and 12 monthly bars. Rolling
-  (last 52 weeks) and calendar (this year) both apply.
-- **Drill into any week or month.** Click a weekly or monthly bar to open that
-  exact period as daily bars, with a **summary line**: total, average per day,
-  best day, and data-gated deltas vs. the previous period and vs. the same
-  period last year. A "back" link returns to the overview; clicking a day
-  drills further into its intraday curve.
-- **Hall of Fame is now navigable.** Click the best-day / week / month tile to
-  jump to that period (best-year opens the all-years overview). Tiles are
-  keyboard-focusable buttons.
-- **Harmonized stat cards.** The Week card gains a year-over-year line ("same
-  ISO week last year") to match the Month card — both are now data-gated
-  (hidden on young installs with nothing to compare). The Month card's "full
-  month last year" line was removed; that figure is reachable via the new
-  drill-down.
-
-### From v1.7.0 to v1.8.0
-
-No manual steps, no database migration. Feature release: realistic "money
-saved" via `SELF_CONSUMPTION_PCT` + `FEED_IN_TARIFF` (defaults reproduce
-the old behaviour), the amortization card via `INSTALL_COST` (with
-break-even glow), a fixed/auto Y-axis toggle for the day chart, and two
-new Prometheus metrics (`ez1_money_saved`, `ez1_amortization_percent`).
-All three variables are described in the Configuration table above.
-
-### From v1.6.3 to v1.7.0
-
-No manual steps, no database migration. Feature release: rolling vs.
-calendar mode for the Week / Month / Year charts (persisted toggle on the
-History card), the device header now labels the inverter's output cap as
-**AC limit**, plus day-picker icon and layout polish.
-
-### From v1.6.2 to v1.6.3
-
-No manual steps, no database migration. Bug-fix/polish release: per-panel
-"today" kWh survives inverter standby (now DB-derived), shorter
-Hall-of-Fame glow durations, a stacked labeled device header, and mobile
-time-axis labels that no longer overlap.
-
-### From v1.6.1 to v1.6.2
-
-No manual steps, no database migration. Bug-fix/cleanup release: stat
-windows bucket by local calendar day (fixes double-counting in far-east
-timezones), the retention-boundary day stays frozen during backfill, the
-month-rollover gap in the hourly refresh was closed, frontend date parsing
-fixed for the Americas, and `PRICE_PER_KWH=0` / `RETENTION_DAYS=0` are
-honored by the UI. All frontend assets (Chart.js, flatpickr, fonts) are
-self-hosted since this release — the dashboard renders fully offline with
-zero third-party requests (which also removed the Google-Fonts GDPR
-issue).
-
-### From v1.6.0 to v1.6.1
-
-No manual steps. On first start the container runs idempotent `ALTER
-TABLE` migrations (electricity-price columns, `firmware` on
-`device_info`); existing rows keep `NULL` prices and fall back to the
-current `PRICE_PER_KWH`, like the CO₂ handling of pre-v1.4 rows. Notable
-fixes: long-term aggregates are no longer overwritten with partial values
-at the retention boundary, daily aggregates group by local calendar date,
-lifetime CO₂/money stay accurate after pruning, a Hall-of-Fame timer leak
-and an iOS scroll artifact were fixed, `ez1_info` exports the firmware
-under the correct label, and the image shrank by ~40 MB.
-
-### From v1.5.x to v1.6.x
-
-No manual steps. On first start the container creates the new
-`daily_aggregates` table and backfills it from existing measurements
-(typically 1-3 seconds, up to ~15 seconds on a fully populated 2-year
-install on a Raspberry Pi). Subsequent starts are instant. The new
-table powers the Hall of Fame card and the per-period "best day"
-references on the Week/Month/Year stat cards.
-
-### From v1.4.x to v1.5.x
-
-No manual steps and no database migration. v1.5 is an internal cleanup
-release — backend query consolidation, language-detection caching, and
-the first round of unit tests. Behavior, API, and UI are unchanged from
-v1.4.3.
-
-### From v1.3.x to v1.4.x
-
-No manual steps. On first start the container runs three idempotent
-`ALTER TABLE` migrations to add CO₂ columns, then backfills the new
-aggregate average columns from existing measurements. Old rows keep
-`NULL` CO₂ factors — the lifetime CO₂ calc handles that automatically by
-falling back to the static factor for the unmeasured portion.
-
-### From v1.0.x to v1.1.0+
-
-v1.1.0 changed the container user from root to UID 1000 (group 0). On
-most platforms this is transparent; existing `/data` volumes need a
-one-time permission fix:
-
-```bash
-sudo chown -R 1000:0 /path/to/ez1-data
-sudo chmod -R g=u   /path/to/ez1-data
-```
+Pull the new image and recreate the container — schema changes migrate
+automatically on startup. Version-by-version notes are in
+**[UPGRADING.md](UPGRADING.md)**.
 
 ## Troubleshooting
 
-**Container won't start, exits immediately** — Check logs
-(`docker logs ez1-monitor`). The most common cause is a missing or
-malformed `INVERTER_IP`.
+**The container exits right away** — check `docker logs ez1-monitor`. The
+most common cause is a missing or malformed `INVERTER_IP`.
 
-**Status stays "no data" or "error"** —
-1. Verify the inverter is reachable: `curl http://<EZ1-IP>:8050/getDeviceInfo`
-2. Confirm Local Mode is set to **Continuous** in the AP EasyPower app
+**The status stays "no data" or "error"** — make sure the inverter answers
+(`curl http://<EZ1-IP>:8050/getDeviceInfo`) and that *Local Mode* is set to
+**Continuous** in the AP EasyPower app.
 
-**Reset the database** —
-```bash
-docker compose down
-rm /path/to/ez1.db
-docker compose up -d
-```
+**Start over with an empty database** — stop the container, delete
+`ez1.db` (plus `ez1.db-wal` and `ez1.db-shm`) from the data volume, start
+it again.
 
 ## Development
 
 ```bash
 git clone https://github.com/TehcSimon/ez1-monitor.git
 cd ez1-monitor
-docker build --platform linux/amd64 -t ez1-monitor:local .
+
+# Tests: pure helpers + async integration tests on a temporary SQLite DB
+pip install -r requirements-dev.txt
+pytest
+
+# Build and run the image
+docker build -t ez1-monitor:local .
 docker run --rm -p 8080:8080 -e INVERTER_IP=<your-ip> ez1-monitor:local
 ```
 
-The GitHub Actions workflow runs the test suite and builds multi-arch
-images (`linux/amd64`, `linux/arm64`) on every push to `main`, pushing
-the result to GHCR.
+CI runs the test suite on every pull request and before every image build;
+pushes to `main` publish multi-arch images (`linux/amd64`, `linux/arm64`)
+to GHCR.
 
-### Tests
+### Screenshots
 
-Four suites: pure unit tests for the date-math helpers
-(`test_date_helpers.py`) and the money/amortization model
-(`test_amortization.py`), plus async integration tests
-(`test_aggregates.py`, `test_history.py`) that spin up a temporary SQLite
-database and verify the aggregate, history and Hall-of-Fame queries —
-including the retention-boundary freeze and the pre-retention backfill
-regression guards. Run them locally with:
+The screenshots in this README come from the real image running against
+synthetic data: a deterministic demo plant, a fake EZ1-M API and a pinned
+clock, captured with Playwright. To regenerate them into `docs/screenshots/`
+after a UI change:
 
 ```bash
-pip install -r requirements-dev.txt
-pytest
+tools/screenshots/run.sh
 ```
+
+### Repo layout
+
+```
+ez1-monitor/
+├── app/
+│   ├── main.py            # FastAPI app: config, endpoints, background tasks, /metrics
+│   ├── poller.py          # inverter polling, adaptive interval, offline markers
+│   ├── database.py        # SQLite schema, migrations, aggregates, all queries
+│   ├── co2.py             # Electricity Maps client + live/stale/avg/static resolver
+│   ├── money.py           # savings and payback model (pure)
+│   ├── date_helpers.py    # calendar and ISO-week math (pure)
+│   └── static/            # dashboard: index.html, app.js, i18n.js, style.css, vendored libs
+├── tests/                 # pytest suites
+├── tools/
+│   ├── generate_mock_db.py   # mock database for testing the Hall-of-Fame glow
+│   └── screenshots/          # demo data, fake inverter, Playwright → docs/screenshots/
+├── docs/screenshots/      # README images
+├── .unraid/               # Unraid template and icon
+├── Dockerfile             # multi-stage Alpine build, non-root, UID-agnostic
+├── docker-compose.yml
+└── UPGRADING.md           # release history and upgrade notes
+```
+
+## Acknowledgements
+
+Built on the shoulders of
+[apsystems-ez1](https://pypi.org/project/apsystems-ez1/) (Sonnenladen GmbH),
+[FastAPI](https://fastapi.tiangolo.com/),
+[Chart.js](https://www.chartjs.org/),
+[flatpickr](https://flatpickr.js.org/) and
+[Electricity Maps](https://www.electricitymaps.com/).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-Built for personal use with the APsystems EZ1-M. Not affiliated with APsystems.
+[MIT](./LICENSE). Built for personal use with the APsystems EZ1-M — not
+affiliated with APsystems.
