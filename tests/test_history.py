@@ -13,10 +13,21 @@ import pytest
 import pytest_asyncio
 
 from app.database import Database
-from app.date_helpers import iso_week_monday, iso_week_of
+from app.date_helpers import iso_week_monday, iso_week_of, iso_weeks_in_year
 
 
 class TestIsoWeekHelpers:
+
+    def test_weeks_in_year(self):
+        assert [iso_weeks_in_year(y) for y in (2020, 2024, 2025, 2026, 2027)] == [
+            53, 52, 52, 53, 52,
+        ]
+
+    def test_week_53_rolls_over_without_a_guard(self):
+        # Why the year-over-year comparisons check iso_weeks_in_year first:
+        # 2025 has no week 53, and the "Monday of 2025-W53" is really the
+        # Monday of 2026-W01 — a week that has data.
+        assert iso_week_monday(2025, 53).isocalendar()[:2] == (2026, 1)
 
     def test_monday_roundtrips(self):
         # iso_week_monday must return the Monday (isoweekday 1) of exactly that

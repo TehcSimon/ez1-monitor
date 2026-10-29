@@ -12,13 +12,23 @@ def iso_week_monday(iso_year: int, iso_week: int) -> date_cls:
 
     Mirrors the computation used in the Hall-of-Fame best-week query so the
     week boundaries are identical everywhere. Note: passing iso_week=53 for a
-    year that only has 52 ISO weeks yields a Monday in the next ISO year — the
-    caller's date-range lookup then simply finds no data, which is the desired
-    "gate it off" behaviour for the year-over-year comparison.
+    year that only has 52 ISO weeks silently rolls over to the Monday of
+    week 1 of the NEXT ISO year — a week that usually does have data. Check
+    iso_weeks_in_year() first wherever a week 53 can be looked up in the
+    previous year (the year-over-year comparisons).
     """
     jan4 = date_cls(iso_year, 1, 4)
     week1_monday = jan4 - timedelta(days=jan4.isoweekday() - 1)
     return week1_monday + timedelta(weeks=iso_week - 1)
+
+
+def iso_weeks_in_year(iso_year: int) -> int:
+    """Number of ISO weeks (52 or 53) in the given ISO year.
+
+    December 28 always falls into the last ISO week of its year, so its
+    week number is the year's week count.
+    """
+    return date_cls(iso_year, 12, 28).isocalendar()[1]
 
 
 def iso_week_of(d) -> tuple:

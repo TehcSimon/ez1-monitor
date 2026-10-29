@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, time, date as date_cls
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import (
@@ -21,7 +21,8 @@ from .database import Database
 from .poller import Poller
 from .co2 import CarbonState, resolve_current, poll_loop
 from .date_helpers import (
-    shift_year, last_day_of_month, iso_week_monday, same_progress_slice,
+    shift_year, last_day_of_month, iso_week_monday, iso_weeks_in_year,
+    same_progress_slice,
 )
 from .money import compute_money_saved, estimate_breakeven_date
 from . import __version__
@@ -431,8 +432,9 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     earlier, and vs. the currently RUNNING period at equal progress (the
     "record pace" pill — see below). All ranges are ISO 'YYYY-MM-DD'
     strings. A comparison with no data reports available=False so the
-    client hides that pill (young installs, the earliest period, or an ISO
-    week 53 that didn't exist last year).
+    client hides that pill (young installs, the earliest period). yoy_start
+    and yoy_end are None when the period has no counterpart a year earlier
+    (an ISO week 53 the previous year didn't have) — same result.
 
     In the RUNNING period's view the head figures (total, per-day average)
     come from the same live raw-measurement query as its comparison pills,
@@ -568,7 +570,8 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
         }
 
     prev = await ref_delta(prev_start, prev_end)
-    yoy = await ref_delta(yoy_start, yoy_end)
+    yoy = (await ref_delta(yoy_start, yoy_end)
+           if yoy_start else {"available": False})
 
     # Record-pace comparison — the mirror image of ref_delta: the anchored
     # PAST period cut to the running period's clock progress vs. the
@@ -722,16 +725,26 @@ async def get_history(
     # daily_aggregates, so old/pruned weeks still work) plus the summary.
     if range == "week" and week:
         iso_year, iso_week = int(week[:4]), int(week[6:8])
+        # The pattern admits weeks that don't exist (W00, a W53 the year
+        # doesn't have, year 0000): answer 422 instead of computing a
+        # nonsense period or failing deeper down with a 500.
+        if not (1 < iso_year < 9999 and 1 <= iso_week <= iso_weeks_in_year(iso_year)):
+            raise HTTPException(status_code=422, detail=f"No such ISO week: {week}")
         monday = iso_week_monday(iso_year, iso_week)
         sunday = monday + timedelta(days=6)
         prev_mon = monday - timedelta(days=7)
-        yoy_mon = iso_week_monday(iso_year - 1, iso_week)
+        # Same ISO week a year earlier — None for a week 53 the previous ISO
+        # year didn't have (iso_week_monday would roll over into week 1 of
+        # THIS year and compare against that).
+        yoy_mon = (iso_week_monday(iso_year - 1, iso_week)
+                   if iso_week <= iso_weeks_in_year(iso_year - 1) else None)
         points = await db.get_daily_series(monday.isoformat(), sunday.isoformat())
         summary = await _period_summary(
             "week",
             monday.isoformat(), sunday.isoformat(),
             prev_mon.isoformat(), (prev_mon + timedelta(days=6)).isoformat(),
-            yoy_mon.isoformat(), (yoy_mon + timedelta(days=6)).isoformat(),
+            yoy_mon.isoformat() if yoy_mon else None,
+            (yoy_mon + timedelta(days=6)).isoformat() if yoy_mon else None,
         )
         # Is this anchored week the all-time best? Gates the celebratory
         # "Rekordkurs" styling of the pace pill — beating the pace of some
@@ -759,6 +772,10 @@ async def get_history(
     # Anchored historical month: that month's daily bars plus the summary.
     if range == "month" and month:
         y, m = int(month[:4]), int(month[5:7])
+        # Same guard as the week anchor: month 00/13+ or year 0000 used to
+        # raise a ValueError in date() → 500.
+        if not (1 < y < 9999 and 1 <= m <= 12):
+            raise HTTPException(status_code=422, detail=f"No such month: {month}")
         first = date_cls(y, m, 1)
         last = last_day_of_month(datetime(y, m, 1)).date()
         p_year, p_month = (y - 1, 12) if m == 1 else (y, m - 1)
@@ -900,13 +917,19 @@ async def get_stats():
     same_month_ly_start = shift_year(this_month_start, -1)
     same_month_ly_until_today = shift_year(now, -1)
     # Same ISO week last year, up to the same weekday+time progress, for the
-    # week card's YoY line. An iso_week 53 that didn't exist last year yields a
-    # range with no data → the client gates that line off.
+    # week card's YoY line.
     iso_year_now, iso_week_now, _ = now.isocalendar()
-    same_week_ly_start = datetime.combine(
-        iso_week_monday(iso_year_now - 1, iso_week_now), time.min
-    )
-    same_week_ly_until = same_week_ly_start + (now - this_week_start)
+    if iso_week_now <= iso_weeks_in_year(iso_year_now - 1):
+        same_week_ly_start = datetime.combine(
+            iso_week_monday(iso_year_now - 1, iso_week_now), time.min
+        )
+        same_week_ly_until = same_week_ly_start + (now - this_week_start)
+    else:
+        # Week 53 without a week 53 last year: iso_week_monday would roll
+        # over into week 1 of THIS ISO year and the line would compare
+        # against that under a "KW 53 / <last year>" label. An empty window
+        # yields 0 kWh instead, which gates the line off client-side.
+        same_week_ly_start = same_week_ly_until = this_week_start
 
     # All energy windows we need for the four stat cards. Batched into a
     # single DB connection so we pay the connect cost once instead of 14
