@@ -172,14 +172,31 @@ class Database:
             row = await cur.fetchone()
             return dict(row) if row else None
 
-    async def get_recent_avg_power(self, seconds: int = 300) -> Optional[float]:
-        cutoff = int(datetime.now().timestamp()) - seconds
+    async def get_last_online_avg_power(self, seconds: int = 300) -> Optional[float]:
+        """Average total power over the `seconds` leading up to (and
+        including) the most recent ONLINE measurement, or None when there
+        is no online row at all.
+
+        Anchored at the last online reading rather than at "now": the status
+        logic asks how production looked when the inverter went quiet, and
+        that answer must not expire. The previous now-anchored window ran
+        empty five minutes into an outage — the poller writes no further
+        rows while the inverter is offline — so the mid-production "error"
+        alarm silently decayed into "standby". The inner query walks the
+        rowid btree backwards and stops at the first online row, so it
+        stays cheap on a large table.
+        """
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
                 """SELECT AVG(COALESCE(p1, 0) + COALESCE(p2, 0))
                    FROM measurements
-                   WHERE timestamp >= ? AND online = 1""",
-                (cutoff,),
+                   WHERE online = 1
+                     AND timestamp >= (
+                         SELECT timestamp FROM measurements
+                         WHERE online = 1
+                         ORDER BY timestamp DESC LIMIT 1
+                     ) - ?""",
+                (seconds,),
             )
             row = await cur.fetchone()
             return row[0] if row and row[0] is not None else None

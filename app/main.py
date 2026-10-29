@@ -160,7 +160,11 @@ async def compute_status() -> dict:
     if latest.get("online") and age < ONLINE_FRESH_SECONDS:
         return {"state": "online", "age_seconds": age, "recent_avg_w": None}
 
-    recent_avg = await db.get_recent_avg_power(DUSK_WINDOW_SECONDS)
+    # How was production winding down when the inverter went quiet? The
+    # window is anchored at the last online reading, so a mid-production
+    # outage stays "error" until the inverter is back instead of decaying
+    # into "standby" once the outage is older than the window.
+    recent_avg = await db.get_last_online_avg_power(DUSK_WINDOW_SECONDS)
     if recent_avg is None or recent_avg < DUSK_THRESHOLD_W:
         return {"state": "standby", "age_seconds": age, "recent_avg_w": recent_avg}
     return {"state": "error", "age_seconds": age, "recent_avg_w": recent_avg}

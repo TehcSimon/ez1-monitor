@@ -181,6 +181,40 @@ class TestProductionWindow:
         assert last is None
 
 
+class TestLastOnlineAvgPower:
+    """Status input: the average power right before the inverter went quiet.
+    Regression guard — the window used to be anchored at "now", so it ran
+    empty five minutes into an outage (the poller writes a single offline
+    marker, then nothing) and a mid-production "error" decayed to
+    "standby"."""
+
+    async def test_none_without_online_rows(self, db):
+        assert await db.get_last_online_avg_power(300) is None
+
+    async def test_outage_mid_production_stays_visible(self, db):
+        now = int(datetime.now().timestamp())
+        # Solid 400 W until an hour ago, then a single offline marker.
+        for t in range(now - 5400, now - 3600 + 1, 60):
+            await db.insert_measurement(t, 200, 200, 1.0, 1.0, 10, 10, online=True)
+        await db.insert_measurement(now - 3540, None, None, None, None, None, None,
+                                    online=False)
+        avg = await db.get_last_online_avg_power(300)
+        assert avg == pytest.approx(400.0)
+
+    async def test_dusk_wind_down_reads_low(self, db):
+        now = int(datetime.now().timestamp())
+        await db.insert_measurement(now - 7200, 200, 200, 2.0, 2.0, 10, 10, online=True)
+        for i, w in enumerate((6, 4, 2, 1, 0)):
+            await db.insert_measurement(now - 3600 + i * 60, w, 0, 2.1, 2.1, 10, 10,
+                                        online=True)
+        await db.insert_measurement(now - 3200, None, None, None, None, None, None,
+                                    online=False)
+        # Only the 5 minutes before the last online row count — the 400 W
+        # from two hours earlier must not lift the average.
+        avg = await db.get_last_online_avg_power(300)
+        assert avg == pytest.approx(13 / 5)
+
+
 class TestTodayPanelEnergy:
     """Per-panel "today" energy must come from the DB so it survives the
     inverter dropping to standby at night. Regression: the PV cards showed
