@@ -1,0 +1,97 @@
+# Reproducible README screenshots: synthetic history + a fake EZ1-M + the
+# real ez1-monitor image built from this checkout + Playwright. Run it via
+# tools/screenshots/run.sh, which starts from a clean stack and tears it
+# down again; the images land in docs/screenshots/.
+#
+# The whole setup runs on a pinned
+# clock (libfaketime in the containers, Playwright's clock in the browser),
+# so the shots look the same whenever they are taken — a sunny summer
+# afternoon instead of whatever the weather and time of day are right now.
+# See demo.py for the data model.
+name: ez1-screenshots
+
+x-clock: &clock
+  TZ: Europe/Berlin
+  LD_PRELOAD: /faketime/libfaketimeMT.so.1
+  FAKETIME: "@2026-07-04 15:10:00"
+
+# Built once (by demo-db), reused by the inverter and the monitor itself.
+x-monitor: &monitor
+  image: ez1-monitor:screenshots
+  pull_policy: never
+  environment: *clock
+  depends_on:
+    faketime: { condition: service_completed_successfully }
+
+services:
+  faketime:
+    # Same Alpine/musl base as the monitor image, so the library fits it.
+    image: python:3.14-alpine
+    volumes: [faketime:/faketime]
+    command: ["sh", "-c", "apk add -q --no-cache libfaketime && cp /usr/lib/faketime/*.so.1 /faketime/"]
+
+  demo-db:
+    <<: *monitor
+    build: ../..
+    pull_policy: build
+    volumes: [data:/data, faketime:/faketime:ro, ./:/tools:ro]
+    # Fresh database on every run.
+    command: ["sh", "-c", "rm -f /data/ez1.db* && python /tools/demo.py build-db /data/ez1.db"]
+    healthcheck: { disable: true }
+
+  inverter:
+    <<: *monitor
+    init: true
+    volumes: [faketime:/faketime:ro, ./:/tools:ro]
+    command: ["python", "/tools/demo.py", "serve"]
+    networks:
+      lan: { ipv4_address: 192.168.1.50 }   # shows up in the dashboard footer
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8050/getDeviceInfo"]
+      interval: 2s
+      retries: 30
+
+  app:
+    <<: *monitor
+    environment:
+      <<: *clock
+      INVERTER_IP: 192.168.1.50
+      DEFAULT_LANG: en
+      CURRENCY: EUR
+      PRICE_PER_KWH: "0.35"
+      SELF_CONSUMPTION_PCT: "70"
+      INSTALL_COST: "650"
+      INSTALL_KWP: "0.86"
+    volumes: [data:/data, faketime:/faketime:ro]
+    networks: [lan]
+    depends_on:
+      demo-db: { condition: service_completed_successfully }
+      inverter: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 2s
+      retries: 30
+
+  shoot:
+    # Ships the browsers but not the Python package — install the matching one.
+    image: mcr.microsoft.com/playwright/python:v1.52.0-noble
+    volumes: [./:/tools:ro, ../../docs/screenshots:/out]
+    command:
+      - sh
+      - -c
+      - >-
+        pip install -q --disable-pip-version-check --root-user-action=ignore
+        playwright==1.52.0 pillow==11.2.1
+        && python /tools/shoot.py http://app:8080 /out
+    networks: [lan]
+    depends_on:
+      app: { condition: service_healthy }
+
+volumes:
+  data:
+  faketime:
+
+networks:
+  lan:
+    ipam:
+      config: [{ subnet: 192.168.1.0/24 }]
