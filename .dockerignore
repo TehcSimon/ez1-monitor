@@ -28,6 +28,7 @@ requirements-dev.txt
 
 # Docs / meta files not needed at runtime
 README.md
+UPGRADING.md
 LICENSE
 docs/
 .github/
