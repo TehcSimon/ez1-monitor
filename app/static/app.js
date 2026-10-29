@@ -268,6 +268,7 @@ async function loadLive() {
     const data = await res.json();
 
     if (data.config) {
+      const prevLang = state.lang;
       state.lang = data.config.language || "en";
       state.locale = state.lang === "de" ? "de-DE" : "en-US";
       state.currency = data.config.currency || "USD";
@@ -285,12 +286,20 @@ async function loadLive() {
       state.feedInTariff = data.config.feed_in_tariff ?? 0;
       state.installCost = data.config.install_cost ?? 0;
 
-      window.i18n.applyTranslations(state.lang);
+      // Re-localize only when the language actually changed (the backend's
+      // DEFAULT_LANG overriding the browser guess init() rendered with).
+      // loadLive runs every 10 s while online, and ensureDayPicker()
+      // destroys + recreates flatpickr — doing that on every call closed an
+      // open calendar popup mid-selection.
+      if (state.lang !== prevLang) {
+        window.i18n.applyTranslations(state.lang);
+        updateHistoryModeIcon();   // re-localize the toggle tooltip
+        updateDayScaleIcon();      // re-localize the scale-toggle tooltip
+        updateThemeToggleIcon();   // re-localize the theme-toggle tooltip
+        ensureDayPicker();         // re-init picker with the new locale
+        updateDayPickerLabels();
+      }
       updateDynamicLabels();
-      updateHistoryModeIcon();   // re-localize the toggle tooltip
-      updateDayScaleIcon();      // re-localize the scale-toggle tooltip
-      ensureDayPicker();   // Re-init picker with new locale if needed
-      updateDayPickerLabels();
 
       document.getElementById("footer-inverter").textContent =
         data.config.inverter_ip;
@@ -828,7 +837,15 @@ function ensureDayPicker() {
   // repeated ensureDayPicker() calls (e.g. on language change).
   calBtn.onclick = (e) => {
     e.preventDefault();
-    if (dayPicker) dayPicker.open();
+    if (!dayPicker) return;
+    // The bounds were computed when the picker was created. Refresh them
+    // on open, so a dashboard left running past midnight can still select
+    // the new today (and the retention boundary moves along with it).
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    dayPicker.set("maxDate", now);
+    dayPicker.set("minDate", getEarliestSelectableDate());
+    dayPicker.open();
   };
 }
 
@@ -954,6 +971,13 @@ async function loadTodayChart() {
     // day picker is reachable without ever opening a drill-down, so it
     // must not depend on an anchored view having been loaded first.
     setFirstDataDate(data.first_data_date);
+    // Live view: keep the date label and arrow states current, so a
+    // dashboard left open past midnight rolls over to the new day with the
+    // chart (the label is otherwise only rendered on navigation).
+    if (state.viewedDay === null) {
+      renderDayPickerDisplay(null);
+      updateDayPickerButtons();
+    }
     const points = (data.points || []).filter(p => p.online);
     const labels = points.map(p => p.timestamp * 1000);
     const series = points.map(p => (p.p1 || 0) + (p.p2 || 0));
