@@ -46,10 +46,12 @@ to live grid CO₂ data.
   <img align="right" width="220" src="docs/screenshots/mobile-light.webp" alt="EZ1 Monitor on a phone">
 </picture>
 
-- ⚡ **Live view.** Total and per-input power, today's peak with its time
-  and the average while producing — refreshed every 10 s while the sun is up.
-- 📈 **Every day, browsable.** Today's curve plus a day picker for every
+- ⚡ **Live view.** Total and per-input power, refreshed every 10 s while the
+  sun is up and right away when you come back to the tab.
+- 📈 **Every day, browsable.** The day's curve plus a day picker for every
   recorded day in the retention window — or jump there from a history bar.
+- 🌤️ **Shading at a glance.** Peak, average and yield per panel and in total
+  for the selected day, with each panel as its own line in the curve.
 - ⚖️ **Fair comparisons.** Today vs. yesterday until the same clock time;
   week, month and year vs. the same point of the previous period, plus
   year-over-year.
@@ -64,8 +66,9 @@ to live grid CO₂ data.
   break-even month.
 - 🌱 **CO₂ avoided.** Static factor or live grid intensity from
   Electricity Maps, stamped onto every reading.
-- 🚦 **Smart status.** Tells dusk from a real outage — no false alarms at
-  night — and polls 10× slower while the inverter sleeps.
+- 🚦 **Smart status.** Tells dusk from a real outage and shrugs off a single
+  dropped poll — no false alarms — and polls 10× slower while the inverter
+  sleeps.
 - 📊 **Prometheus `/metrics`** for Grafana, Home Assistant & co.
 - 📱 **PWA, themes, two languages.** Installable on iOS and Android, light
   and dark theme, English and German.
@@ -209,7 +212,7 @@ All configuration is done via environment variables.
 | `TZ` | `Etc/UTC` | IANA timezone (e.g. `Europe/Berlin`) — where days, weeks and months begin |
 | `INVERTER_PORT` | `8050` | Port of the inverter's local API |
 | `POLL_INTERVAL` | `60` | Seconds between polls; 10× slower (max. 5 min) while the inverter is offline |
-| `PRICE_PER_KWH` | `0.35` | Your electricity price per kWh, stamped on every reading — update it when your tariff changes |
+| `PRICE_PER_KWH` | `0.35` | Your electricity price per kWh, stamped on every reading — update it when your [tariff changes](#changing-your-tariff) |
 | `CURRENCY` | `EUR` | ISO 4217 code for money formatting (`EUR`, `USD`, `CHF`, …) |
 | `SELF_CONSUMPTION_PCT` | `100` | Share (%) of production you use yourself; only affects money and payback |
 | `FEED_IN_TARIFF` | `0` | Compensation per fed-in kWh, same currency (often `0` for balcony plants) |
@@ -240,24 +243,38 @@ All configuration is done via environment variables.
 Standby vs. error is decided by how production looked when the inverter
 went quiet: an average below ~5 W over its last five minutes online is a
 graceful wind-down, anything above is an outage — and stays red until the
-inverter answers again.
+inverter answers again. A single dropped poll is neither: the inverter only
+counts as offline after three failed polls in a row.
 
 ## Savings, payback & CO₂
 
 **Money saved** values every kWh at the price stamped on its reading.
-Without a battery you won't use all of it yourself: `SELF_CONSUMPTION_PCT`
-scales the savings to the share you consume, the fed-in rest earns
-`FEED_IN_TARIFF`. With a share below 100 %, the card shows the realistic
-figure and, below it, the ceiling at full self-consumption.
+Production without a stamp, from before the monitor was set up, counts at
+the oldest stamped price. Without a battery you won't use all of it yourself:
+`SELF_CONSUMPTION_PCT` scales the savings to the share you consume, the
+fed-in rest earns `FEED_IN_TARIFF`. With a share below 100 %, the card shows
+the realistic figure and, below it, the ceiling at full self-consumption.
 
 **Payback** (with `INSTALL_COST` set) shows how much of the installation
 has been earned back and highlights the break-even. Once a full year of
 data exists — shorter histories are skewed by the season — it also
-projects the month the installation will have paid for itself.
+projects the month the installation will have paid for itself, from your
+average production so far at the current tariff.
 
 **CO₂ avoided** uses the static `CO2_KG_PER_KWH` by default. That is a
 yearly average and tends to overstate it, because solar panels produce
 precisely when the grid is cleanest.
+
+### Changing your tariff
+
+Update `PRICE_PER_KWH` and recreate the container, ideally the evening before
+the switch: nothing is produced overnight, so every kWh ends up at the right
+price. What has already been produced keeps its value. From then on the money
+card shows both prices ("avg €0.334 · now €0.28"), and the payback projection
+uses the new one.
+
+`SELF_CONSUMPTION_PCT` and `FEED_IN_TARIFF` work differently: they apply to
+the whole history, so changing them moves the money card right away.
 
 ### Live grid intensity (Electricity Maps)
 
@@ -300,10 +317,10 @@ unauthenticated — meant for the LAN.
 
 | Endpoint | Description |
 |---|---|
-| `GET /health` | Container health check |
+| `GET /health` | Health check: `503` if the poller has stalled, never because the inverter sleeps |
 | `GET /api/live` | Latest measurement + device info + status + runtime config |
 | `GET /api/history?range=day\|week\|month\|year` | Historical data points |
-| `GET /api/history?range=day&date=YYYY-MM-DD` | A specific day's intraday curve |
+| `GET /api/history?range=day&date=YYYY-MM-DD` | A specific day's intraday curve and per-panel figures |
 | `GET /api/history?range=year&granularity=monthly\|weekly` | Year view aggregated by month or ISO week |
 | `GET /api/history?range=week&week=YYYY-Www` | A specific ISO week (daily bars + summary) |
 | `GET /api/history?range=month&month=YYYY-MM` | A specific month (daily bars + summary) |

@@ -47,7 +47,7 @@
 
   <Config Name="Currency" Target="CURRENCY" Default="EUR" Mode="" Description="ISO 4217 currency code for the 'money saved' card, e.g. EUR, USD, CHF" Type="Variable" Display="always" Required="false" Mask="false">EUR</Config>
 
-  <Config Name="Electricity price per kWh" Target="PRICE_PER_KWH" Default="0.35" Mode="" Description="Your local electricity price per kWh (in the configured currency). Used for the 'money saved' calculation." Type="Variable" Display="always" Required="false" Mask="false">0.35</Config>
+  <Config Name="Electricity price per kWh" Target="PRICE_PER_KWH" Default="0.35" Mode="" Description="Your local electricity price per kWh (in the configured currency). Used for the 'money saved' calculation. Stamped on every reading: when your tariff changes, just update it here, and what has already been produced keeps its value." Type="Variable" Display="always" Required="false" Mask="false">0.35</Config>
 
   <Config Name="Self-consumption (%)" Target="SELF_CONSUMPTION_PCT" Default="100" Mode="" Description="Estimated share of production you actually self-consume (0-100). Without a battery or smart control you can't use 100 percent; the rest is fed into the grid. Affects only the realistic 'money saved' and amortization figures, not the kWh or CO2 numbers. 100 = previous behaviour." Type="Variable" Display="always" Required="false" Mask="false">100</Config>
 

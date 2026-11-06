@@ -35,7 +35,9 @@ services:
       - CURRENCY=EUR                     # ISO 4217 code, e.g. EUR / USD / CHF
 
       # --- Economic / environmental factors ---
-      - PRICE_PER_KWH=0.35               # local electricity price per kWh
+      - PRICE_PER_KWH=0.35               # local electricity price per kWh;
+                                         # stamped on every reading, so just
+                                         # update it when your tariff changes
       - SELF_CONSUMPTION_PCT=100         # % of production you self-consume;
                                          # 100 = old behaviour. The fed-in
                                          # remainder earns FEED_IN_TARIFF.

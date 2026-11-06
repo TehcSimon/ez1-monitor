@@ -30,6 +30,50 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.11.3 to v1.12.0
+
+No manual steps, no database migration.
+
+- **Peak and average moved to the day curve, and now come per panel.** The
+  curve's card shows peak (with its time), average and yield for PV 1, PV 2
+  and in total, for whichever day is selected, and draws each panel as a thin
+  line of its own, so shading stands out. The table's first column is the
+  legend: click an entry to hide or show that line (remembered per browser).
+- **The power bar's labels are visible.** The share of the AC limit and the
+  limit itself, below the bar in the live power card, had been cut off by a
+  layout bug since the first release.
+- **A tariff change no longer moves what's already produced.** The part of
+  the lifetime counter without a stamped price, usually production from before
+  the monitor was set up, followed `PRICE_PER_KWH`, so the money and payback
+  cards jumped when the tariff changed. It now stays at the oldest stamped
+  price. If you have changed your tariff in the past, the figure settles once
+  when you upgrade. After a change, the money card shows both prices
+  ("avg €0.334 · now €0.28"). See
+  [Changing your tariff](README.md#changing-your-tariff).
+- **The projected break-even uses the current tariff.** It extrapolates your
+  average production at what a kWh is worth today, instead of the average of
+  everything saved so far, which kept promising the old price after a change.
+- **One dropped poll is no outage.** A single failed request used to write an
+  offline marker, which turned the status red and paused polling for up to
+  five minutes. The inverter now counts as offline after three failed polls in
+  a row, and until then polling continues at the normal interval. As a side
+  effect, the status changes to standby at dusk two polls later than before
+  (two minutes at the default interval).
+- **Numbers follow the UI language**, including chart axes and tooltips:
+  1.234,56 in German, 1,234.56 in English. Energy drops its decimals from
+  1000 kWh on, and the lifetime cards move to two columns in windows narrower
+  than 1240 px, so their values no longer wrap.
+- **Fresh data when you come back.** Returning to the tab refreshes everything
+  right away, instead of showing old values until the next slow tick.
+- **`/health` reports the poller.** It now answers `503` when the poll loop has
+  died or stopped completing its cycles, and it used to always say OK. An
+  inverter asleep at night never fails it. Docker marks a stuck container as
+  unhealthy; a Kubernetes liveness probe restarts it.
+- **API changes.** `/api/stats` no longer has `peak_today_ts` and
+  `avg_w_during_production`; those figures are now in the `figures` object of
+  `/api/history?range=day`, per panel and for any day. `/api/stats` gains
+  `avg_price_per_kwh`. `peak_w_today` and the Prometheus metrics are unchanged.
+
 ## From v1.11.2 to v1.11.3
 
 No manual steps, no database migration — a bug-fix release.

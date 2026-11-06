@@ -20,9 +20,11 @@ from playwright.sync_api import sync_playwright
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://app:8080"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "/out")
 
-DESKTOP = {"width": 1360, "height": 900}
+# Tall enough for the whole dashboard shot: the page's background glow is fixed
+# to the viewport, and a shot reaching past it would show its edge.
+DESKTOP = {"width": 1360, "height": 1280}
 # Phone width, but tall enough to show the hero card and today's full curve.
-PHONE = {"width": 390, "height": 1120}
+PHONE = {"width": 390, "height": 1166}
 
 
 def backend_now() -> datetime:
