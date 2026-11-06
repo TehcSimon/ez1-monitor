@@ -936,13 +936,17 @@ class Database:
               "co2_g":     grams of CO2 over that share,
               "price_kwh": kWh with a known price,
               "price_sum": currency units over that share,
+              "oldest_price": earliest stamped monthly price, None if none,
             }
 
-        The caller combines each share with the static fallback for the
+        The caller combines each share with a fallback factor for the
         unmeasured remainder:
 
             unmeasured_kwh = total_kwh - measured_kwh
-            total          = measured + unmeasured_kwh * static_factor
+            total          = measured + unmeasured_kwh * fallback_factor
+
+        For CO2 that is the static CO2_KG_PER_KWH, for money oldest_price
+        (see money.compute_money_saved_full).
 
         Two sources are merged:
 
@@ -958,7 +962,7 @@ class Database:
 
         Months/rows where a factor is NULL (pre-v1.4 for CO2, pre-v1.6.1
         for price) contribute to neither share and thus fall back to the
-        static factor — over time both shares grow toward 100%.
+        fallback factor — over time both shares grow toward 100%.
         """
         month_start = datetime(current_year, current_month, 1)
         month_start_ts = int(month_start.timestamp())
@@ -1022,11 +1026,24 @@ class Database:
             )
             live = await cur2.fetchone()
 
+            # 3) The earliest stamped price. Monthly rows are frozen once
+            # their raw data is pruned, so this stays put no matter what
+            # PRICE_PER_KWH is set to later.
+            cur3 = await db.execute(
+                """SELECT avg_price_per_kwh
+                   FROM monthly_aggregates
+                   WHERE avg_price_per_kwh IS NOT NULL
+                   ORDER BY year ASC, month ASC
+                   LIMIT 1"""
+            )
+            oldest = await cur3.fetchone()
+
             return {
                 "co2_kwh":   float(agg["co2_kwh"])   + float(live["co2_kwh"]),
                 "co2_g":     float(agg["co2_g"])     + float(live["co2_g"]),
                 "price_kwh": float(agg["price_kwh"]) + float(live["price_kwh"]),
                 "price_sum": float(agg["price_sum"]) + float(live["price_sum"]),
+                "oldest_price": float(oldest[0]) if oldest else None,
             }
 
     async def get_breakeven_date(

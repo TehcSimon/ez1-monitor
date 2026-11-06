@@ -9,6 +9,28 @@ from math import ceil
 from typing import Optional
 
 
+def compute_money_saved_full(
+    price_sum: float, price_kwh: float, total_kwh: float,
+    oldest_price: Optional[float], current_price: float,
+) -> float:
+    """Lifetime money saved at 100% self-consumption.
+
+    price_sum is the value of the price_kwh that carry a stamped price (see
+    Database.get_lifetime_factor_split). The rest of the inverter's lifetime
+    counter has no price of its own: production from before the monitor was
+    set up or before stamping existed (v1.6.1), and whole days the monitor
+    was down. It is valued at oldest_price, the earliest stamped price:
+    almost all of that energy predates the first stamped reading, so this is
+    the best estimate we have, and unlike the current price it does not move
+    when the tariff changes. Valuing it at the current price re-priced that
+    energy on every tariff change, making the card jump although nothing had
+    been produced. Only while no month carries a stamped price yet (a fresh
+    install) does it fall back to current_price.
+    """
+    remainder_price = current_price if oldest_price is None else oldest_price
+    return price_sum + max(0.0, total_kwh - price_kwh) * remainder_price
+
+
 def compute_money_saved(
     money_saved_full: float, total_kwh: float,
     self_consumption_pct: float, feed_in_tariff: float,

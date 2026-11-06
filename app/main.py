@@ -24,7 +24,9 @@ from .date_helpers import (
     shift_year, last_day_of_month, iso_week_monday, iso_weeks_in_year,
     same_progress_slice,
 )
-from .money import compute_money_saved, estimate_breakeven_date
+from .money import (
+    compute_money_saved, compute_money_saved_full, estimate_breakeven_date,
+)
 from . import __version__
 
 logging.basicConfig(
@@ -977,14 +979,14 @@ async def get_stats():
     total_kwh = await db.get_total_energy()
 
     # CO2 saved and money saved: hybrid calculations that combine
-    # historically-accurate stamped factors with a static fallback for the
-    # portion of lifetime energy that predates the respective stamping
-    # (CO2 since v1.4, price since v1.6.1) or came in during API outages.
-    # Sourced from the long-term monthly aggregates (which survive
-    # retention pruning) plus the current month live from measurements —
-    # see Database.get_lifetime_factor_split. Over time the "measured"
-    # shares grow and the totals naturally migrate from "static guess" to
-    # "fully accurate", and they stay accurate after raw rows are pruned.
+    # historically-accurate stamped factors with a fallback for the portion
+    # of lifetime energy that predates the respective stamping (CO2 since
+    # v1.4, price since v1.6.1) or came in during API outages. Sourced from
+    # the long-term monthly aggregates (which survive retention pruning)
+    # plus the current month live from measurements — see
+    # Database.get_lifetime_factor_split. Over time the "measured" shares
+    # grow and the totals naturally migrate from "static guess" to "fully
+    # accurate", and they stay accurate after raw rows are pruned.
     split = await db.get_lifetime_factor_split(now.year, now.month)
     co2_kg = (
         split["co2_g"] / 1000.0
@@ -993,10 +995,11 @@ async def get_stats():
     # Theoretical money saved assuming 100% self-consumption (the pre-v1.8
     # behaviour): every produced kWh valued at the retail price active at the
     # time. Shown as the "what's possible" ceiling on the card's second
-    # subtitle line.
-    money_saved_full = (
-        split["price_sum"]
-        + max(0.0, total_kwh - split["price_kwh"]) * PRICE_PER_KWH
+    # subtitle line. Changing PRICE_PER_KWH only affects new production: what
+    # is already on the counter keeps its value, see compute_money_saved_full.
+    money_saved_full = compute_money_saved_full(
+        split["price_sum"], split["price_kwh"], total_kwh,
+        split["oldest_price"], PRICE_PER_KWH,
     )
     # Realistic money saved: only the self-consumed share offsets the retail
     # price; the fed-in remainder earns FEED_IN_TARIFF (default 0). scq=1

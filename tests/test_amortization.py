@@ -1,10 +1,12 @@
 """Tests for the v1.8 money-realism and amortization features.
 
-Two parts:
+Three parts:
   - compute_money_saved: a pure helper for the self-consumption / feed-in
     money model (no DB needed).
   - Database.get_breakeven_date: an integration test over a temp SQLite DB
     seeded with daily aggregates, like test_aggregates.py.
+  - Tariff changes: what stays and what moves when PRICE_PER_KWH is edited,
+    over a temp SQLite DB seeded the way the poller stamps its readings.
 
 compute_money_saved lives in app.money (a pure module, no FastAPI/inverter
 imports) so this test needs neither INVERTER_IP nor the apsystems-ez1 library.
@@ -17,7 +19,9 @@ import pytest
 import pytest_asyncio
 
 from app.database import Database
-from app.money import compute_money_saved, estimate_breakeven_date
+from app.money import (
+    compute_money_saved, compute_money_saved_full, estimate_breakeven_date,
+)
 
 
 # --- Pure money model -----------------------------------------------------
@@ -48,6 +52,29 @@ class TestComputeMoneySaved:
         # Out-of-range percentages are clamped to [0, 100].
         assert compute_money_saved(100.0, 500.0, 150, 0.0) == pytest.approx(100.0)
         assert compute_money_saved(100.0, 500.0, -10, 0.08) == pytest.approx(0.08 * 500.0)
+
+
+class TestComputeMoneySavedFull:
+
+    def test_stamped_energy_keeps_its_value(self):
+        # Everything stamped: neither fallback price plays a role.
+        assert compute_money_saved_full(35.0, 100.0, 100.0, 0.35, 0.28) == pytest.approx(35.0)
+
+    def test_remainder_is_valued_at_the_oldest_price(self):
+        # 100 kWh stamped, 400 kWh on the counter without a stamp.
+        assert compute_money_saved_full(35.0, 100.0, 500.0, 0.35, 0.28) == pytest.approx(175.0)
+
+    def test_fresh_install_falls_back_to_the_current_price(self):
+        # No stamped month yet, so there is no oldest price either.
+        assert compute_money_saved_full(0.0, 0.0, 500.0, None, 0.28) == pytest.approx(140.0)
+
+    def test_oldest_price_of_zero_is_a_price(self):
+        # PRICE_PER_KWH=0 is a legitimate setting; 0 must not read as "unset".
+        assert compute_money_saved_full(0.0, 100.0, 500.0, 0.0, 0.28) == pytest.approx(0.0)
+
+    def test_recorded_energy_beyond_the_counter_adds_nothing(self):
+        # Rounding can put the daily sums slightly above the lifetime counter.
+        assert compute_money_saved_full(35.0, 100.0, 99.0, 0.35, 0.28) == pytest.approx(35.0)
 
 
 # --- Break-even date (integration) ----------------------------------------
@@ -186,3 +213,102 @@ class TestEstimateBreakevenDate:
         first = self.TODAY - timedelta(days=400)
         assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY,
                                        earned_in_span=0.0) is None
+
+
+# --- Tariff changes (integration) -------------------------------------------
+
+class TestTariffChange:
+    """Editing PRICE_PER_KWH must only affect new production. Readings carry
+    the price stamped by the poller, and energy on the lifetime counter
+    without a stamp stays at the oldest stamped price. Regression guard: that
+    remainder used to follow the current price, so the money and payback
+    cards jumped on every tariff change although nothing had been produced."""
+
+    OLD, NEW = 0.35, 0.28
+
+    async def _seed(self, db: Database, day: date, kwh: float, price, lifetime: float) -> None:
+        """One reading whose power is proportional to the day's energy, so
+        the energy-weighted monthly price comes out exact."""
+        half = kwh / 2.0
+        ts = int(datetime(day.year, day.month, day.day, 12).timestamp())
+        await db.insert_measurement(
+            ts, p1=half * 100, p2=half * 100, e1=half, e2=half,
+            te1=lifetime / 2.0, te2=lifetime / 2.0, online=True, price_per_kwh=price,
+        )
+
+    async def _money(self, db: Database, current_price: float) -> float:
+        """The lifetime figure of /api/stats at the given PRICE_PER_KWH.
+        August 2024 is the "running" month of these tests."""
+        split = await db.get_lifetime_factor_split(2024, 8)
+        return compute_money_saved_full(
+            split["price_sum"], split["price_kwh"], await db.get_total_energy(),
+            split["oldest_price"], current_price,
+        )
+
+    async def test_editing_the_price_moves_nothing_already_produced(self, db):
+        # 400 kWh on the counter from before the monitor, 30 kWh recorded.
+        lifetime = 400.0
+        for d in range(1, 31):
+            lifetime += 1.0
+            await self._seed(db, date(2024, 6, d), 1.0, self.OLD, lifetime)
+        await db.recompute_month_aggregate(2024, 6)
+        expected = 430 * self.OLD
+        assert await self._money(db, self.OLD) == pytest.approx(expected)
+        assert await self._money(db, self.NEW) == pytest.approx(expected)
+
+    async def test_new_production_is_valued_at_the_new_price(self, db):
+        await self._seed(db, date(2024, 6, 1), 10.0, self.OLD, 410.0)
+        await db.recompute_month_aggregate(2024, 6)
+        before = await self._money(db, self.NEW)
+        # The running month is read live from the raw rows.
+        await self._seed(db, date(2024, 8, 1), 3.0, self.NEW, 413.0)
+        assert await self._money(db, self.NEW) == pytest.approx(before + 3 * self.NEW)
+
+    async def test_switch_inside_a_completed_month_is_exact(self, db):
+        lifetime, expected = 0.0, 0.0
+        for d in range(1, 31):
+            # Unequal days, so a plain average of the two prices would be off.
+            kwh = 5.0 if d % 2 else 1.0
+            price = self.OLD if d <= 20 else self.NEW
+            lifetime += kwh
+            expected += kwh * price
+            await self._seed(db, date(2024, 6, d), kwh, price, lifetime)
+        await db.recompute_month_aggregate(2024, 6)
+        assert await self._money(db, self.NEW) == pytest.approx(expected, abs=0.01)
+
+    async def test_pruned_months_keep_their_price(self, db):
+        await self._seed(db, date(2024, 5, 1), 10.0, self.OLD, 10.0)
+        await db.recompute_month_aggregate(2024, 5)
+        before = await self._money(db, self.NEW)
+        # Keep a current lifetime reading, as a running poller would.
+        now = datetime.now()
+        await db.insert_measurement(
+            int(now.timestamp()), p1=0, p2=0, e1=0, e2=0, te1=5.0, te2=5.0,
+            online=True, price_per_kwh=self.NEW,
+        )
+        assert await db.delete_old_measurements(1) == 1
+        assert await self._money(db, self.NEW) == pytest.approx(before)
+
+    async def test_unstamped_month_counts_as_remainder(self, db):
+        # A month from before stamping existed (v1.6.1), then a stamped one:
+        # the old month is valued at the earliest price actually known.
+        await self._seed(db, date(2024, 5, 1), 10.0, None, 10.0)
+        await db.recompute_month_aggregate(2024, 5)
+        await self._seed(db, date(2024, 6, 1), 10.0, self.OLD, 20.0)
+        await db.recompute_month_aggregate(2024, 6)
+        split = await db.get_lifetime_factor_split(2024, 8)
+        assert split["price_kwh"] == pytest.approx(10.0)
+        assert split["oldest_price"] == pytest.approx(self.OLD)
+        assert await self._money(db, self.NEW) == pytest.approx(20 * self.OLD)
+
+    async def test_oldest_price_ignores_later_tariffs(self, db):
+        await self._seed(db, date(2024, 6, 1), 10.0, self.NEW, 10.0)
+        await self._seed(db, date(2024, 5, 1), 10.0, self.OLD, 20.0)
+        await db.recompute_month_aggregate(2024, 6)
+        await db.recompute_month_aggregate(2024, 5)
+        split = await db.get_lifetime_factor_split(2024, 8)
+        assert split["oldest_price"] == pytest.approx(self.OLD)
+
+    async def test_no_stamped_month_reports_no_oldest_price(self, db):
+        split = await db.get_lifetime_factor_split(2024, 8)
+        assert split["oldest_price"] is None
