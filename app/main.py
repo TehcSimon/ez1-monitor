@@ -377,6 +377,11 @@ app = FastAPI(title="EZ1 Monitor", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
+    # Reports the poller, not the inverter: an inverter asleep at night is
+    # normal, and restarting the container (what a failing health check may
+    # lead to) wouldn't wake it anyway. A stuck poller is what a restart fixes.
+    if not poller.is_healthy():
+        raise HTTPException(status_code=503, detail="poller stalled")
     return {"status": "ok"}
 
 
