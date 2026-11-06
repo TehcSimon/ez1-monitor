@@ -1025,6 +1025,7 @@ main {
   font-variant-numeric: tabular-nums;
   margin-top: 4px;
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 .lifetime-card.accent .lifetime-value { color: var(--accent); }
 .lifetime-sub {
@@ -1261,12 +1262,16 @@ html[data-theme="light"] .info-tooltip-content {
 }
 
 /* ------------------------- Mobile polish ------------------------- */
+/* Four lifetime cards only where each value fits on its line */
+@media (max-width: 1240px) {
+  .lifetime-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 @media (max-width: 1024px) {
   .hero { grid-template-columns: 1fr; }
   .hero-side { flex-direction: row; }
   .pv-stat { flex: 1; }
   .comparison-grid { grid-template-columns: repeat(2, 1fr); }
-  .lifetime-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {

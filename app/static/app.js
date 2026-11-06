@@ -58,13 +58,24 @@ let todayReqSeq = 0;
 let historyReqSeq = 0;
 
 const fmt = {
-  power: v => (v == null ? "—" : Math.round(Number(v)).toString()),
-  kwh:   v => (v == null ? "—" : Number(v).toFixed(2)),
+  // Number in the UI language, with a fixed number of decimals: "1.234,56".
+  num: (v, decimals) => new Intl.NumberFormat(state.locale, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(v),
+  // Same, with only the decimals the value needs: "0,5" next to "1".
+  numUpTo: (v, decimals) => new Intl.NumberFormat(state.locale, {
+    maximumFractionDigits: decimals,
+  }).format(v),
+  power: v => (v == null ? "—" : fmt.num(Math.round(Number(v)), 0)),
+  // No decimals from 1000 kWh on: they say nothing at that size, and
+  // "1.234,56 kWh" outgrows the narrower cards.
+  kwh:   v => (v == null ? "—" : fmt.num(v, Math.abs(v) >= 1000 ? 0 : 2)),
   // Like kwh, but shows "—" for zero values too. Used for comparison fields
   // (yesterday, last week, etc.) where 0 means "no data in that period",
   // not "produced 0 kWh". Pairs with renderCompare()'s pill-hiding logic
   // for the same condition.
-  kwhOrDash: v => (v == null || Number(v) === 0 ? "—" : Number(v).toFixed(2)),
+  kwhOrDash: v => (v == null || Number(v) === 0 ? "—" : fmt.kwh(v)),
   pct:   v => (v == null ? "—" : Math.round(Number(v)).toString()),
   date:  ts => new Date(ts * 1000).toLocaleDateString(state.locale, {
     weekday: "long", day: "2-digit", month: "long", year: "numeric"
@@ -90,10 +101,7 @@ const fmt = {
       // Rounded first: 0.28 * 100 is 28.000000000000004 in floating point,
       // which would not count as a whole number and show up as "28,00 ct".
       const cents = Math.round(v * 1e6) / 1e4;
-      const display = Number.isInteger(cents)
-        ? cents.toFixed(0)
-        : cents.toFixed(2).replace(".", ",");
-      return `${display}\u00a0ct`;
+      return `${fmt.num(cents, Number.isInteger(cents) ? 0 : 2)}\u00a0ct`;
     }
     return new Intl.NumberFormat(state.locale, {
       style: "currency",
@@ -108,7 +116,7 @@ const fmt = {
   // differing from the current price (see updateDynamicLabels).
   priceAvg: v => {
     if (state.lang === "de" && state.currency === "EUR") {
-      return `${(v * 100).toFixed(1).replace(".", ",")}\u00a0ct`;
+      return `${fmt.num(v * 100, 1)}\u00a0ct`;
     }
     return new Intl.NumberFormat(state.locale, {
       style: "currency",
@@ -332,7 +340,7 @@ async function loadLive() {
       // Stacked, labeled meta lines. Values set via textContent only (labels
       // are translated separately via data-i18n) — no innerHTML, no XSS.
       document.getElementById("device-serial").textContent = deviceId;
-      document.getElementById("device-maxpower").textContent = `${state.maxPowerW} W`;
+      document.getElementById("device-maxpower").textContent = `${fmt.power(state.maxPowerW)} W`;
       document.getElementById("device-firmware").textContent = data.device.firmware || "—";
     }
 
@@ -368,7 +376,7 @@ async function loadLive() {
         document.getElementById("power-pct").textContent = "0 %";
       }
       document.getElementById("power-max").textContent =
-        window.i18n.t(state.lang, "hero.maxPower", { max: state.maxPowerW });
+        window.i18n.t(state.lang, "hero.maxPower", { max: fmt.power(state.maxPowerW) });
       if (m.timestamp) {
         document.getElementById("footer-last").textContent = fmt.time(m.timestamp);
       }
@@ -579,7 +587,8 @@ async function loadStats() {
     }
 
     document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
-    document.getElementById("lifetime-co2").textContent = (s.co2_saved_kg || 0).toFixed(1);
+    const co2Kg = s.co2_saved_kg || 0;
+    document.getElementById("lifetime-co2").textContent = fmt.num(co2Kg, co2Kg >= 1000 ? 0 : 1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
     state.avgPricePerKwh = s.avg_price_per_kwh ?? null;
     updateDynamicLabels();
@@ -701,22 +710,22 @@ function renderHofSlot(slotId, entry, tier) {
       month: "short",
       year: "numeric",
     });
-    kwhLabel = Number(v.total_kwh).toFixed(2);
+    kwhLabel = fmt.num(v.total_kwh, 2);
   } else if (tier === "week" && v.iso_year && v.iso_week) {
     // "KW 21 / 2026" (DE) or "Week 21 / 2026" (EN)
     const weekWord = state.lang === "de" ? "KW" : "Week";
     dateLabel = `${weekWord} ${v.iso_week} / ${v.iso_year}`;
-    kwhLabel = Number(v.total_kwh).toFixed(2);
+    kwhLabel = fmt.num(v.total_kwh, 2);
   } else if (tier === "month" && v.year && v.month) {
     const d = new Date(v.year, v.month - 1, 1);
     dateLabel = d.toLocaleDateString(state.locale, {
       month: "long",
       year: "numeric",
     });
-    kwhLabel = Number(v.total_kwh).toFixed(1);
+    kwhLabel = fmt.num(v.total_kwh, 1);
   } else if (tier === "year" && v.year) {
     dateLabel = String(v.year);
-    kwhLabel = Number(v.total_kwh).toFixed(0);
+    kwhLabel = fmt.num(v.total_kwh, 0);
   }
 
   if (dateEl) dateEl.textContent = dateLabel;
@@ -1231,7 +1240,7 @@ function renderWeeklyHistory(data) {
         legend: { display: false },
         tooltip: tooltipStyle({
           title: items => { const w = weeks[items[0].dataIndex]; return w ? `${wkWord} ${w.iso_week} / ${w.iso_year}` : ""; },
-          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          label: item => ` ${fmt.kwh(item.parsed.y)} kWh`,
           afterLabel: () => window.i18n.t(state.lang, "chart.clickForWeekDetail"),
         }),
         yearBoundary: { boundaries },
@@ -1242,7 +1251,7 @@ function renderWeeklyHistory(data) {
           if (stride > 1 && idx % stride !== 0) return "";
           const w = weeks[idx]; return w ? `${wkWord}${w.iso_week}` : "";
         } } },
-        y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
+        y: { beginAtZero: true, ticks: { callback: v => fmt.numUpTo(v, 2) + " kWh" } },
       },
     },
     plugins: [yearBoundaryPlugin],
@@ -1277,7 +1286,7 @@ function renderAnchoredDaily(data) {
         legend: { display: false },
         tooltip: tooltipStyle({
           title: items => new Date(items[0].label + "T00:00:00").toLocaleDateString(state.locale, { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),
-          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          label: item => ` ${fmt.kwh(item.parsed.y)} kWh`,
           afterLabel: () => window.i18n.t(state.lang, "chart.clickForDayDetail"),
         }),
       },
@@ -1288,7 +1297,7 @@ function renderAnchoredDaily(data) {
           if (stride > 1 && idx % stride !== 0) return "";
           return new Date(lbl + "T00:00:00").toLocaleDateString(state.locale, { day: "2-digit", month: "2-digit" });
         } } },
-        y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
+        y: { beginAtZero: true, ticks: { callback: v => fmt.numUpTo(v, 2) + " kWh" } },
       },
     },
   }, chartSig("anchored"));
@@ -1424,7 +1433,7 @@ function renderSummaryDelta(elId, delta, labelKey, opts) {
     const chaseKey = opts.kind === "week"
       ? "summary.recordPaceWeek" : "summary.recordPaceMonth";
     const chaseSign = delta.running_delta_pct > 0 ? "+" : "";
-    el.textContent = `${window.i18n.t(state.lang, chaseKey)} ${chaseSign}${delta.running_delta_pct} %`;
+    el.textContent = `${window.i18n.t(state.lang, chaseKey)} ${chaseSign}${fmt.numUpTo(delta.running_delta_pct, 1)} %`;
     el.className = "summary-pill chase";
     return;
   }
@@ -1434,7 +1443,7 @@ function renderSummaryDelta(elId, delta, labelKey, opts) {
   let label = window.i18n.t(state.lang, labelKey);
   if (delta.same_progress) label += " " + window.i18n.t(state.lang, "summary.samePoint");
   const sign = delta.delta_pct > 0 ? "+" : "";
-  el.textContent = `${label} ${sign}${delta.delta_pct} %`;
+  el.textContent = `${label} ${sign}${fmt.numUpTo(delta.delta_pct, 1)} %`;
   el.className = "summary-pill " + (delta.delta_pct > 0 ? "up" : delta.delta_pct < 0 ? "down" : "");
 }
 
@@ -1572,12 +1581,12 @@ function renderYearlyHistory(data) {
         legend: { display: false },
         tooltip: tooltipStyle({
           title: items => items[0].label,
-          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          label: item => ` ${fmt.kwh(item.parsed.y)} kWh`,
         }),
       },
       scales: {
         x: { ticks: { maxRotation: 0, autoSkip: true } },
-        y: { beginAtZero: true, ticks: { callback: v => v + " kWh" } },
+        y: { beginAtZero: true, ticks: { callback: v => fmt.numUpTo(v, 2) + " kWh" } },
       },
     },
   }, chartSig("yearly"));
@@ -1674,7 +1683,7 @@ function renderDailyHistory(data, isYear) {
           title: items => new Date(items[0].label + "T00:00:00").toLocaleDateString(state.locale, {
             weekday: "short", day: "2-digit", month: "short", year: "numeric",
           }),
-          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          label: item => ` ${fmt.kwh(item.parsed.y)} kWh`,
           afterLabel: () => window.i18n.t(state.lang, "chart.clickForDayDetail"),
         }),
         yearBoundary: { boundaries },
@@ -1717,7 +1726,7 @@ function renderDailyHistory(data, isYear) {
         },
         y: {
           beginAtZero: true,
-          ticks: { callback: v => v + " kWh" },
+          ticks: { callback: v => fmt.numUpTo(v, 2) + " kWh" },
         },
       },
     },
@@ -1772,7 +1781,7 @@ function renderMonthlyHistory(data) {
         legend: { display: false },
         tooltip: tooltipStyle({
           title: items => fmt.monthYear(items[0].label),
-          label: item => ` ${item.parsed.y.toFixed(2)} kWh`,
+          label: item => ` ${fmt.kwh(item.parsed.y)} kWh`,
           afterLabel: () => window.i18n.t(state.lang, "chart.clickForMonthDetail"),
         }),
         yearBoundary: { boundaries },
@@ -1797,7 +1806,7 @@ function renderMonthlyHistory(data) {
         },
         y: {
           beginAtZero: true,
-          ticks: { callback: v => v + " kWh" },
+          ticks: { callback: v => fmt.numUpTo(v, 2) + " kWh" },
         },
       },
     },
@@ -1850,7 +1859,7 @@ function timeChartOptions(timeFormat) {
         title: items => new Date(items[0].parsed.x).toLocaleString(state.locale, {
           hour: "2-digit", minute: "2-digit",
         }),
-        label: item => ` ${Math.round(item.parsed.y)} W`,
+        label: item => ` ${fmt.power(item.parsed.y)} W`,
       }),
     },
     scales: {
@@ -1874,7 +1883,7 @@ function timeChartOptions(timeFormat) {
         suggestedMax: state.dayScaleMode === "fixed"
           ? (state.maxPowerW || 800) + 50
           : undefined,
-        ticks: { callback: v => v + " W" },
+        ticks: { callback: v => fmt.numUpTo(v, 2) + " W" },
       },
     },
   };
