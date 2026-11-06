@@ -2160,6 +2160,27 @@ function scheduleTimers() {
   highscoresTimer = setInterval(loadHighscores, histInterval * 5);
 }
 
+// Browsers throttle the timers of hidden tabs and phones suspend them
+// altogether, so a page you come back to can be hours old and would only catch
+// up with its next slow tick. Refresh right away instead. The gap keeps quick
+// tab switching from firing a burst of requests; restarting the timers keeps
+// their next tick from repeating what was just fetched.
+const RETURN_REFRESH_MIN_GAP = 10_000;
+let lastReturnRefresh = 0;
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  const now = Date.now();
+  if (now - lastReturnRefresh < RETURN_REFRESH_MIN_GAP) return;
+  lastReturnRefresh = now;
+  loadLive();
+  loadStats();
+  loadHighscores();
+  if (state.viewedDay === null) loadTodayChart();
+  loadHistoryChart(state.currentRange);
+  scheduleTimers();
+});
+
 
 async function init() {
   // Translate static UI text and initialize the day picker BEFORE the first
