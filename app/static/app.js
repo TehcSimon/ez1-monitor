@@ -370,9 +370,6 @@ async function loadLive() {
         document.getElementById("current-power").textContent = fmt.power(totalW);
         document.getElementById("pv1-power").textContent = fmt.power(m.p1);
         document.getElementById("pv2-power").textContent = fmt.power(m.p2);
-        // Per-panel "kWh heute" is intentionally NOT set here. It's rendered
-        // by loadStats() from DB-derived day totals so it persists after the
-        // inverter drops to standby at night (the live e1/e2 are null then).
         const pct = Math.min(100, (totalW / state.maxPowerW) * 100);
         document.getElementById("power-bar").style.width = pct + "%";
         document.getElementById("power-pct").textContent = fmt.pct(pct) + " %";
@@ -559,13 +556,6 @@ async function loadStats() {
     // The "last year total" row stays visible at all times for visual
     // consistency with the other stat cards. Empty values show as "—".
     renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
-
-    // Per-panel production today — DB-derived, so it stays correct after the
-    // inverter goes to standby at night (see loadLive for why it's here).
-    const pv1e = document.getElementById("pv1-energy");
-    const pv2e = document.getElementById("pv2-energy");
-    if (pv1e) pv1e.textContent = fmt.kwh(s.pv1_kwh_today);
-    if (pv2e) pv2e.textContent = fmt.kwh(s.pv2_kwh_today);
 
     document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
     const co2Kg = s.co2_saved_kg || 0;

@@ -19,7 +19,6 @@ const TRANSLATIONS = {
       label: "Aktuelle Leistung",
       pv1: "PV 1",
       pv2: "PV 2",
-      energyToday: "kWh heute",
       maxPower: "/ {max} W",
     },
     chart: {
@@ -152,7 +151,6 @@ const TRANSLATIONS = {
       label: "Current Power",
       pv1: "PV 1",
       pv2: "PV 2",
-      energyToday: "kWh today",
       maxPower: "/ {max} W",
     },
     chart: {

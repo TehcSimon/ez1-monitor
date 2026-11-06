@@ -400,7 +400,7 @@ class Database:
         e1/e2 are the inverter's daily-resetting energy counters, so the
         per-panel day total is MAX over today's online rows. Reading this
         from the database (rather than the live inverter reading) means the
-        PV cards keep showing today's production after the inverter drops to
+        metrics keep reporting today's production after the inverter drops to
         standby at night. Returns (0.0, 0.0) when there's no production yet
         today, matching the "today total" energy card.
         """

@@ -489,13 +489,6 @@ main {
   white-space: nowrap;
 }
 
-.pv-energy {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-}
-
 /* ------------------------- Charts ------------------------- */
 .chart-card { padding: 24px; }
 
