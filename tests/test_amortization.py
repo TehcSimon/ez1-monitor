@@ -21,7 +21,7 @@ import pytest_asyncio
 from app.database import Database
 from app.money import (
     average_price_per_kwh, compute_money_saved, compute_money_saved_full,
-    estimate_breakeven_date,
+    estimate_breakeven_date, value_of_new_kwh,
 )
 
 
@@ -188,51 +188,70 @@ class TestEstimateBreakevenDate:
     TODAY = date(2026, 7, 7)
 
     def test_linear_extrapolation(self):
-        # 400 saved over exactly 2 years → rate = 400/730 per day.
+        # 1000 kWh over exactly 2 years at 0.40/kWh → rate = 400/730 per day.
         # Remaining 400 → another 730 days.
         first = self.TODAY - timedelta(days=730)
-        eta = estimate_breakeven_date(800.0, 400.0, first, self.TODAY)
+        eta = estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 1000.0, 0.40)
         assert eta == self.TODAY + timedelta(days=730)
 
     def test_remaining_days_round_up(self):
-        # 300 saved over 400 days → rate 0.75/day; remaining 100 → 133.33
-        # days, rounded UP to 134 (never promise an earlier date).
+        # 1000 kWh over 400 days at 0.30/kWh → rate 0.75/day; remaining 100 →
+        # 133.33 days, rounded UP to 134 (never promise an earlier date).
         first = self.TODAY - timedelta(days=400)
-        eta = estimate_breakeven_date(400.0, 300.0, first, self.TODAY)
+        eta = estimate_breakeven_date(400.0, 300.0, first, self.TODAY, 1000.0, 0.30)
         assert eta == self.TODAY + timedelta(days=134)
 
     def test_gated_below_one_year_of_data(self):
         # 364 days of history → seasonally biased, no estimate.
         first = self.TODAY - timedelta(days=364)
-        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY) is None
+        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 1000.0, 0.40) is None
         # Exactly 365 days → estimate appears.
         first = self.TODAY - timedelta(days=365)
-        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY) is not None
+        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 1000.0, 0.40) is not None
 
     def test_none_when_already_amortized(self):
         # The real break-even date (get_breakeven_date) takes over here.
         first = self.TODAY - timedelta(days=800)
-        assert estimate_breakeven_date(800.0, 800.0, first, self.TODAY) is None
-        assert estimate_breakeven_date(800.0, 900.0, first, self.TODAY) is None
+        assert estimate_breakeven_date(800.0, 800.0, first, self.TODAY, 1000.0, 0.40) is None
+        assert estimate_breakeven_date(800.0, 900.0, first, self.TODAY, 1000.0, 0.40) is None
 
     def test_none_without_cost_or_savings(self):
         first = self.TODAY - timedelta(days=800)
-        assert estimate_breakeven_date(0.0, 100.0, first, self.TODAY) is None
-        assert estimate_breakeven_date(800.0, 0.0, first, self.TODAY) is None
+        assert estimate_breakeven_date(0.0, 100.0, first, self.TODAY, 1000.0, 0.40) is None
+        assert estimate_breakeven_date(800.0, 0.0, first, self.TODAY, 1000.0, 0.40) is None
 
-    def test_rate_uses_only_savings_earned_in_the_recorded_span(self):
+    def test_rate_ignores_savings_from_before_the_recorded_span(self):
         # 400 saved in total, but 200 of it predates the monitor (lifetime
-        # counter). Over the 365 recorded days only 200 were earned → the
-        # remaining 400 take 730 days, not 365.
+        # counter). The 365 recorded days only hold 500 kWh = 200 at 0.40/kWh
+        # → the remaining 400 take 730 days, not 365.
         first = self.TODAY - timedelta(days=365)
-        eta = estimate_breakeven_date(800.0, 400.0, first, self.TODAY,
-                                      earned_in_span=200.0)
+        eta = estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 500.0, 0.40)
         assert eta == self.TODAY + timedelta(days=730)
 
-    def test_nothing_earned_in_span_gives_no_estimate(self):
+    def test_future_production_is_valued_at_the_current_tariff(self):
+        # Regression guard: after a tariff change, the date used to keep
+        # following the average of everything saved so far. Same savings and
+        # same production at half the price → twice the remaining time.
+        first = self.TODAY - timedelta(days=730)
+        at_old = estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 1000.0, 0.40)
+        at_new = estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 1000.0, 0.20)
+        assert at_old == self.TODAY + timedelta(days=730)
+        assert at_new == self.TODAY + timedelta(days=1460)
+
+    def test_no_savings_rate_gives_no_estimate(self):
         first = self.TODAY - timedelta(days=400)
-        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY,
-                                       earned_in_span=0.0) is None
+        # Nothing recorded (e.g. only unusable days), or kWh worth nothing.
+        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 0.0, 0.40) is None
+        assert estimate_breakeven_date(800.0, 400.0, first, self.TODAY, 1000.0, 0.0) is None
+
+
+class TestValueOfNewKwh:
+
+    def test_full_self_consumption_is_the_retail_price(self):
+        assert value_of_new_kwh(0.28, 100, 0.08) == pytest.approx(0.28)
+
+    def test_partial_self_consumption_weighs_in_the_feed_in_tariff(self):
+        assert value_of_new_kwh(0.28, 70, 0.08) == pytest.approx(0.7 * 0.28 + 0.3 * 0.08)
 
 
 # --- Tariff changes (integration) -------------------------------------------

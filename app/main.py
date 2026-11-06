@@ -26,7 +26,7 @@ from .date_helpers import (
 )
 from .money import (
     average_price_per_kwh, compute_money_saved, compute_money_saved_full,
-    estimate_breakeven_date,
+    estimate_breakeven_date, value_of_new_kwh,
 )
 from . import __version__
 
@@ -1040,25 +1040,19 @@ async def get_stats():
                     pass
         else:
             # Not amortized yet → projected break-even date, linearly
-            # extrapolated from the average savings rate over the whole
-            # history. Only after a full year of data (AMORT_ETA_MIN_DAYS);
-            # once broken even the real date takes over above.
+            # extrapolated from the average production over the whole history
+            # and valued at the current tariff. Only after a full year of data
+            # (AMORT_ETA_MIN_DAYS); once broken even the real date takes over
+            # above.
             extent = await db.get_data_extent()
             if extent["first_date"]:
                 try:
                     first_date = date_cls.fromisoformat(extent["first_date"])
-                    # money_saved is valued from the inverter's lifetime
-                    # counter, which also holds production from before the
-                    # monitor was set up. Only the share earned inside the
-                    # recorded history describes the savings RATE.
-                    earned_in_span = (
-                        money_saved * min(1.0, extent["recorded_kwh"] / total_kwh)
-                        if total_kwh > 0 else 0.0
-                    )
                     eta = estimate_breakeven_date(
                         INSTALL_COST, money_saved, first_date, now.date(),
+                        extent["recorded_kwh"],
+                        value_of_new_kwh(PRICE_PER_KWH, SELF_CONSUMPTION_PCT, FEED_IN_TARIFF),
                         min_days=AMORT_ETA_MIN_DAYS,
-                        earned_in_span=earned_in_span,
                     )
                     amortization_eta_date = eta.isoformat() if eta else None
                 except ValueError:
