@@ -20,7 +20,8 @@ import pytest_asyncio
 
 from app.database import Database
 from app.money import (
-    compute_money_saved, compute_money_saved_full, estimate_breakeven_date,
+    average_price_per_kwh, compute_money_saved, compute_money_saved_full,
+    estimate_breakeven_date,
 )
 
 
@@ -75,6 +76,25 @@ class TestComputeMoneySavedFull:
     def test_recorded_energy_beyond_the_counter_adds_nothing(self):
         # Rounding can put the daily sums slightly above the lifetime counter.
         assert compute_money_saved_full(35.0, 100.0, 99.0, 0.35, 0.28) == pytest.approx(35.0)
+
+
+class TestAveragePricePerKwh:
+
+    def test_one_tariff_averages_to_that_tariff(self):
+        assert average_price_per_kwh(175.0, 500.0, 100.0) == pytest.approx(0.35)
+
+    def test_two_tariffs_are_weighted_by_energy(self):
+        # 300 kWh at 35 ct and 100 kWh at 28 ct.
+        full = 300 * 0.35 + 100 * 0.28
+        assert average_price_per_kwh(full, 400.0, 400.0) == pytest.approx(0.3325)
+
+    def test_stamped_energy_beyond_the_counter_is_the_basis(self):
+        # Same case as in compute_money_saved_full: nothing may exceed the
+        # stamped price just because the counter rounded below the daily sums.
+        assert average_price_per_kwh(35.0, 99.0, 100.0) == pytest.approx(0.35)
+
+    def test_no_energy_has_no_average(self):
+        assert average_price_per_kwh(0.0, 0.0, 0.0) is None
 
 
 # --- Break-even date (integration) ----------------------------------------

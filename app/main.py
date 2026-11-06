@@ -25,7 +25,8 @@ from .date_helpers import (
     same_progress_slice,
 )
 from .money import (
-    compute_money_saved, compute_money_saved_full, estimate_breakeven_date,
+    average_price_per_kwh, compute_money_saved, compute_money_saved_full,
+    estimate_breakeven_date,
 )
 from . import __version__
 
@@ -1001,6 +1002,9 @@ async def get_stats():
         split["price_sum"], split["price_kwh"], total_kwh,
         split["oldest_price"], PRICE_PER_KWH,
     )
+    # After a tariff change the figure rests on more than the configured
+    # price; the card discloses that next to it.
+    avg_price = average_price_per_kwh(money_saved_full, total_kwh, split["price_kwh"])
     # Realistic money saved: only the self-consumed share offsets the retail
     # price; the fed-in remainder earns FEED_IN_TARIFF (default 0). scq=1
     # reproduces money_saved_full exactly, so the default is byte-for-byte the
@@ -1117,6 +1121,7 @@ async def get_stats():
         "co2_saved_kg": round(co2_kg, 2),
         "money_saved": round(money_saved, 2),
         "money_saved_full": round(money_saved_full, 2),
+        "avg_price_per_kwh": round(avg_price, 4) if avg_price is not None else None,
         "amortization_pct": amortization_pct,
         "amortization_state": amortization_state,
         "amortization_eta_date": amortization_eta_date,

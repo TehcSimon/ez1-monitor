@@ -23,6 +23,7 @@ const state = {
   locale: initialLang === "de" ? "de-DE" : "en-US",
   currency: "USD",
   pricePerKwh: 0.35,
+  avgPricePerKwh: null,      // average over the whole counter (from /api/stats)
   co2KgPerKwh: 0.38,
   installKwp: 1.0,
   maxPowerW: 800,
@@ -84,21 +85,37 @@ const fmt = {
     currency: state.currency,
     maximumFractionDigits: 2,
   }).format(v || 0),
-  pricePerKwh: v => {
+  price: v => {
     if (state.lang === "de" && state.currency === "EUR") {
-      const cents = v * 100;
+      // Rounded first: 0.28 * 100 is 28.000000000000004 in floating point,
+      // which would not count as a whole number and show up as "28,00 ct".
+      const cents = Math.round(v * 1e6) / 1e4;
       const display = Number.isInteger(cents)
         ? cents.toFixed(0)
         : cents.toFixed(2).replace(".", ",");
-      return `${display} ct/kWh`;
+      return `${display}\u00a0ct`;
     }
-    const formatted = new Intl.NumberFormat(state.locale, {
+    return new Intl.NumberFormat(state.locale, {
       style: "currency",
       currency: state.currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
     }).format(v);
-    return `${formatted}/kWh`;
+  },
+  pricePerKwh: v => `${fmt.price(v)}/kWh`,
+  // An average is no tariff anyone quoted, so it gets one fixed, coarse
+  // precision: a tenth of a cent, which is also what makes it count as
+  // differing from the current price (see updateDynamicLabels).
+  priceAvg: v => {
+    if (state.lang === "de" && state.currency === "EUR") {
+      return `${(v * 100).toFixed(1).replace(".", ",")}\u00a0ct`;
+    }
+    return new Intl.NumberFormat(state.locale, {
+      style: "currency",
+      currency: state.currency,
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    }).format(v);
   },
   monthYear: (isoYearMonth) => {
     if (!isoYearMonth) return "—";
@@ -377,23 +394,30 @@ function updateDynamicLabels() {
 
   const moneySub = document.getElementById("lifetime-money-sub");
   if (moneySub) {
-    // Three cases, depending on the configured self-consumption realism:
-    //  - 100%      → classic subtitle, nothing to disclose (back-compat)
+    // The price comes first: a single one ("bei 35 ct/kWh"), or after a tariff
+    // change the two that describe the figure ("Ø 33,4 ct · aktuell 28 ct").
+    // Then whatever else shapes it, depending on the configured realism:
+    //  - 100%      → nothing to disclose (back-compat)
     //  - <100%, no feed-in tariff → "… · 70 % Eigennutzung"
     //  - <100%, with feed-in      → "… · 70 % Eigennutzung · 8 ct/kWh Einspeisung"
-    const price = fmt.pricePerKwh(state.pricePerKwh);
+    const avg = state.avgPricePerKwh;
+    const parts = avg != null && Math.abs(avg - state.pricePerKwh) >= 0.001
+      ? [
+          window.i18n.t(state.lang, "lifetime.moneyPriceAvg", { price: fmt.priceAvg(avg) }),
+          window.i18n.t(state.lang, "lifetime.moneyPriceNow", { price: fmt.price(state.pricePerKwh) }),
+        ]
+      : [window.i18n.t(state.lang, "lifetime.moneyPrice", { price: fmt.pricePerKwh(state.pricePerKwh) })];
     const scq = state.selfConsumptionPct;
-    if (scq >= 100) {
-      moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOn", { price });
-    } else if (state.feedInTariff > 0) {
-      moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOnSelfUseFeedIn", {
-        price, pct: fmt.pct(scq), feedin: fmt.pricePerKwh(state.feedInTariff),
-      });
-    } else {
-      moneySub.textContent = window.i18n.t(state.lang, "lifetime.moneyBasedOnSelfUse", {
-        price, pct: fmt.pct(scq),
-      });
+    if (scq < 100) {
+      parts.push(window.i18n.t(state.lang, "lifetime.moneySelfUse", { pct: fmt.pct(scq) }));
+      if (state.feedInTariff > 0) {
+        parts.push(window.i18n.t(state.lang, "lifetime.moneyFeedIn", {
+          feedin: fmt.pricePerKwh(state.feedInTariff),
+        }));
+      }
     }
+    // The separator stays with the figure before it, as in renderSummary.
+    moneySub.textContent = parts.join("\u00a0· ");
   }
   const footerUpdate = document.getElementById("footer-update-text");
   if (footerUpdate) {
@@ -557,6 +581,8 @@ async function loadStats() {
     document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
     document.getElementById("lifetime-co2").textContent = (s.co2_saved_kg || 0).toFixed(1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
+    state.avgPricePerKwh = s.avg_price_per_kwh ?? null;
+    updateDynamicLabels();
 
     // Second money line: the 100%-self-consumption ceiling. Shown only when a
     // self-consumption estimate < 100% is configured (CSS :empty collapses it

@@ -31,6 +31,18 @@ def compute_money_saved_full(
     return price_sum + max(0.0, total_kwh - price_kwh) * remainder_price
 
 
+def average_price_per_kwh(
+    money_saved_full: float, total_kwh: float, price_kwh: float,
+) -> Optional[float]:
+    """Average retail price behind money_saved_full, None without any energy.
+
+    The basis is the one compute_money_saved_full valued: the lifetime
+    counter, or the stamped energy where rounding put that slightly above it.
+    """
+    basis = max(total_kwh, price_kwh)
+    return money_saved_full / basis if basis > 0 else None
+
+
 def compute_money_saved(
     money_saved_full: float, total_kwh: float,
     self_consumption_pct: float, feed_in_tariff: float,
