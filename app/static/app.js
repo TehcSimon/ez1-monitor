@@ -31,6 +31,7 @@ const state = {
   feedInTariff: 0,           // currency/kWh for the fed-in remainder
   installCost: 0,            // one-off install cost; 0 hides the amort card
   dayScaleMode: "fixed",     // fixed | auto (today-chart Y-axis scale)
+  dayHiddenSeries: new Set(),  // day-chart lines switched off (see DAY_SERIES)
   currentRange: "month",
   historyMode: "rolling",            // rolling | calendar (week/month/year)
   yearGranularity: "daily",          // daily | weekly | monthly
@@ -86,6 +87,11 @@ const fmt = {
   time:  ts => new Date(ts * 1000).toLocaleTimeString(state.locale, {
     hour: "2-digit", minute: "2-digit", second: "2-digit"
   }),
+  // Always 24 h, whatever the locale, like the day chart's time axis.
+  clock: ts => {
+    const t = new Date(ts * 1000);
+    return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+  },
   // HH:MM only — used for the CO2 card subtitle where seconds add noise
   // without any useful info (the CO2 source updates hourly anyway).
   timeShort: ts => new Date(ts * 1000).toLocaleTimeString(state.locale, {
@@ -210,6 +216,8 @@ function refreshChartColors() {
   COLORS.muted      = css.getPropertyValue("--text-muted").trim() || "#6f6353";
   COLORS.border     = css.getPropertyValue("--border").trim() || "#2a241c";
   COLORS.good       = css.getPropertyValue("--good").trim() || "#4ade80";
+  COLORS.pv1        = css.getPropertyValue("--pv1").trim() || "#3b82f6";
+  COLORS.pv2        = css.getPropertyValue("--pv2").trim() || "#ec4899";
   COLORS.tooltipBg  = css.getPropertyValue("--tooltip-bg").trim() || "#000";
   Chart.defaults.color = COLORS.muted;
   Chart.defaults.font.family = "'JetBrains Mono', monospace";
@@ -552,39 +560,12 @@ async function loadStats() {
     // consistency with the other stat cards. Empty values show as "—".
     renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
 
-    document.getElementById("hero-peak-value").textContent = fmt.power(s.peak_w_today);
-
     // Per-panel production today — DB-derived, so it stays correct after the
     // inverter goes to standby at night (see loadLive for why it's here).
     const pv1e = document.getElementById("pv1-energy");
     const pv2e = document.getElementById("pv2-energy");
     if (pv1e) pv1e.textContent = fmt.kwh(s.pv1_kwh_today);
     if (pv2e) pv2e.textContent = fmt.kwh(s.pv2_kwh_today);
-
-    // Peak-today timestamp suffix
-    const peakTimeEl = document.getElementById("hero-peak-time");
-    if (peakTimeEl) {
-      if (s.peak_today_ts) {
-        const t = new Date(s.peak_today_ts * 1000);
-        const hh = String(t.getHours()).padStart(2, "0");
-        const mm = String(t.getMinutes()).padStart(2, "0");
-        peakTimeEl.textContent = `· ${hh}:${mm}`;
-      } else {
-        peakTimeEl.textContent = "";
-      }
-    }
-
-    // Average power during production window
-    const avgEl = document.getElementById("hero-avg-value");
-    const avgRow = document.getElementById("hero-avg-row");
-    if (avgEl && avgRow) {
-      if (s.avg_w_during_production != null) {
-        avgEl.textContent = fmt.power(s.avg_w_during_production);
-        avgRow.style.display = "";
-      } else {
-        avgEl.textContent = "—";
-      }
-    }
 
     document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
     const co2Kg = s.co2_saved_kg || 0;
@@ -901,6 +882,11 @@ window.addEventListener("orientationchange", () => {
 });
 
 function updateDayPickerLabels() {
+  const avgHead = document.getElementById("day-figures-avg");
+  if (avgHead) avgHead.title = window.i18n.t(state.lang, "chart.figuresAvgHint");
+  document.querySelectorAll(".series-toggle").forEach(btn => {
+    btn.title = window.i18n.t(state.lang, "chart.figuresToggleHint");
+  });
   const prevBtn = document.getElementById("day-prev");
   const nextBtn = document.getElementById("day-next");
   const calBtn  = document.getElementById("day-cal");
@@ -993,6 +979,43 @@ function shiftViewedDay(deltaDays) {
 
 // --- Today chart ------------------------------------------------------
 
+// The day chart's datasets. Shading usually hits one panel at a time, so PV 1
+// and PV 2 run along the total as lines of their own; each can be switched off
+// to compare the others, which also lets the auto scale zoom in on them.
+const DAY_SERIES = ["pv1", "pv2", "total"];
+
+function dayPanelDataset(key, label, color, data) {
+  return {
+    label,
+    data,
+    borderColor: color,
+    borderWidth: 1.5,
+    fill: false,
+    pointRadius: 0,
+    pointHoverRadius: 3,
+    pointHoverBackgroundColor: color,
+    tension: 0.3,
+    hidden: state.dayHiddenSeries.has(key),
+  };
+}
+
+// The figures above the day curve, for the selected day. Set via textContent
+// only, like the device meta. A day without any production shows dashes rather
+// than a table of zeros; on a day with production, a panel at zero is a finding
+// and shows as one.
+function renderDayFigures(figures) {
+  const produced = !!(figures && figures.total.peak_ts != null);
+  document.querySelectorAll("#day-figures tbody tr").forEach(row => {
+    const f = produced ? figures[row.dataset.series] : null;
+    row.querySelector(".fig-peak").textContent = f ? `${fmt.power(f.peak_w)} W` : "—";
+    row.querySelector(".fig-time").textContent =
+      f && f.peak_ts != null ? `· ${fmt.clock(f.peak_ts)}` : "";
+    row.querySelector(".fig-avg").textContent =
+      f && f.avg_w != null ? `${fmt.power(f.avg_w)} W` : "—";
+    row.querySelector(".fig-kwh").textContent = f ? `${fmt.kwh(f.kwh)} kWh` : "—";
+  });
+}
+
 async function loadTodayChart() {
   const seq = ++todayReqSeq;
   try {
@@ -1013,9 +1036,10 @@ async function loadTodayChart() {
       renderDayPickerDisplay(null);
       updateDayPickerButtons();
     }
+    renderDayFigures(data.figures);
     const points = (data.points || []).filter(p => p.online);
     const labels = points.map(p => p.timestamp * 1000);
-    const series = points.map(p => (p.p1 || 0) + (p.p2 || 0));
+    const T = key => window.i18n.t(state.lang, key);
 
     // Empty-state overlay
     const empty = document.getElementById("chart-today-empty");
@@ -1035,18 +1059,26 @@ async function loadTodayChart() {
       type: "line",
       data: {
         labels,
-        datasets: [{
-          label: window.i18n.t(state.lang, "chart.tooltipPower"),
-          data: series,
-          borderColor: COLORS.accent,
-          backgroundColor: grad,
-          borderWidth: 2,
-          fill: true,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          pointHoverBackgroundColor: COLORS.accentWarm,
-          tension: 0.3,
-        }],
+        // In the order of DAY_SERIES, which is also the table's above the
+        // chart. Chart.js draws the first dataset on top, so the thin panel
+        // lines stay in front of the total's filled area.
+        datasets: [
+          dayPanelDataset("pv1", T("hero.pv1"), COLORS.pv1, points.map(p => p.p1 || 0)),
+          dayPanelDataset("pv2", T("hero.pv2"), COLORS.pv2, points.map(p => p.p2 || 0)),
+          {
+            label: T("chart.figuresTotal"),
+            data: points.map(p => (p.p1 || 0) + (p.p2 || 0)),
+            borderColor: COLORS.accent,
+            backgroundColor: grad,
+            borderWidth: 2,
+            fill: true,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHoverBackgroundColor: COLORS.accentWarm,
+            tension: 0.3,
+            hidden: state.dayHiddenSeries.has("total"),
+          },
+        ],
       },
       options: timeChartOptions("HH:mm"),
     }, chartSig("today", state.dayScaleMode));
@@ -1855,12 +1887,23 @@ function timeChartOptions(timeFormat) {
     interaction: { intersect: false, mode: "index" },
     plugins: {
       legend: { display: false },
-      tooltip: tooltipStyle({
-        title: items => new Date(items[0].parsed.x).toLocaleString(state.locale, {
-          hour: "2-digit", minute: "2-digit",
+      tooltip: {
+        ...tooltipStyle({
+          title: items => new Date(items[0].parsed.x).toLocaleString(state.locale, {
+            hour: "2-digit", minute: "2-digit",
+          }),
+          // Padded into columns: the tooltip font is monospaced.
+          label: item => ` ${item.dataset.label.padEnd(6)} ${fmt.power(item.parsed.y).padStart(5)} W`,
+          // A short stroke of the line's color, rather than a filled box. The
+          // total's own background is its gradient, which would make a poor key.
+          labelColor: item => ({
+            borderColor: item.dataset.borderColor,
+            backgroundColor: item.dataset.borderColor,
+          }),
+          labelPointStyle: () => ({ pointStyle: "line", rotation: 0 }),
         }),
-        label: item => ` ${fmt.power(item.parsed.y)} W`,
-      }),
+        usePointStyle: true,
+      },
     },
     scales: {
       x: {
@@ -2051,6 +2094,42 @@ function toggleDayScaleMode() {
   loadTodayChart();
 }
 
+// --- Today-chart line visibility ---------------------------------------------
+// The first column of the figures table is the chart's legend. Hidden lines
+// are remembered like the other toggles, and sit in state rather than in the
+// chart because a theme or language switch rebuilds the chart.
+const DAY_HIDDEN_KEY = "ez1-day-hidden-series";
+
+function getStoredDayHiddenSeries() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DAY_HIDDEN_KEY));
+    return new Set(Array.isArray(stored) ? stored.filter(k => DAY_SERIES.includes(k)) : []);
+  } catch (_e) {
+    return new Set();
+  }
+}
+
+function updateDaySeriesToggles() {
+  document.querySelectorAll("#day-figures tbody tr").forEach(row => {
+    row.querySelector(".series-toggle").setAttribute(
+      "aria-pressed", String(!state.dayHiddenSeries.has(row.dataset.series))
+    );
+  });
+}
+
+function toggleDaySeries(key) {
+  if (state.dayHiddenSeries.has(key)) state.dayHiddenSeries.delete(key);
+  else state.dayHiddenSeries.add(key);
+  try {
+    localStorage.setItem(DAY_HIDDEN_KEY, JSON.stringify([...state.dayHiddenSeries]));
+  } catch (_e) { /* private mode: in-memory only */ }
+  updateDaySeriesToggles();
+  if (todayChart) {
+    todayChart.data.datasets[DAY_SERIES.indexOf(key)].hidden = state.dayHiddenSeries.has(key);
+    todayChart.update();
+  }
+}
+
 function getStoredOverride() {
   const stored = localStorage.getItem(THEME_KEY);
   return stored === "light" || stored === "dark" ? stored : null;
@@ -2125,6 +2204,11 @@ updateHistoryModeIcon();
 // Today-chart fixed/auto scale: restore persisted choice and wire the toggle.
 state.dayScaleMode = getStoredDayScaleMode();
 document.getElementById("dayscale-toggle")?.addEventListener("click", toggleDayScaleMode);
+state.dayHiddenSeries = getStoredDayHiddenSeries();
+updateDaySeriesToggles();
+document.querySelectorAll("#day-figures tbody tr").forEach(row => {
+  row.querySelector(".series-toggle").addEventListener("click", () => toggleDaySeries(row.dataset.series));
+});
 updateDayScaleIcon();
 
 // Apply stored theme FIRST so the data-theme attribute is set on <html>,

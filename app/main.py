@@ -24,6 +24,7 @@ from .date_helpers import (
     shift_year, last_day_of_month, iso_week_monday, iso_weeks_in_year,
     same_progress_slice,
 )
+from .day_figures import summarize_day
 from .money import (
     average_price_per_kwh, compute_money_saved, compute_money_saved_full,
     estimate_breakeven_date, value_of_new_kwh,
@@ -892,6 +893,10 @@ async def get_history(
         # from the first recorded day on. See getEarliestSelectableDate()
         # in app.js.
         resp["first_data_date"] = await db.get_first_daily_date()
+        # Peak, average and energy per panel and in total, for the selected
+        # day. Named apart from the anchored views' "summary", which has
+        # another shape.
+        resp["figures"] = summarize_day(points)
     return resp
 
 
@@ -1063,18 +1068,8 @@ async def get_stats():
                 except ValueError:
                     pass
 
-    peak_w_today, peak_today_ts = await db.get_peak_today_with_time()
+    peak_w_today = await db.get_peak_today()
     pv1_kwh_today, pv2_kwh_today = await db.get_today_panel_energy()
-
-    # Average power during today's production window. Uses the time between
-    # first and last measurement with >=5 W output today. If there's no
-    # production yet today (early morning, night), both fields are null.
-    first_prod_ts, last_prod_ts = await db.get_today_production_window(threshold_w=5)
-    if first_prod_ts is not None and last_prod_ts is not None and last_prod_ts > first_prod_ts:
-        production_hours = (last_prod_ts - first_prod_ts) / 3600.0
-        avg_w_during_production = (today_kwh * 1000.0) / production_hours if production_hours > 0 else None
-    else:
-        avg_w_during_production = None
 
     return {
         # Today
@@ -1108,15 +1103,10 @@ async def get_stats():
         # Lifetime + peak
         "total_kwh": round(total_kwh, 3),
         "peak_w_today": round(peak_w_today, 1),
-        "peak_today_ts": peak_today_ts,
         # Per-panel production today, DB-derived so it survives inverter
         # standby (the live reading is null at night).
         "pv1_kwh_today": round(pv1_kwh_today, 2),
         "pv2_kwh_today": round(pv2_kwh_today, 2),
-        "avg_w_during_production": (
-            round(avg_w_during_production, 1)
-            if avg_w_during_production is not None else None
-        ),
         "co2_saved_kg": round(co2_kg, 2),
         "money_saved": round(money_saved, 2),
         "money_saved_full": round(money_saved_full, 2),

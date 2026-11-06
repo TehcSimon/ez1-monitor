@@ -174,14 +174,6 @@ class TestBestWeek:
         assert best is None
 
 
-class TestProductionWindow:
-
-    async def test_window_empty_when_no_data(self, db):
-        first, last = await db.get_today_production_window()
-        assert first is None
-        assert last is None
-
-
 class TestTodayWindowQueries:
     """The "today" queries filter by a [local midnight, next local midnight)
     timestamp range instead of date(timestamp, 'localtime') on every row
@@ -205,22 +197,16 @@ class TestTodayWindowQueries:
         return midnight
 
     async def test_peak_today_ignores_neighbouring_days(self, db):
-        midnight = await self._seed_around_today(db)
-        peak, peak_ts = await db.get_peak_today_with_time()
-        assert peak == 550.0
-        assert peak_ts == int((midnight + timedelta(hours=12)).timestamp())
+        await self._seed_around_today(db)
+        assert await db.get_peak_today() == 550.0
+
+    async def test_peak_today_is_zero_without_data(self, db):
+        assert await db.get_peak_today() == 0.0
 
     async def test_panel_energy_ignores_neighbouring_days(self, db):
         await self._seed_around_today(db)
         pv1, pv2 = await db.get_today_panel_energy()
         assert (pv1, pv2) == (2.4, 2.0)
-
-    async def test_production_window_ignores_neighbouring_days(self, db):
-        midnight = await self._seed_around_today(db)
-        first, last = await db.get_today_production_window(threshold_w=5)
-        # The 00:00 row (3 W) is below the threshold; 12:00 and 17:00 count.
-        assert first == int((midnight + timedelta(hours=12)).timestamp())
-        assert last == int((midnight + timedelta(hours=17)).timestamp())
 
 
 class TestLastOnlineAvgPower:

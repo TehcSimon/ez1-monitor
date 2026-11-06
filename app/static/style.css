@@ -23,6 +23,11 @@
   --bad:            #f87171;
   --neutral:        #94a3b8;
 
+  /* Day-chart panel lines. Picked to stay apart from each other and from the
+     accent under color-vision deficiencies (OKLab check), per theme. */
+  --pv1:            #3b82f6;       /* blue-500 */
+  --pv2:            #ec4899;       /* pink-500 */
+
   --tooltip-bg:     #000;
   --grain-opacity:  0.04;
   --button-text:    #15120e;     /* dark text on bright accent buttons */
@@ -72,6 +77,9 @@
     --bad:            #dc2626;
     --neutral:        #64748b;
 
+    --pv1:            #ea580c;       /* orange-600 */
+    --pv2:            #0d9488;       /* teal-600 */
+
     --tooltip-bg:     #ffffff;
     --grain-opacity:  0.02;
     --button-text:    #ffffff;
@@ -111,6 +119,9 @@ html[data-theme="light"] {
   --bad:            #dc2626;
   --neutral:        #64748b;
 
+  --pv1:            #ea580c;
+  --pv2:            #0d9488;
+
   --tooltip-bg:     #ffffff;
   --grain-opacity:  0.02;
   --button-text:    #ffffff;
@@ -147,6 +158,9 @@ html[data-theme="dark"] {
   --good:           #4ade80;
   --bad:            #f87171;
   --neutral:        #94a3b8;
+
+  --pv1:            #3b82f6;
+  --pv2:            #ec4899;
 
   --tooltip-bg:     #000;
   --grain-opacity:  0.04;
@@ -368,6 +382,9 @@ main {
   border-color: var(--border-bright);
 }
 
+/* The PV cards set the card's height: keep the big number level with them. */
+.hero-main { align-self: center; }
+
 .hero-label {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -431,21 +448,6 @@ main {
   letter-spacing: 0.05em;
 }
 
-.hero-peak {
-  margin-top: 16px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-secondary);
-  letter-spacing: 0.05em;
-}
-.hero-peak #hero-peak-value {
-  color: var(--text-primary);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.hero-peak .hero-peak-unit {
-  color: var(--text-muted);
-}
 
 .hero-side {
   display: flex;
@@ -496,6 +498,83 @@ main {
 
 /* ------------------------- Charts ------------------------- */
 .chart-card { padding: 24px; }
+
+/* Figures of the selected day above the day curve. Columns of numbers, so
+   tabular figures. The first column doubles as the chart's legend. */
+.day-figures {
+  width: 100%;
+  /* Kept together on wide screens: a row has to be read across. */
+  max-width: 640px;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.day-figures th,
+.day-figures td {
+  padding: 3px 0 3px 16px;
+  font-weight: 400;
+  text-align: right;
+  white-space: nowrap;
+}
+.day-figures tr > :first-child {
+  padding-left: 0;
+  text-align: left;
+}
+.day-figures thead th {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* The total is what the panels add up to: set off by a rule, like a sum. */
+.day-figures tbody tr:last-child > * {
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+/* Empty on a panel without a peak, but keeps its width so the watts of all
+   rows stay aligned. 7ch is "· 13:21" in the monospaced font. */
+.fig-time {
+  display: inline-block;
+  width: 7ch;
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-align: left;
+}
+.series-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.series-toggle:hover { color: var(--text-primary); }
+.series-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.series-key {
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+[data-series="pv1"] .series-key { background: var(--pv1); }
+[data-series="pv2"] .series-key { background: var(--pv2); }
+.series-toggle[aria-pressed="false"] {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.series-toggle[aria-pressed="false"] .series-key { opacity: 0.35; }
+
 .chart-wrap {
   position: relative;
   height: 280px;
@@ -1275,6 +1354,9 @@ html[data-theme="light"] .info-tooltip-content {
 }
 
 @media (max-width: 640px) {
+  /* Same side margin as the topbar below */
+  main { padding: 16px; }
+
   /* Stat cards: tighter padding, smaller text, single column */
   .comparison-grid { grid-template-columns: 1fr; gap: 10px; }
   .stat-card { padding: 14px 16px; }
@@ -1309,6 +1391,14 @@ html[data-theme="light"] .info-tooltip-content {
 
   /* Charts shorter on small screens */
   .chart-wrap { height: 240px; }
+  .chart-card { padding: 16px; }
+
+  /* Day figures: four columns have to fit a phone's width */
+  .day-figures { font-size: 11px; }
+  .day-figures th, .day-figures td { padding-left: 10px; }
+  .series-toggle { gap: 6px; }
+  .series-key { width: 12px; }
+  .fig-time { margin-left: 6px; }
 
   /* Hero PV side cards 2-up on tablets/large phones */
   .hero-side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex-direction: row; }
@@ -1343,6 +1433,12 @@ html[data-theme="light"] .info-tooltip-content {
   .theme-toggle { width: 32px; height: 32px; }
 }
 
+/* The narrowest phones have no room for the time of the peak. */
+@media (max-width: 350px) {
+  .fig-time { display: none; }
+  .day-figures th, .day-figures td { padding-left: 6px; }
+}
+
 @media (max-width: 380px) {
   /* Extra compact on small phones */
   .stat-card { padding: 12px 14px; }
@@ -1358,15 +1454,6 @@ html[data-theme="light"] .info-tooltip-content {
   }
   .day-picker-label { flex: 1; min-width: 0; }
 }
-
-/* ------------------------- Hero peak-time suffix --------------------- */
-.hero-peak-time {
-  margin-left: 6px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-family: var(--font-mono);
-}
-.hero-peak-time:empty { display: none; }
 
 /* ------------------------- Hall of Fame ------------------------------ */
 .hof-card {

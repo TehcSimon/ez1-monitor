@@ -381,26 +381,18 @@ class Database:
                 return 0.0
             return (row["te1"] or 0) + (row["te2"] or 0)
 
-    async def get_peak_today_with_time(self) -> tuple[float, Optional[int]]:
-        """Return (peak_watts, unix_timestamp_of_peak) for today.
-
-        Used by the hero card to show "Peak today: 612 W at 13:24" instead
-        of just the bare number.
-        """
+    async def get_peak_today(self) -> float:
+        """Highest power of the whole array so far today, in watts."""
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
-                """SELECT COALESCE(p1, 0) + COALESCE(p2, 0) AS power, timestamp
+                """SELECT MAX(COALESCE(p1, 0) + COALESCE(p2, 0))
                    FROM measurements
                    WHERE timestamp >= ? AND timestamp < ?
-                     AND online = 1
-                   ORDER BY power DESC, timestamp ASC
-                   LIMIT 1""",
+                     AND online = 1""",
                 _today_bounds(),
             )
             row = await cur.fetchone()
-            if not row or row[0] is None or row[0] == 0:
-                return 0.0, None
-            return float(row[0]), int(row[1])
+            return float(row[0]) if row and row[0] is not None else 0.0
 
     async def get_today_panel_energy(self) -> tuple[float, float]:
         """Return (pv1_kwh, pv2_kwh) produced today, per panel.
@@ -409,8 +401,7 @@ class Database:
         per-panel day total is MAX over today's online rows. Reading this
         from the database (rather than the live inverter reading) means the
         PV cards keep showing today's production after the inverter drops to
-        standby at night — exactly like the peak/average figures, which are
-        also DB-derived. Returns (0.0, 0.0) when there's no production yet
+        standby at night. Returns (0.0, 0.0) when there's no production yet
         today, matching the "today total" energy card.
         """
         async with aiosqlite.connect(self.db_path) as db:
@@ -425,29 +416,6 @@ class Database:
             e1 = row[0] if row and row[0] is not None else 0.0
             e2 = row[1] if row and row[1] is not None else 0.0
             return float(e1), float(e2)
-
-    async def get_today_production_window(
-        self, threshold_w: int = 5
-    ) -> tuple[Optional[int], Optional[int]]:
-        """Return (first_ts, last_ts) of today's production above threshold.
-
-        Production is anything above threshold_w on (p1+p2). Used to compute
-        the "average during production" metric in the hero card. Returns
-        (None, None) if nothing has been generated today yet.
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            cur = await db.execute(
-                """SELECT MIN(timestamp), MAX(timestamp)
-                   FROM measurements
-                   WHERE timestamp >= ? AND timestamp < ?
-                     AND online = 1
-                     AND (COALESCE(p1, 0) + COALESCE(p2, 0)) >= ?""",
-                (*_today_bounds(), threshold_w),
-            )
-            row = await cur.fetchone()
-            if not row or row[0] is None:
-                return None, None
-            return int(row[0]), int(row[1])
 
     async def delete_old_measurements(self, older_than_days: int) -> int:
         cutoff = int((datetime.now() - timedelta(days=older_than_days)).timestamp())

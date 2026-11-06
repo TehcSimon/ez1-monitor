@@ -39,6 +39,8 @@ CO2_G_PER_KWH = 380.0              # static factor, as without Electricity Maps
 TARIFF_CHANGE = date(2026, 1, 1)   # 0.32 → 0.35 per kWh, stamped per row
 DENSE_DAYS = 62                    # recent days at the poller's 60 s cadence
 SPARSE_STEP_MIN = 15               # older days: one row every 15 minutes
+# Morning shadow on PV 2, as fractions of the daylight hours and of its power.
+SHADE_START, SHADE_END, SHADE_DEPTH = 0.28, 0.4, 0.65
 
 
 def _season(d: date) -> float:
@@ -96,6 +98,10 @@ def day_profile(d: date) -> tuple:
         x = (h - rise_h) / (set_h - rise_h)
         p1 = 0.51 * peak_w * _shape(x + 0.025) * t
         p2 = 0.49 * peak_w * _shape(x - 0.025) * t
+        # A chimney shades one panel for a while each morning, which is what
+        # the per-panel figures and lines are there to reveal.
+        if SHADE_START < x < SHADE_END:
+            p2 *= 1 - SHADE_DEPTH * math.sin(math.pi * (x - SHADE_START) / (SHADE_END - SHADE_START))
         if p1 + p2 > AC_LIMIT_W:
             k = AC_LIMIT_W / (p1 + p2)
             p1, p2 = p1 * k, p2 * k
