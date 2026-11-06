@@ -24,7 +24,7 @@ OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "/out")
 # to the viewport, and a shot reaching past it would show its edge.
 DESKTOP = {"width": 1360, "height": 1280}
 # Phone width, but tall enough to show the hero card and today's full curve.
-PHONE = {"width": 390, "height": 1166}
+PHONE = {"width": 390, "height": 1145}
 
 
 def backend_now() -> datetime:

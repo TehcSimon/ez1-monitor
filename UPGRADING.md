@@ -30,6 +30,15 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.12.0 to v1.12.1
+
+No manual steps, no database migration.
+
+- **The live power card sticks to live power.** The PV tiles no longer show
+  each panel's yield for the day, which duplicated the table right below them.
+  `pv1_kwh_today` and `pv2_kwh_today` in `/api/stats` and the Prometheus metrics
+  are unchanged.
+
 ## From v1.11.3 to v1.12.0
 
 No manual steps, no database migration.
