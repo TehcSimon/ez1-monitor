@@ -192,3 +192,22 @@ class TestStatsEndpoint:
         stats = await main.get_stats()
         assert stats["recorded_kwh"] == pytest.approx(2.0)
         assert stats["first_data_date"] == date.today().isoformat()
+
+    async def test_the_offset_moves_the_total_and_the_estimates_only(self, main, monkeypatch):
+        await _reading(main.db, 1, 100.0)
+        await main.db.backfill_daily_aggregates()
+        before = await main.get_stats()
+        monkeypatch.setattr(main, "LIFETIME_OFFSET_KWH", 100.0)
+        after = await main.get_stats()
+        assert after["total_kwh"] == pytest.approx(before["total_kwh"] + 100.0)
+        assert after["recorded_kwh"] == before["recorded_kwh"]
+        assert after["co2_saved_kg"] > before["co2_saved_kg"]
+        assert after["money_saved"] > before["money_saved"]
+
+    async def test_a_negative_offset_stops_at_zero(self, main, monkeypatch):
+        await _reading(main.db, 1, 100.0)
+        monkeypatch.setattr(main, "LIFETIME_OFFSET_KWH", -5000.0)
+        stats = await main.get_stats()
+        assert stats["total_kwh"] == 0.0
+        assert stats["co2_saved_kg"] >= 0.0
+        assert stats["money_saved"] >= 0.0

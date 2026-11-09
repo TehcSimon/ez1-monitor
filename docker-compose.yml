@@ -47,6 +47,10 @@ services:
                                          # (often 0 for a balcony plant)
       - INSTALL_COST=0                   # total install cost; >0 shows the
                                          # amortization card, 0 hides it
+      - LIFETIME_OFFSET_KWH=0            # added to the lifetime total, negative
+                                         # lowers it. Only for a counter wrap
+                                         # from before the monitor was set up;
+                                         # wraps it sees are added back by itself.
       - CO2_KG_PER_KWH=0.38              # grid CO2 intensity (kg CO2/kWh)
                                          # Used as fallback when Electricity
                                          # Maps integration is disabled or

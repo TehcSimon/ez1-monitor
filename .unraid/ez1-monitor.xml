@@ -55,6 +55,8 @@
 
   <Config Name="Installation cost (amortization)" Target="INSTALL_COST" Default="0" Mode="" Description="One-off total cost of your installation (in the configured currency). When set above 0, a 'Payback' card shows how far your savings have repaid it, with a break-even highlight. 0 hides the card." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
 
+  <Config Name="Lifetime offset (kWh)" Target="LIFETIME_OFFSET_KWH" Default="0" Mode="" Description="Added to the lifetime total and everything built on it (money, CO2, payback); negative values lower it. Only for a counter wrap from before the monitor was set up, or a manual correction. Wraps the monitor sees are added back by itself, entering one of those would count it twice." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
+
   <Config Name="Data retention (days)" Target="RETENTION_DAYS" Default="730" Mode="" Description="Keep raw measurements for N days. Default 730 (2 years) allows year-over-year comparisons. Older data is pruned daily. Set to 0 to disable automatic pruning." Type="Variable" Display="advanced" Required="false" Mask="false">730</Config>
 
   <Config Name="Inverter Port" Target="INVERTER_PORT" Default="8050" Mode="" Description="Port of the inverter's local API. Default is 8050." Type="Variable" Display="advanced" Required="false" Mask="false">8050</Config>

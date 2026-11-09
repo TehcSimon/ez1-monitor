@@ -88,6 +88,11 @@ FEED_IN_TARIFF = float(os.getenv("FEED_IN_TARIFF", "0"))
 # One-off total cost of the installation, for the amortization card.
 # 0 (default) hides the card entirely.
 INSTALL_COST = float(os.getenv("INSTALL_COST", "0"))
+# Manual correction of the lifetime total in kWh, negative to lower it, for a
+# counter fall the monitor can't know about because it predates it. Falls it
+# sees are added back by itself, see app/lifetime.py. "or 0": an Unraid field
+# left empty arrives as "".
+LIFETIME_OFFSET_KWH = float(os.getenv("LIFETIME_OFFSET_KWH") or 0)
 
 # Amortization break-even glow windows (days since the break-even date):
 #   0 .. FRESH   → "fresh":  endless glow + AMORTISIERT badge
@@ -987,7 +992,8 @@ async def get_stats():
         last_year_full_kwh,
     ) = energies
 
-    total_kwh = await db.get_total_energy()
+    # Never below zero, whatever a negative LIFETIME_OFFSET_KWH asks for.
+    total_kwh = max(0.0, await db.get_total_energy() + LIFETIME_OFFSET_KWH)
     recorded_kwh = await db.get_recorded_energy_before_today() + today_kwh
     # No day row exists yet during the first hour of a fresh install.
     first_data_date = await db.get_first_daily_date() or now.date().isoformat()
