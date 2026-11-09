@@ -47,7 +47,8 @@ to live grid CO₂ data.
 </picture>
 
 - ⚡ **Live view.** Total and per-input power, refreshed every 10 s while the
-  sun is up and right away when you come back to the tab.
+  sun is up and right away when you come back to the tab, plus inverter
+  temperature, grid voltage and frequency where the firmware reports them.
 - 📈 **Every day, browsable.** The day's curve plus a day picker for every
   recorded day in the retention window — or jump there from a history bar.
 - 🌤️ **Shading at a glance.** Peak, average and yield per panel and in total
@@ -228,6 +229,7 @@ All configuration is done via environment variables.
 | `SELF_CONSUMPTION_PCT` | `100` | Share (%) of production you use yourself; only affects money and payback |
 | `FEED_IN_TARIFF` | `0` | Compensation per fed-in kWh, same currency (often `0` for balcony plants) |
 | `INSTALL_COST` | `0` | Total installation cost; `> 0` shows the payback card |
+| `LIFETIME_OFFSET_KWH` | `0` | Added to the lifetime total, negative lowers it; rarely needed, see [Savings, payback & CO₂](#savings-payback--co) |
 | `CO2_KG_PER_KWH` | `0.38` | Static grid CO₂ factor — the fallback without Electricity Maps |
 | `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Enables [live grid intensity](#live-grid-intensity-electricity-maps) |
 | `ELECTRICITY_MAPS_ZONE` | `DE` | Zone label for the UI (the actual zone is bound to the token) |
@@ -257,6 +259,19 @@ inverter answers again. A single dropped poll is neither: the inverter only
 counts as offline after three failed polls in a row.
 
 ## Savings, payback & CO₂
+
+**Total generation** is the inverter's own lifetime counter, including what
+it produced before the monitor was set up. Click the card to see only what
+the monitor recorded itself, which is what the history bars add up to; days
+the monitor wasn't running are missing from it. Money, CO₂ and payback always
+build on the inverter's counter.
+
+Some firmware wraps each input's lifetime counter to 0 near 540 kWh. The
+monitor notices that and carries on from the old level. `LIFETIME_OFFSET_KWH`
+is only for what it can't know: a wrap from before it was set up (enter the
+level the counter wrapped at, e.g. `540`), or a manual correction (negative
+values lower the total). Don't enter a wrap the monitor saw itself, that would
+count it twice.
 
 **Money saved** values every kWh at the price stamped on its reading.
 Production without a stamp, from before the monitor was set up, counts at
@@ -431,6 +446,7 @@ ez1-monitor/
 │   ├── database.py        # SQLite schema, migrations, aggregates, all queries
 │   ├── co2.py             # Electricity Maps client + live/stale/avg/static resolver
 │   ├── money.py           # savings and payback model (pure)
+│   ├── lifetime.py        # lifetime counters across a counter reset (pure)
 │   ├── date_helpers.py    # calendar and ISO-week math (pure)
 │   └── static/            # dashboard: index.html, app.js, i18n.js, style.css, vendored libs
 ├── tests/                 # pytest suites

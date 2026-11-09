@@ -22,6 +22,7 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 | Release | What happens on first start |
 |---|---|
+| v1.13.0 | `ALTER TABLE` adds the temperature, grid and daily counter columns, the startup backfill fills in the counters (instant, the backfill runs on every start anyway) |
 | v1.9.1 | Drops a redundant index on `measurements` (instant) |
 | v1.6.1 | `ALTER TABLE` adds the electricity-price and firmware columns (instant) |
 | v1.6.0 | Creates `daily_aggregates` and backfills it — 1–3 s, up to ~15 s on a full 2-year install on a Raspberry Pi |
@@ -29,6 +30,44 @@ are idempotent. Only these releases do anything noticeable on first start:
 | v1.1.0 | **Manual step:** the container runs as UID 1000 — see [below](#from-v10x-to-v110) |
 
 The rest of this file is the release history, newest first.
+
+## From v1.12.1 to v1.13.0
+
+No manual steps. The database migrates by itself on first start.
+
+- **Temperature and grid values in the top bar.** Inverter temperature, grid
+  voltage and frequency, read once a minute from the inverter's
+  `getOutputDataDetail` endpoint and stored with every measurement, ready for a
+  chart in a later release. They are hidden while the inverter sleeps and on
+  firmware that doesn't report them. If a regular poll fails right after this
+  request, the monitor leaves it alone for ten minutes, so firmware that
+  doesn't cope well with it isn't disturbed.
+- **The real AC limit.** The top bar and the power bar now use the limit in
+  force (`getMaxPower`, re-read hourly). They used to show the highest value
+  that can be set, for example 1800 W on an EZ1-D limited to 800 W. The limit
+  shown corrects itself within a minute of starting the new version.
+- **Lifetime figures survive a counter reset.** Some firmware wraps its
+  lifetime counters to 0 near 540 kWh, and a replaced inverter starts over.
+  The monitor now keeps each day's counter readings and adds a real fall back,
+  so lifetime energy, money, CO₂ and payback stay put. A counter that never
+  falls gives exactly the same figures as before, and short glitches in either
+  direction are ignored.
+- **`LIFETIME_OFFSET_KWH` (optional, default 0).** Adds a fixed amount to the
+  lifetime total, negative to lower it, for a counter wrap from before the
+  monitor was set up or a manual correction. Wraps the monitor sees are added
+  back by itself, entering one of those would count it twice.
+- **Total generation can show what the monitor recorded.** Click the card to
+  switch between the inverter's lifetime counter and the sum of the history
+  bars. Your browser remembers the choice. Money, CO₂ and payback stay on the
+  inverter's counter. `/api/stats` gains `recorded_kwh` and `first_data_date`.
+- **Chart tooltip on phones.** In the day chart it now shows only while you
+  hold a finger on the chart, follows it, and disappears on release. A swipe
+  across the chart scrolls the page. The other charts are unchanged.
+- **PV tiles in the colors of their lines.** The PV 1 and PV 2 values match
+  their lines in the day chart.
+- **`INSTALL_KWP` removed.** It was only passed through `/api/live`
+  (`config.install_kwp` is gone too). A variable still set on your container
+  is simply ignored and can be deleted.
 
 ## From v1.12.0 to v1.12.1
 

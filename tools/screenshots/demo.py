@@ -15,6 +15,7 @@ Stdlib only, so it runs in the ez1-monitor image itself. Needs TZ set to the
 same zone as the monitor, and the same (pinned) clock — compose.yml provides
 both. Not affiliated with any real device: the serial is obviously fake.
 """
+import bisect
 import json
 import math
 import random
@@ -39,8 +40,37 @@ CO2_G_PER_KWH = 380.0              # static factor, as without Electricity Maps
 TARIFF_CHANGE = date(2026, 1, 1)   # 0.32 → 0.35 per kWh, stamped per row
 DENSE_DAYS = 62                    # recent days at the poller's 60 s cadence
 SPARSE_STEP_MIN = 15               # older days: one row every 15 minutes
-# Morning shadow on PV 2, as fractions of the daylight hours and of its power.
-SHADE_START, SHADE_END, SHADE_DEPTH = 0.28, 0.4, 0.65
+# A clear summer day of a real, partly shaded balcony plant, as (minute of the
+# day, PV 1 watts, PV 2 watts): diffuse light only until the sun clears a
+# building around 10:00, the shadow reaching PV 1 at about 14:00 and PV 2 at
+# about 17:30. Every other day is this curve, squeezed into its daylight hours
+# and scaled by season and weather.
+CLEAR_DAY = (
+    (360, 0, 0), (390, 5, 5), (420, 7, 8), (480, 12, 12), (540, 16, 14),
+    (570, 40, 22), (590, 90, 35), (598, 275, 40), (607, 288, 55), (608, 290, 270),
+    (630, 305, 290), (660, 340, 320), (690, 368, 350), (715, 388, 352),
+    (750, 365, 338), (780, 358, 332), (820, 365, 342), (830, 350, 345),
+    (845, 200, 345), (855, 120, 350), (870, 65, 362), (889, 58, 376),
+    (930, 55, 350), (960, 55, 328), (990, 52, 298), (1020, 50, 268),
+    (1032, 48, 160), (1050, 45, 140), (1060, 40, 50), (1080, 35, 45),
+    (1110, 30, 30), (1140, 22, 25), (1200, 12, 12), (1260, 3, 3), (1275, 0, 0),
+)
+# Its share of the (model) daylight hours, and its midpoint after solar noon.
+CLEAR_DAY_SPAN, CLEAR_DAY_MID_AFTER_NOON_H = 0.924, 0.29
+# PV 1 flickers while the edge of the shadow moves across it.
+SHADOW_EDGE_MINUTES = (825, 870)
+# The anniversary of the record day, which the demo's clock is pinned to.
+BEST_DAY = (6, 24)
+
+
+def _clear_day(minute: float) -> tuple:
+    """(p1, p2) of the CLEAR_DAY curve at the given minute of that day."""
+    i = bisect.bisect_right([point[0] for point in CLEAR_DAY], minute)
+    if i == 0 or i == len(CLEAR_DAY):
+        return 0.0, 0.0
+    (m0, a0, b0), (m1, a1, b1) = CLEAR_DAY[i - 1], CLEAR_DAY[i]
+    f = (minute - m0) / (m1 - m0)
+    return a0 + (a1 - a0) * f, b0 + (b1 - b0) * f
 
 
 def _season(d: date) -> float:
@@ -53,30 +83,28 @@ def _dst_hours(d: date) -> int:
     return 1 if time.localtime(noon).tm_isdst > 0 else 0
 
 
-def _shape(x: float) -> float:
-    """Clear-sky bell over the daylight fraction x in [0, 1]."""
-    return math.sin(math.pi * x) ** 1.3 if 0.0 < x < 1.0 else 0.0
-
-
 @lru_cache(maxsize=None)
 def day_profile(d: date) -> tuple:
     """Per-minute (p1, p2) watts of local wall-clock day d, plus the first
-    and last minute the inverter is awake. Two panels facing slightly east
-    and west of south, under that day's (seeded) weather."""
+    and last minute the inverter is awake. The CLEAR_DAY curve under that
+    day's (seeded) weather."""
     rng = random.Random(d.toordinal() * 7919)
     s = _season(d)
     daylight_h = 12.2 + 4.3 * s
     noon_h = 12 + 20 / 60 + _dst_hours(d)      # solar noon at ~10° E
-    rise_h, set_h = noon_h - daylight_h / 2, noon_h + daylight_h / 2
-    peak_w = 500 + 130 * s                     # clear-sky DC peak, both inputs
+    span_h = CLEAR_DAY_SPAN * daylight_h
+    rise_h = noon_h + CLEAR_DAY_MID_AFTER_NOON_H - span_h / 2
+    strength = 0.72 + 0.28 * s                 # lower winter sun
 
     sunny_odds = 0.38 + 0.2 * s                # grey winters, sunnier summers
     roll = rng.random()
     # A sunny streak into "today" (the pinned demo date, see compose.yml)
     # gives the live curve, the week view and the record-pace pill
-    # something to show.
-    if 0 <= (date.today() - d).days < 4 or roll < sunny_odds:
-        kind, level = "sunny", rng.uniform(0.9, 1.0)
+    # something to show. Only the record day itself reaches the full curve.
+    if (d.month, d.day) == BEST_DAY:
+        kind, level = "sunny", 1.0
+    elif 0 <= (date.today() - d).days < 4 or roll < sunny_odds:
+        kind, level = "sunny", rng.uniform(0.82, 0.97)
     elif roll < sunny_odds + 0.33:
         kind, level = "mixed", rng.uniform(0.4, 0.75)
     else:
@@ -95,13 +123,12 @@ def day_profile(d: date) -> tuple:
             t = cloud
         else:
             t = level * (1 + rng.gauss(0, 0.03))
-        x = (h - rise_h) / (set_h - rise_h)
-        p1 = 0.51 * peak_w * _shape(x + 0.025) * t
-        p2 = 0.49 * peak_w * _shape(x - 0.025) * t
-        # A chimney shades one panel for a while each morning, which is what
-        # the per-panel figures and lines are there to reveal.
-        if SHADE_START < x < SHADE_END:
-            p2 *= 1 - SHADE_DEPTH * math.sin(math.pi * (x - SHADE_START) / (SHADE_END - SHADE_START))
+        x = (h - rise_h) / span_h
+        curve_minute = CLEAR_DAY[0][0] + x * (CLEAR_DAY[-1][0] - CLEAR_DAY[0][0])
+        clear1, clear2 = _clear_day(curve_minute)
+        p1, p2 = clear1 * strength * t, clear2 * strength * t
+        if kind == "sunny" and SHADOW_EDGE_MINUTES[0] < curve_minute < SHADOW_EDGE_MINUTES[1]:
+            p1 *= rng.uniform(0.8, 1.0)
         if p1 + p2 > AC_LIMIT_W:
             k = AC_LIMIT_W / (p1 + p2)
             p1, p2 = p1 * k, p2 * k
@@ -233,13 +260,27 @@ def build_db(path: str) -> None:
 
 # --- serve -------------------------------------------------------------------
 
+def detail(d: date, minute: int) -> dict:
+    """The reading plus temperature and grid values, warmer under load."""
+    r = reading(d, minute)
+    rng = random.Random(d.toordinal() * 1440 + minute)
+    return {**r, "t": round(23 + 0.022 * (r["p1"] + r["p2"])),
+            "gv": round(232 + rng.uniform(-2, 4)),
+            "gf": round(50 + rng.uniform(-0.03, 0.03), 2)}
+
+
 class _FakeInverter(BaseHTTPRequestHandler):
-    """The two local-API endpoints the monitor polls, in the EZ1-M format."""
+    """The local-API endpoints the monitor polls, in the EZ1-M format."""
 
     def do_GET(self):
         now = datetime.now()
-        if self.path.startswith("/getOutputData"):
-            data = reading(now.date(), now.hour * 60 + now.minute)
+        minute = now.hour * 60 + now.minute
+        if self.path.startswith("/getOutputDataDetail"):
+            data = detail(now.date(), minute)
+        elif self.path.startswith("/getOutputData"):
+            data = reading(now.date(), minute)
+        elif self.path.startswith("/getMaxPower"):
+            data = {"maxPower": str(AC_LIMIT_W)}
         elif self.path.startswith("/getDeviceInfo"):
             data = {"deviceId": DEVICE_ID, "devVer": FIRMWARE, "ssid": "demo",
                     "ipAddr": self.server.server_address[0], "minPower": "30",

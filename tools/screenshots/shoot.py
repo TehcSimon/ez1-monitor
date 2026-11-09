@@ -10,6 +10,7 @@ WebP: a fraction of the PNG size at no visible loss.
 """
 import json
 import sys
+import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,16 @@ def backend_now() -> datetime:
     with urllib.request.urlopen(f"{BASE}/api/live") as r:
         latest = json.load(r)["latest"]
     return datetime.fromtimestamp(latest["timestamp"] + 5, tz=timezone.utc)
+
+
+def wait_for_detail_values() -> None:
+    """The temperature reaches the top bar with the second poll after startup."""
+    for _ in range(150):
+        with urllib.request.urlopen(f"{BASE}/api/live") as r:
+            if json.load(r)["latest"].get("temp_c") is not None:
+                return
+        time.sleep(1)
+    sys.exit("The monitor never reported a temperature")
 
 
 def open_dashboard(browser, theme, viewport, mobile=False):
@@ -86,6 +97,7 @@ def shoot_region(page, name, *selectors, pad=0):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    wait_for_detail_values()
     with sync_playwright() as p:
         browser = p.chromium.launch()
 

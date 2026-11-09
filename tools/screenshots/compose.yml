@@ -13,7 +13,7 @@ name: ez1-screenshots
 x-clock: &clock
   TZ: Europe/Berlin
   LD_PRELOAD: /faketime/libfaketimeMT.so.1
-  FAKETIME: "@2026-07-04 15:10:00"
+  FAKETIME: "@2026-06-24 15:10:00"
 
 # Built once (by demo-db), reused by the inverter and the monitor itself.
 x-monitor: &monitor
@@ -61,7 +61,6 @@ services:
       PRICE_PER_KWH: "0.35"
       SELF_CONSUMPTION_PCT: "70"
       INSTALL_COST: "650"
-      INSTALL_KWP: "0.86"
     volumes: [data:/data, faketime:/faketime:ro]
     networks: [lan]
     depends_on:
