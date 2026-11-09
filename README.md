@@ -4,7 +4,7 @@
 
 # EZ1 Monitor
 
-**A lean, self-hosted dashboard for the APsystems EZ1-M microinverter.**
+**A lean, self-hosted dashboard for the APsystems EZ1 microinverter family.**
 Live power, every day's curve, fair comparisons and long-term records —
 straight from the inverter's local API. No cloud, no account, no telemetry.
 
@@ -29,7 +29,7 @@ straight from the inverter's local API. No cloud, no account, no telemetry.
 
 ## Why
 
-The EZ1-M has a local HTTP API, but on its own it only knows *right now*
+An EZ1 inverter has a local HTTP API, but on its own it only knows *right now*
 and *today*. EZ1 Monitor polls it, keeps every reading in SQLite and turns
 them into the dashboard a balcony-plant owner actually wants: how today
 compares to yesterday *at the same time*, whether this is a record week,
@@ -98,9 +98,20 @@ to live grid CO₂ data.
 
 <sub>All screenshots show synthetic demo data — see [Development → Screenshots](#screenshots).</sub>
 
+## Supported inverters
+
+Built on an EZ1-M and in use on an EZ1D. The rest of the EZ1 family (EZ1-H,
+EZ1-LV, EZ1D-L, EZ1D-H and the single-input EZ1-SPE) should work the same way
+through the local API, but hasn't been tried with the monitor yet. If you run
+one of them, an [issue](https://github.com/TehcSimon/ez1-monitor/issues) saying
+how it went helps everyone.
+
+The family has at most two inputs per inverter, shown as PV 1 and PV 2. Four
+panels on an EZ1D are wired in pairs, so each pair shows up as one input.
+
 ## Quickstart
 
-**You need** an EZ1-M on your network with a fixed IP (DHCP reservation)
+**You need** an EZ1 inverter on your network with a fixed IP (DHCP reservation)
 and its **local API switched on**: in the AP EasyPower app, set the
 inverter's *Local Mode* to **Continuous**. Check that it answers:
 
@@ -138,7 +149,7 @@ months begin (the default is UTC).
 2. Repository: `ghcr.io/tehcsimon/ez1-monitor:latest`
 3. Network Type: Bridge, Port `8080:8080`
 4. Path: `/mnt/user/appdata/ez1-monitor` → `/data`
-5. Variables: `INVERTER_IP` = your EZ1-M's IP, `TZ` = your timezone
+5. Variables: `INVERTER_IP` = your inverter's IP, `TZ` = your timezone
 6. Apply
 
 </details>
@@ -171,7 +182,7 @@ spec:
 
 ```mermaid
 graph LR
-    EZ1["☀️ EZ1-M<br/>local API :8050"]
+    EZ1["☀️ EZ1 inverter<br/>local API :8050"]
     EM["🌍 Electricity Maps<br/>(optional)"]
 
     subgraph Box["🐳 ez1-monitor"]
@@ -208,7 +219,7 @@ All configuration is done via environment variables.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `INVERTER_IP` | **required** | IP address or hostname of the EZ1-M |
+| `INVERTER_IP` | **required** | IP address or hostname of the inverter |
 | `TZ` | `Etc/UTC` | IANA timezone (e.g. `Europe/Berlin`) — where days, weeks and months begin |
 | `INVERTER_PORT` | `8050` | Port of the inverter's local API |
 | `POLL_INTERVAL` | `60` | Seconds between polls; 10× slower (max. 5 min) while the inverter is offline |

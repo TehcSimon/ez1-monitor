@@ -344,7 +344,7 @@ async function loadLive() {
 
     if (data.device) {
       state.maxPowerW = data.device.max_power || 800;
-      const deviceId = data.device.device_id || "EZ1-M";
+      const deviceId = data.device.device_id || "EZ1";
       // Stacked, labeled meta lines. Values set via textContent only (labels
       // are translated separately via data-i18n) — no innerHTML, no XSS.
       document.getElementById("device-serial").textContent = deviceId;

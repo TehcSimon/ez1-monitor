@@ -1,4 +1,4 @@
-"""Background poller for APsystems EZ1-M inverter.
+"""Background poller for APsystems EZ1 inverters.
 
 Adaptive polling: at the normal interval while the inverter is online,
 slowed down by STANDBY_FACTOR while offline (with an absolute cap).

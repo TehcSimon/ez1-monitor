@@ -1,3 +1,3 @@
-"""EZ1 Monitor — self-hosted dashboard for the APsystems EZ1-M microinverter."""
+"""EZ1 Monitor — self-hosted dashboard for APsystems EZ1 microinverters."""
 
 __version__ = "1.12.1"

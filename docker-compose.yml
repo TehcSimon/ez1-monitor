@@ -15,7 +15,7 @@ services:
     #   sudo chmod -R g=u   /mnt/user/appdata/ez1-monitor
     environment:
       # --- Connection (INVERTER_IP is required, no default) ---
-      - INVERTER_IP=192.168.50.123       # REQUIRED — set to your EZ1-M's IP
+      - INVERTER_IP=192.168.50.123       # REQUIRED — set to your inverter's IP
       - INVERTER_PORT=8050
       - POLL_INTERVAL=60                 # seconds between polls
 

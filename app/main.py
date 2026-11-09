@@ -45,7 +45,7 @@ def _required_inverter_ip() -> str:
     if not value:
         raise RuntimeError(
             "INVERTER_IP environment variable is required but not set. "
-            "Set it to your EZ1-M's IP address (e.g. INVERTER_IP=192.168.50.123)."
+            "Set it to your inverter's IP address (e.g. INVERTER_IP=192.168.50.123)."
         )
     try:
         ipaddress.ip_address(value)

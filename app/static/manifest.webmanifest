@@ -1,7 +1,7 @@
 {
   "name": "EZ1 Monitor",
   "short_name": "EZ1",
-  "description": "Self-hosted dashboard for APsystems EZ1-M solar microinverter",
+  "description": "Self-hosted dashboard for APsystems EZ1 solar microinverters",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

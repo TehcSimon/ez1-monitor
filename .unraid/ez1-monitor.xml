@@ -10,7 +10,7 @@
   <Support>https://github.com/TehcSimon/ez1-monitor/issues</Support>
   <Project>https://github.com/TehcSimon/ez1-monitor</Project>
   <Overview>
-    Local-only monitoring dashboard for the APsystems EZ1-M microinverter.
+    Local-only monitoring dashboard for the APsystems EZ1 microinverter family.
     Polls the inverter's local API every minute (configurable), stores all
     measurements in SQLite, and serves a web dashboard with live power,
     daily/weekly/monthly history, period comparisons and lifetime statistics
@@ -18,7 +18,7 @@
     UI auto-detects German or English from browser language.
     [br][br]
     [b]Prerequisites:[/b][br]
-    1. EZ1-M reachable on your network with a known IP (use DHCP reservation).[br]
+    1. EZ1 inverter reachable on your network with a known IP (use DHCP reservation).[br]
     2. Local API enabled on the inverter (AP EasyPower app -> inverter settings
     -> Local Mode -> Continuous).[br]
     3. Test API responds: [i]curl http://&lt;ez1-ip&gt;:8050/getDeviceInfo[/i]
@@ -39,7 +39,7 @@
 
   <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/ez1-monitor" Mode="rw" Description="Persistent storage for the SQLite database." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ez1-monitor</Config>
 
-  <Config Name="Inverter IP" Target="INVERTER_IP" Default="" Mode="" Description="REQUIRED. IP address of your EZ1-M inverter. Use a DHCP reservation so it never changes. The container refuses to start if this is empty." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Inverter IP" Target="INVERTER_IP" Default="" Mode="" Description="REQUIRED. IP address of your EZ1 inverter. Use a DHCP reservation so it never changes. The container refuses to start if this is empty." Type="Variable" Display="always" Required="true" Mask="false"></Config>
 
   <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="IANA timezone identifier. Determines day boundaries for daily/weekly/monthly aggregations and timestamps in logs. Examples: Europe/Berlin, America/New_York, Asia/Tokyo, UTC" Type="Variable" Display="always" Required="false" Mask="false">Europe/Berlin</Config>
 
