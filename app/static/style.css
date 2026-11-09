@@ -471,6 +471,9 @@ main {
   text-transform: uppercase;
 }
 
+.pv-value-1 { color: var(--pv1); }
+.pv-value-2 { color: var(--pv2); }
+
 /* The day chart's tooltip needs a long press on touch screens, see
    bindTouchTooltip: without this iOS starts a text selection instead. */
 @media (hover: none) {
@@ -485,12 +488,8 @@ main {
   font-family: var(--font-mono);
   font-weight: 500;
   font-size: 28px;
-  /* Use the accent color so PV1+PV2 values visually belong together with
-     the big current-power number above them — "ah, these combine to the
-     hero number". Slightly dimmer than the hero so the hero stays the
-     focal point. */
-  color: var(--accent);
-  opacity: 0.85;
+  /* Colored per panel (.pv-value-1/-2 below), in the colors of the PV 1 and
+     PV 2 lines of the day chart, so tile and line read as the same thing. */
   font-variant-numeric: tabular-nums;
   margin-top: 4px;
   /* Prevent the unit (W) from wrapping to a second line on 3-digit
