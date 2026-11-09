@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from .date_helpers import iso_week_monday
+from .lifetime import corrected_counter
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,9 @@ CREATE TABLE IF NOT EXISTS daily_aggregates (
     date                TEXT PRIMARY KEY,     -- YYYY-MM-DD
     total_kwh           REAL NOT NULL DEFAULT 0,
     peak_w              INTEGER NOT NULL DEFAULT 0,
-    last_updated        INTEGER NOT NULL
+    last_updated        INTEGER NOT NULL,
+    te1                 REAL,    -- highest lifetime counter reading that day
+    te2                 REAL
 );
 """
 
@@ -112,6 +115,8 @@ MIGRATIONS = [
     "ALTER TABLE measurements        ADD COLUMN temp_c REAL",
     "ALTER TABLE measurements        ADD COLUMN grid_v REAL",
     "ALTER TABLE measurements        ADD COLUMN grid_hz REAL",
+    "ALTER TABLE daily_aggregates    ADD COLUMN te1 REAL",
+    "ALTER TABLE daily_aggregates    ADD COLUMN te2 REAL",
 ]
 
 
@@ -381,7 +386,13 @@ class Database:
         return [{"month": k, "kwh": round(v, 3)} for k, v in sorted_items]
 
     async def get_total_energy(self) -> float:
-        """Lifetime energy from the most recent successful poll."""
+        """Lifetime energy from the most recent successful poll, with any
+        fall of the inverter's counters added back (see app/lifetime.py).
+
+        Today's highest reading comes from the raw rows rather than from
+        today's daily_aggregates row, which is only refreshed hourly: on the
+        day a counter wraps it is the exact level the counter wrapped at.
+        """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -389,10 +400,27 @@ class Database:
                    WHERE online = 1 AND te1 IS NOT NULL AND te2 IS NOT NULL
                    ORDER BY timestamp DESC LIMIT 1"""
             )
-            row = await cur.fetchone()
-            if not row:
+            latest = await cur.fetchone()
+            if not latest:
                 return 0.0
-            return (row["te1"] or 0) + (row["te2"] or 0)
+            cur = await db.execute(
+                "SELECT te1, te2 FROM daily_aggregates WHERE date < ? ORDER BY date ASC",
+                (date_cls.today().isoformat(),),
+            )
+            past_days = await cur.fetchall()
+            cur = await db.execute(
+                """SELECT MAX(te1) AS te1, MAX(te2) AS te2 FROM measurements
+                   WHERE timestamp >= ? AND timestamp < ? AND online = 1""",
+                _today_bounds(),
+            )
+            today = await cur.fetchone()
+
+        total = 0.0
+        for counter in ("te1", "te2"):
+            readings = [r[counter] for r in [*past_days, today, latest]
+                        if r[counter] is not None]
+            total += corrected_counter(readings)
+        return total
 
     async def get_peak_today(self) -> float:
         """Highest power of the whole array so far today, in watts."""
@@ -714,7 +742,8 @@ class Database:
             cur = await db.execute(
                 """SELECT date(timestamp, 'unixepoch', 'localtime') AS d,
                           MAX(e1) AS e1, MAX(e2) AS e2,
-                          MAX(COALESCE(p1, 0) + COALESCE(p2, 0)) AS peak
+                          MAX(COALESCE(p1, 0) + COALESCE(p2, 0)) AS peak,
+                          MAX(te1) AS te1, MAX(te2) AS te2
                    FROM measurements
                    WHERE online = 1
                    GROUP BY d
@@ -723,7 +752,7 @@ class Database:
             rows = await cur.fetchall()
             written = 0
             for r in rows:
-                d, e1, e2, peak = r
+                d, e1, e2, peak, te1, te2 = r
                 if d is None:
                     continue
                 total = float((e1 or 0) + (e2 or 0))
@@ -732,9 +761,9 @@ class Database:
                 cur2 = await db.execute(
                     f"""INSERT {"OR IGNORE" if frozen else "OR REPLACE"}
                        INTO daily_aggregates
-                       (date, total_kwh, peak_w, last_updated)
-                       VALUES (?, ?, ?, strftime('%s','now'))""",
-                    (d, total, peak_w),
+                       (date, total_kwh, peak_w, last_updated, te1, te2)
+                       VALUES (?, ?, ?, strftime('%s','now'), ?, ?)""",
+                    (d, total, peak_w, te1, te2),
                 )
                 written += cur2.rowcount or 0
             await db.commit()
