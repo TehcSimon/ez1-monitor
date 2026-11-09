@@ -223,7 +223,6 @@ All configuration is done via environment variables.
 | `RETENTION_DAYS` | `730` | Days of raw readings to keep (`0` = forever); aggregates are always kept |
 | `DEFAULT_LANG` | *(empty)* | Force `de` or `en`; empty = browser language |
 | `DB_PATH` | `/data/ez1.db` | SQLite database file |
-| `INSTALL_KWP` | `1.0` | Installed peak power in kWp (currently only exposed via `/api/live`) |
 | `LOG_LEVEL` | `INFO` | Python log level (`DEBUG`, `INFO`, `WARNING`) |
 
 > **Security note:** there is no built-in authentication. Run it on a

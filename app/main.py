@@ -65,7 +65,6 @@ INVERTER_IP = _required_inverter_ip()
 INVERTER_PORT = int(os.getenv("INVERTER_PORT", "8050"))
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
 DB_PATH = os.getenv("DB_PATH", "/data/ez1.db")
-INSTALL_KWP = float(os.getenv("INSTALL_KWP", "1.0"))
 
 RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "730"))
 
@@ -423,7 +422,6 @@ async def get_live(request: Request):
             "version": __version__,
             "inverter_ip": INVERTER_IP,
             "poll_interval": POLL_INTERVAL,
-            "install_kwp": INSTALL_KWP,
             "language": detect_language(request),
             "currency": CURRENCY,
             "price_per_kwh": PRICE_PER_KWH,

@@ -19,9 +19,6 @@ services:
       - INVERTER_PORT=8050
       - POLL_INTERVAL=60                 # seconds between polls
 
-      # --- Installation ---
-      - INSTALL_KWP=1.0                  # installed peak power in kWp
-
       # --- Data retention ---
       - RETENTION_DAYS=730               # keep raw measurements for N days
                                          # (730 = 2 years for YoY compare).

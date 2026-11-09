@@ -25,7 +25,6 @@ const state = {
   pricePerKwh: 0.35,
   avgPricePerKwh: null,      // average over the whole counter (from /api/stats)
   co2KgPerKwh: 0.38,
-  installKwp: 1.0,
   maxPowerW: 800,
   selfConsumptionPct: 100,   // % of production self-consumed (money calc)
   feedInTariff: 0,           // currency/kWh for the fed-in remainder
@@ -314,7 +313,6 @@ async function loadLive() {
       // UI would show "based on 35 ct/kWh" while the backend computed with 0.
       state.pricePerKwh = data.config.price_per_kwh ?? 0.35;
       state.co2KgPerKwh = data.config.co2_kg_per_kwh ?? 0.38;
-      state.installKwp = data.config.install_kwp ?? 1.0;
       state.pollInterval = data.config.poll_interval || 60;
       state.retentionDays = data.config.retention_days ?? 730;
       state.selfConsumptionPct = data.config.self_consumption_pct ?? 100;
