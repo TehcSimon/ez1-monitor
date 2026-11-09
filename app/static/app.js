@@ -364,6 +364,7 @@ async function loadLive() {
     applyStatus(newState);
 
     const m = data.latest;
+    renderDeviceReadings(m && m.online ? m : null);
     if (m) {
       if (m.online) {
         const totalW = (m.p1 || 0) + (m.p2 || 0);
@@ -400,6 +401,20 @@ async function loadLive() {
     console.error("loadLive:", e);
     applyStatus("connectionError");
   }
+}
+
+// Temperature and grid lines in the top bar. Hidden while the inverter sleeps
+// (m is null then) and on firmware that doesn't report these values.
+function renderDeviceReadings(m) {
+  const setLine = (id, text) => {
+    document.getElementById(id).textContent = text || "";
+    document.getElementById(`${id}-line`).hidden = !text;
+  };
+  setLine("device-temp", m && m.temp_c != null ? `${fmt.numUpTo(m.temp_c, 1)} °C` : "");
+  const grid = [];
+  if (m && m.grid_v != null) grid.push(`${fmt.power(m.grid_v)} V`);
+  if (m && m.grid_hz != null) grid.push(`${fmt.num(m.grid_hz, 2)} Hz`);
+  setLine("device-grid", grid.join(" · "));
 }
 
 function updateDynamicLabels() {

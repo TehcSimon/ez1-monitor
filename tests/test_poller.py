@@ -16,7 +16,12 @@ import pytest_asyncio
 
 from app.co2 import CarbonState
 from app.database import Database
-from app.poller import Poller
+from app.poller import (
+    DETAIL_MAX_AGE_S,
+    DETAIL_MIN_SPACING_S,
+    DEVICE_INFO_REFRESH_S,
+    Poller,
+)
 
 INTERVAL = 60
 
@@ -100,6 +105,155 @@ async def _wait_until(condition, timeout=5.0):
     while not condition():
         assert time.monotonic() < deadline, "not reached in time"
         await asyncio.sleep(0.005)
+
+
+class DetailInverter(FakeInverter):
+    """A FakeInverter that also answers device info, AC limit and detail
+    requests. An exception as limit or detail is raised."""
+
+    def __init__(self, *script, limit=800, detail=None, max_power=1800):
+        super().__init__(*script)
+        self.limit = limit
+        self.detail = detail
+        self.max_power = max_power
+        self.detail_requests = 0
+
+    async def get_device_info(self):
+        return SimpleNamespace(deviceId="E17", devVer="EZ1 1.12.2t",
+                               minPower=30, maxPower=self.max_power)
+
+    async def get_max_power(self):
+        if isinstance(self.limit, Exception):
+            raise self.limit
+        return self.limit
+
+    async def _request(self, endpoint, retry=3):
+        assert endpoint == "getOutputDataDetail"
+        self.detail_requests += 1
+        if isinstance(self.detail, Exception):
+            raise self.detail
+        return {"data": self.detail, "message": "SUCCESS"}
+
+
+DETAIL = {"p1": 9, "t": 17, "gv": 237, "gf": 49.94}
+
+
+def _detail_columns(db_path):
+    con = sqlite3.connect(db_path)
+    try:
+        return con.execute(
+            "SELECT temp_c, grid_v, grid_hz FROM measurements ORDER BY timestamp DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        con.close()
+
+
+class TestAcLimit:
+    """The header has to show the limit in force, not the highest settable one
+    (an 1800 W EZ1-D limited to 800 W showed "AC limit 1800 W")."""
+
+    async def _stored_limit(self, poller):
+        return (await poller.db.get_device_info())["max_power"]
+
+    async def test_uses_the_limit_in_force(self, poller):
+        poller.inverter = DetailInverter(limit=800, max_power=1800)
+        assert await poller._try_update_device_info()
+        assert await self._stored_limit(poller) == 800
+
+    async def test_falls_back_without_the_endpoint(self, poller):
+        poller.inverter = DetailInverter(limit=DOWN, max_power=1800)
+        assert await poller._try_update_device_info()
+        assert await self._stored_limit(poller) == 1800
+
+    async def test_a_dropped_request_keeps_the_known_limit(self, poller):
+        poller.inverter = DetailInverter(limit=800, max_power=1800)
+        await poller._try_update_device_info()
+        poller.inverter.limit = DOWN
+        await poller._try_update_device_info()
+        assert await self._stored_limit(poller) == 800
+
+    async def test_a_changed_limit_is_picked_up_within_the_hour(self, poller):
+        poller.inverter = DetailInverter(UP, UP, limit=800)
+        await poller._poll_once()
+        assert await self._stored_limit(poller) == 800
+        poller.inverter.limit = 600
+        poller._device_info_at = time.monotonic() - DEVICE_INFO_REFRESH_S - 1
+        await poller._poll_once()
+        assert await self._stored_limit(poller) == 600
+
+
+class TestDetailValues:
+    async def test_stamped_on_the_next_measurement(self, poller, db_path):
+        poller.inverter = DetailInverter(UP, detail=DETAIL)
+        await poller._poll_detail()
+        await poller._poll_once()
+        assert _detail_columns(db_path) == (17.0, 237.0, 49.94)
+
+    async def test_strings_and_null_are_tolerated(self, poller, db_path):
+        poller.inverter = DetailInverter(UP, detail={"t": "21.5", "gv": "null"})
+        await poller._poll_detail()
+        await poller._poll_once()
+        assert _detail_columns(db_path) == (21.5, None, None)
+
+    @pytest.mark.parametrize("detail", [{"p1": 9, "e1": 0.1}, None, DOWN])
+    async def test_firmware_without_the_values_is_left_alone(self, poller, db_path, detail):
+        poller.inverter = DetailInverter(UP, detail=detail)
+        await poller._poll_detail()
+        assert poller._detail_next_at > time.monotonic() + DETAIL_MIN_SPACING_S
+        await poller._poll_once()
+        assert _detail_columns(db_path) == (None, None, None)
+
+    async def test_an_old_reading_is_not_stamped(self, poller, db_path):
+        poller.inverter = DetailInverter(UP, detail=DETAIL)
+        await poller._poll_detail()
+        poller._detail_at -= DETAIL_MAX_AGE_S + 1
+        await poller._poll_once()
+        assert _detail_columns(db_path) == (None, None, None)
+
+    async def test_a_poll_failing_right_after_it_pauses_the_detail_calls(self, poller):
+        poller.inverter = DetailInverter(DOWN, detail=DETAIL)
+        await poller._poll_detail()
+        await poller._poll_once()
+        assert poller._detail_next_at > time.monotonic() + DETAIL_MIN_SPACING_S
+
+    async def test_an_unrelated_failed_poll_does_not(self, poller):
+        poller.inverter = DetailInverter(UP, DOWN, detail=DETAIL)
+        await poller._poll_detail()
+        await poller._poll_once()
+        await poller._poll_once()
+        assert poller._detail_next_at <= time.monotonic() + DETAIL_MIN_SPACING_S
+
+
+class TestDetailScheduling:
+    @pytest.fixture
+    def sleeps(self, monkeypatch):
+        recorded = []
+
+        async def fake_sleep(seconds):
+            recorded.append(seconds)
+
+        monkeypatch.setattr("app.poller.asyncio.sleep", fake_sleep)
+        return recorded
+
+    async def test_runs_halfway_between_two_polls(self, poller, sleeps):
+        poller.inverter = DetailInverter(detail=DETAIL)
+        await poller._sleep_until_next_poll(60)
+        assert poller.inverter.detail_requests == 1
+        assert sleeps[0] == 30
+        assert sleeps[1] == pytest.approx(30, abs=1)
+
+    async def test_at_most_once_a_minute_at_short_poll_intervals(self, poller, sleeps):
+        poller.inverter = DetailInverter(detail=DETAIL)
+        await poller._sleep_until_next_poll(10)
+        await poller._sleep_until_next_poll(10)
+        assert poller.inverter.detail_requests == 1
+
+    async def test_not_while_polls_are_failing(self, poller, sleeps):
+        poller.inverter = DetailInverter(detail=DETAIL)
+        poller._failed_polls = 1
+        await poller._sleep_until_next_poll(60)
+        assert poller.inverter.detail_requests == 0
+        assert sleeps == [60]
 
 
 class TestOfflineDetection:

@@ -36,7 +36,10 @@ CREATE TABLE IF NOT EXISTS measurements (
     te2           REAL,
     online        INTEGER,
     co2_g_per_kwh REAL,
-    price_per_kwh REAL
+    price_per_kwh REAL,
+    temp_c        REAL,
+    grid_v        REAL,
+    grid_hz       REAL
 );
 
 CREATE TABLE IF NOT EXISTS device_info (
@@ -104,6 +107,11 @@ MIGRATIONS = [
     # KEY` is SQLite's rowid alias, so the table itself is already the btree
     # keyed on timestamp — the extra index only doubled the write cost.
     "DROP INDEX IF EXISTS idx_timestamp",
+    # v1.13.0: inverter temperature and grid readings per measurement, and
+    # the daily lifetime counter readings behind lifetime.corrected_counter.
+    "ALTER TABLE measurements        ADD COLUMN temp_c REAL",
+    "ALTER TABLE measurements        ADD COLUMN grid_v REAL",
+    "ALTER TABLE measurements        ADD COLUMN grid_hz REAL",
 ]
 
 
@@ -131,7 +139,8 @@ class Database:
             await db.commit()
 
     async def insert_measurement(self, timestamp, p1, p2, e1, e2, te1, te2,
-                                 online, co2_g_per_kwh=None, price_per_kwh=None):
+                                 online, co2_g_per_kwh=None, price_per_kwh=None,
+                                 temp_c=None, grid_v=None, grid_hz=None):
         """Insert a measurement. co2_g_per_kwh is the CO2 factor that was
         active at the time of measurement (gCO2eq/kWh). May be None when no
         carbon-intensity data source is configured or when the historical
@@ -142,15 +151,19 @@ class Database:
         "money saved" calculation historically accurate across tariff
         changes — the same pattern as the CO2 factor. May be None for rows
         from before the column existed.
+
+        temp_c, grid_v and grid_hz are the inverter temperature, grid voltage
+        and grid frequency. None when the inverter doesn't report them.
         """
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT OR REPLACE INTO measurements
                    (timestamp, p1, p2, e1, e2, te1, te2, online,
-                    co2_g_per_kwh, price_per_kwh)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    co2_g_per_kwh, price_per_kwh, temp_c, grid_v, grid_hz)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (timestamp, p1, p2, e1, e2, te1, te2,
-                 1 if online else 0, co2_g_per_kwh, price_per_kwh),
+                 1 if online else 0, co2_g_per_kwh, price_per_kwh,
+                 temp_c, grid_v, grid_hz),
             )
             await db.commit()
 

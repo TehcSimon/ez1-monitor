@@ -6,6 +6,8 @@ const TRANSLATIONS = {
       serial: "S/N",
       acLimit: "AC-Limit",
       firmware: "Firmware",
+      temperature: "Temperatur",
+      grid: "Netz",
     },
     status: {
       connecting: "verbinde …",
@@ -138,6 +140,8 @@ const TRANSLATIONS = {
       serial: "S/N",
       acLimit: "AC limit",
       firmware: "Firmware",
+      temperature: "Temperature",
+      grid: "Grid",
     },
     status: {
       connecting: "connecting …",
