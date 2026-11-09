@@ -1888,10 +1888,86 @@ function chartSig(...parts) {
   return parts.join("|") + "|" + state.lang + "|" + getResolvedTheme();
 }
 
+// Phones and tablets: Chart.js opens the tooltip on any touch and leaves it
+// open, which also gets in the way of scrolling past the chart. There the day
+// chart takes no events at all and bindTouchTooltip() drives the tooltip.
+const TOUCH_ONLY = window.matchMedia("(hover: none)").matches;
+
+// Shows the day chart's tooltip only while a finger is held on the chart: it
+// takes a short hold, so a swipe across the chart still scrolls the page, then
+// the tooltip follows the finger and disappears on release.
+function bindTouchTooltip(canvasId) {
+  if (!TOUCH_ONLY) return;
+  const HOLD_MS = 300;
+  const SCROLL_TOLERANCE_PX = 10;
+  const canvas = document.getElementById(canvasId);
+  let holdTimer = null;
+  let startTouch = null;
+  let showing = false;
+
+  const position = touch => {
+    const rect = canvas.getBoundingClientRect();
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  };
+  // Looked up every time: upsertChart may have replaced the chart meanwhile.
+  const setActive = (items, point) => {
+    const chart = Chart.getChart(canvas);
+    if (!chart) return;
+    chart.setActiveElements(items);
+    chart.tooltip.setActiveElements(items, point);
+    chart.update("none");
+  };
+  const showAt = point => {
+    const chart = Chart.getChart(canvas);
+    if (!chart) return;
+    // "native" tells Chart.js the coordinates are already chart-relative.
+    const items = chart
+      .getElementsAtEventForMode({ native: true, ...point }, "index", { intersect: false }, false)
+      .map(({ datasetIndex, index }) => ({ datasetIndex, index }));
+    setActive(items, point);
+  };
+  const stop = () => {
+    clearTimeout(holdTimer);
+    startTouch = null;
+    if (showing) setActive([], { x: 0, y: 0 });
+    showing = false;
+  };
+
+  canvas.addEventListener("touchstart", e => {
+    stop();
+    if (e.touches.length !== 1) return;
+    startTouch = e.touches[0];
+    const point = position(startTouch);
+    holdTimer = setTimeout(() => {
+      showing = true;
+      showAt(point);
+    }, HOLD_MS);
+  }, { passive: true });
+
+  // Not passive: once the tooltip shows, the finger moves it, not the page.
+  canvas.addEventListener("touchmove", e => {
+    const touch = e.touches[0];
+    if (showing) {
+      if (e.cancelable) e.preventDefault();
+      showAt(position(touch));
+    } else if (startTouch && Math.hypot(
+      touch.clientX - startTouch.clientX, touch.clientY - startTouch.clientY,
+    ) > SCROLL_TOLERANCE_PX) {
+      stop();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", stop);
+  canvas.addEventListener("touchcancel", stop);
+  // A long press would otherwise open the browser's image menu on Android.
+  canvas.addEventListener("contextmenu", e => e.preventDefault());
+}
+
 function timeChartOptions(timeFormat) {
   return {
     responsive: true,
     maintainAspectRatio: false,
+    ...(TOUCH_ONLY ? { events: [] } : {}),
     interaction: { intersect: false, mode: "index" },
     plugins: {
       legend: { display: false },
@@ -2327,6 +2403,7 @@ async function init() {
   ensureDayPicker();
   updateDayPickerLabels();
   updateDayPickerButtons();   // UI-only, no fetches yet
+  bindTouchTooltip("chart-today");
 
   await loadLive();
   await loadStats();

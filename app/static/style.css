@@ -471,6 +471,16 @@ main {
   text-transform: uppercase;
 }
 
+/* The day chart's tooltip needs a long press on touch screens, see
+   bindTouchTooltip: without this iOS starts a text selection instead. */
+@media (hover: none) {
+  #chart-today {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
 .pv-value {
   font-family: var(--font-mono);
   font-weight: 500;
