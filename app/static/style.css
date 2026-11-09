@@ -1107,6 +1107,28 @@ main {
   margin-top: 2px;
 }
 
+/* The total generation card's subtitle is its switch; the ::after stretches
+   the click target over the whole card (.card is position: relative). */
+.lifetime-scope {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.lifetime-scope::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+/* Only with a real pointer: after a tap, :hover would stick on a phone. */
+@media (hover: hover) {
+  .lifetime-scope:hover { color: var(--accent); }
+}
+.lifetime-scope:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* Secondary subtitle line — used for the grid-mix details on the CO2 card.
    Visually identical to .lifetime-sub above because the two lines belong
    together (both are live-grid context for the value above). Empty content

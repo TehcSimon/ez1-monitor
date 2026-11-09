@@ -988,6 +988,9 @@ async def get_stats():
     ) = energies
 
     total_kwh = await db.get_total_energy()
+    recorded_kwh = await db.get_recorded_energy_before_today() + today_kwh
+    # No day row exists yet during the first hour of a fresh install.
+    first_data_date = await db.get_first_daily_date() or now.date().isoformat()
 
     # CO2 saved and money saved: hybrid calculations that combine
     # historically-accurate stamped factors with a fallback for the portion
@@ -1102,6 +1105,11 @@ async def get_stats():
 
         # Lifetime + peak
         "total_kwh": round(total_kwh, 3),
+        # What the history bars add up to: unlike total_kwh it leaves out
+        # production from before the monitor was set up. Display only, every
+        # estimate builds on total_kwh.
+        "recorded_kwh": round(recorded_kwh, 3),
+        "first_data_date": first_data_date,
         "peak_w_today": round(peak_w_today, 1),
         # Per-panel production today, DB-derived so it survives inverter
         # standby (the live reading is null at night).

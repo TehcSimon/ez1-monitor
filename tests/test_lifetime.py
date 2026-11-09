@@ -1,9 +1,10 @@
 """Tests for the lifetime counter correction (app/lifetime.py) and the figures
 built on it, against a real temp SQLite file."""
+import importlib
 import os
 import sqlite3
 import tempfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -126,6 +127,23 @@ class TestTotalEnergy:
         con.close()
         assert await db.get_total_energy() == pytest.approx(60.0)
 
+    async def test_the_recorded_energy_leaves_today_to_the_caller(self, db):
+        assert await db.get_recorded_energy_before_today() == 0.0
+        await _reading(db, 2, 100.0)
+        await _reading(db, 1, 101.0)
+        await _reading(db, 0, 102.0, hour=0)
+        await db.backfill_daily_aggregates()
+        assert await db.get_recorded_energy_before_today() == pytest.approx(4.0)
+
+    async def test_the_recorded_energy_survives_pruning(self, db, db_path):
+        await _reading(db, 2, 100.0)
+        await db.backfill_daily_aggregates()
+        con = sqlite3.connect(db_path)
+        con.execute("DELETE FROM measurements")
+        con.commit()
+        con.close()
+        assert await db.get_recorded_energy_before_today() == pytest.approx(2.0)
+
     async def test_migration_adds_the_new_columns_to_an_old_database(self, db_path):
         con = sqlite3.connect(db_path)
         con.executescript(
@@ -146,3 +164,31 @@ class TestTotalEnergy:
         con.close()
         assert {"temp_c", "grid_v", "grid_hz"} <= measurement_cols
         assert {"te1", "te2"} <= daily_cols
+
+
+@pytest_asyncio.fixture
+async def main(db, db_path, monkeypatch):
+    """app.main wired to the temp database. Importing it needs both variables."""
+    monkeypatch.setenv("INVERTER_IP", "192.0.2.1")
+    monkeypatch.setenv("DB_PATH", db_path)
+    module = importlib.import_module("app.main")
+    monkeypatch.setattr(module, "db", db)
+    return module
+
+
+class TestStatsEndpoint:
+    async def test_recorded_energy_is_what_the_bars_add_up_to(self, main):
+        await _reading(main.db, 2, 100.0)
+        await _reading(main.db, 1, 101.0)
+        await main.db.backfill_daily_aggregates()
+        stats = await main.get_stats()
+        # The inverter's counters also hold what came before the monitor.
+        assert stats["total_kwh"] == pytest.approx(111.0)
+        assert stats["recorded_kwh"] == pytest.approx(4.0)
+        assert stats["first_data_date"] == (date.today() - timedelta(days=2)).isoformat()
+
+    async def test_today_counts_before_the_hourly_refresh(self, main):
+        await _reading(main.db, 0, 100.0, hour=0)
+        stats = await main.get_stats()
+        assert stats["recorded_kwh"] == pytest.approx(2.0)
+        assert stats["first_data_date"] == date.today().isoformat()

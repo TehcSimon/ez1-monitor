@@ -422,6 +422,20 @@ class Database:
             total += corrected_counter(readings)
         return total
 
+    async def get_recorded_energy_before_today(self) -> float:
+        """Energy of the completed days the monitor has recorded: what the
+        history bars add up to, without what the inverter produced before the
+        monitor was set up. Today is left out because its row is only
+        refreshed hourly; the caller adds the live figure.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                "SELECT COALESCE(SUM(total_kwh), 0) FROM daily_aggregates WHERE date < ?",
+                (date_cls.today().isoformat(),),
+            )
+            row = await cur.fetchone()
+            return float(row[0])
+
     async def get_peak_today(self) -> float:
         """Highest power of the whole array so far today, in watts."""
         async with aiosqlite.connect(self.db_path) as db:

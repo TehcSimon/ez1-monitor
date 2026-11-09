@@ -30,6 +30,8 @@ const state = {
   selfConsumptionPct: 100,   // % of production self-consumed (money calc)
   feedInTariff: 0,           // currency/kWh for the fed-in remainder
   installCost: 0,            // one-off install cost; 0 hides the amort card
+  lifetimeScope: "inverter", // inverter | monitor (total generation card)
+  lifetimeEnergy: null,      // that card's figures (from /api/stats)
   dayScaleMode: "fixed",     // fixed | auto (today-chart Y-axis scale)
   dayHiddenSeries: new Set(),  // day-chart lines switched off (see DAY_SERIES)
   currentRange: "month",
@@ -419,6 +421,7 @@ function renderDeviceReadings(m) {
 
 function updateDynamicLabels() {
   renderCarbonSubtitles();
+  renderLifetimeEnergy();
 
   const moneySub = document.getElementById("lifetime-money-sub");
   if (moneySub) {
@@ -572,7 +575,7 @@ async function loadStats() {
     // consistency with the other stat cards. Empty values show as "—".
     renderCompare("stat-year-compare", s.this_year_kwh, s.last_year_ytd_kwh);
 
-    document.getElementById("lifetime-kwh").textContent = fmt.kwh(s.total_kwh);
+    state.lifetimeEnergy = { inverter: s.total_kwh, monitor: s.recorded_kwh, since: s.first_data_date };
     const co2Kg = s.co2_saved_kg || 0;
     document.getElementById("lifetime-co2").textContent = fmt.num(co2Kg, co2Kg >= 1000 ? 0 : 1);
     document.getElementById("lifetime-money").textContent = fmt.money(s.money_saved);
@@ -2057,6 +2060,46 @@ function toggleHistoryMode() {
   loadHistoryChart(state.currentRange);
 }
 
+// --- Total generation card: inverter counter or monitor recording -----------
+// The inverter's lifetime counter also holds what it produced before the
+// monitor was set up, which the history bars can't show. The card can show
+// their sum instead. Display only: CO2, money and payback always build on the
+// inverter's counter. Persisted across reloads.
+const LIFETIME_SCOPE_KEY = "ez1-lifetime-scope";
+
+function getStoredLifetimeScope() {
+  try {
+    return localStorage.getItem(LIFETIME_SCOPE_KEY) === "monitor" ? "monitor" : "inverter";
+  } catch (_e) {
+    return "inverter";
+  }
+}
+
+function renderLifetimeEnergy() {
+  const energy = state.lifetimeEnergy;
+  if (!energy) return;
+  const onMonitor = state.lifetimeScope === "monitor";
+  document.getElementById("lifetime-kwh").textContent =
+    fmt.kwh(onMonitor ? energy.monitor : energy.inverter);
+  document.getElementById("lifetime-scope-label").textContent = onMonitor
+    ? window.i18n.t(state.lang, "lifetime.sinceMonitor", {
+        date: new Date(energy.since + "T00:00:00").toLocaleDateString(state.locale, {
+          day: "2-digit", month: "2-digit", year: "numeric",
+        }),
+      })
+    : window.i18n.t(state.lang, "lifetime.sinceStart");
+  document.getElementById("lifetime-scope").title =
+    window.i18n.t(state.lang, onMonitor ? "lifetime.switchToInverter" : "lifetime.switchToMonitor");
+}
+
+function toggleLifetimeScope() {
+  state.lifetimeScope = state.lifetimeScope === "monitor" ? "inverter" : "monitor";
+  try {
+    localStorage.setItem(LIFETIME_SCOPE_KEY, state.lifetimeScope);
+  } catch (_e) { /* private mode: in-memory only */ }
+  renderLifetimeEnergy();
+}
+
 // --- Today-chart fixed/auto Y-axis scale toggle -----------------------------
 // Default "fixed": the axis is pinned to AC-limit + 50 W (see
 // timeChartOptions) so days are comparable at a glance. "auto" restores
@@ -2202,6 +2245,9 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
 
 // History rolling/calendar mode: restore persisted choice and wire the toggle.
+state.lifetimeScope = getStoredLifetimeScope();
+document.getElementById("lifetime-scope")?.addEventListener("click", toggleLifetimeScope);
+
 state.historyMode = getStoredHistoryMode();
 document.getElementById("history-mode-toggle")?.addEventListener("click", toggleHistoryMode);
 updateHistoryModeIcon();

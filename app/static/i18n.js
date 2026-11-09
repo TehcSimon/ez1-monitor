@@ -88,6 +88,9 @@ const TRANSLATIONS = {
     lifetime: {
       totalGeneration: "Gesamterzeugung",
       sinceStart: "seit Inbetriebnahme",
+      sinceMonitor: "seit Monitor-Start am {date}",
+      switchToMonitor: "Nur zeigen, was der Monitor selbst aufgezeichnet hat",
+      switchToInverter: "Gesamtwert des Wechselrichters zeigen",
       co2Avoided: "CO₂ gespart",
       co2BasedOn: "basierend auf {g} g/kWh",
       // CO2 source variants
@@ -222,6 +225,9 @@ const TRANSLATIONS = {
     lifetime: {
       totalGeneration: "Total Generation",
       sinceStart: "since commissioning",
+      sinceMonitor: "since monitor start on {date}",
+      switchToMonitor: "Show only what the monitor recorded itself",
+      switchToInverter: "Show the inverter's lifetime total",
       co2Avoided: "CO₂ Avoided",
       co2BasedOn: "based on {g} g/kWh",
       // CO2 source variants
