@@ -26,16 +26,29 @@
   const TARGET_MIN_W = 20;        // below this, actual / target says little
   const SLEEP_BINS = 3;           // slots without data until the inverter counts as asleep
   const NIGHT_END_MINUTE = 210;   // 03:30 on the clock: "night" turns into "before sunrise"
-  // Behind the house as seen from the sun: from the sun's side, at this
-  // elevation, its path would be edge-on. North here, south below the equator.
-  const YAW_NORTH = 160 * RAD, YAW_SOUTH = -20 * RAD;
-  const DEFAULT_PITCH = 42 * RAD, MIN_PITCH = 14 * RAD, MAX_PITCH = 72 * RAD;
+  // The yaw is the direction the camera looks in. By default it stands behind
+  // the house as seen from the sun, looking towards midday: from the sun's
+  // side its path would be edge-on. North here, south below the equator.
+  const YAW_NORTH = 165 * RAD, YAW_SOUTH = -15 * RAD;
+  const DEFAULT_PITCH = 28 * RAD, MIN_PITCH = 12 * RAD, MAX_PITCH = 72 * RAD;
   const PLAY_DURATION_MS = 26000;
+  // Per millisecond; the remainder of a camera move after one ms.
+  const CAMERA_EASE = 0.9965;
+  const WEATHER_KEY = "ez1-sun-weather";
   // WMO weather codes, each group by its highest code.
   const WEATHER_GROUPS = [
     [0, "clear"], [1, "mostlyClear"], [2, "partlyCloudy"], [3, "overcast"], [48, "fog"], [57, "drizzle"],
     [67, "rain"], [77, "snow"], [82, "showers"], [86, "snowShowers"], [99, "thunderstorm"],
   ];
+  // How each group is drawn into the sky: puffs of cloud, and what falls from them.
+  const SKY_LOOK = {
+    clear: { puffs: 0 }, mostlyClear: { puffs: 1 }, partlyCloudy: { puffs: 2 }, overcast: { puffs: 3, dense: true },
+    fog: { puffs: 0, fall: "fog" }, drizzle: { puffs: 3, dense: true, fall: "drizzle" },
+    rain: { puffs: 3, dense: true, fall: "rain" }, snow: { puffs: 3, dense: true, fall: "snow" },
+    showers: { puffs: 2, fall: "rain" }, snowShowers: { puffs: 2, fall: "snow" },
+    thunderstorm: { puffs: 3, dense: true, fall: "bolt" },
+  };
+  const weatherGroup = code => WEATHER_GROUPS.find(([highest]) => code <= highest)?.[1];
   const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const MONO = '"JetBrains Mono", ui-monospace, Menlo, monospace';
   const BODY = '"Inter", system-ui, sans-serif';
@@ -56,7 +69,7 @@
   const T = {};
   const TOKENS = {
     card2: "--bg-card-2", line: "--border", line2: "--border-bright", ink: "--text-primary",
-    ink2: "--text-secondary", muted: "--text-muted", accent: "--accent", pv1: "--pv1", pv2: "--pv2",
+    ink2: "--text-secondary", muted: "--text-muted", north: "--north", pv1: "--pv1", pv2: "--pv2",
     sun: "--sun", dial: "--scene-dial", ring: "--scene-ring", ground: "--scene-ground",
     groundNight: "--scene-ground-night", road: "--scene-road", roof: "--scene-roof", home: "--scene-home",
     wallLit: "--scene-wall-lit", wallDark: "--scene-wall-dark", edge: "--scene-edge", label: "--scene-label",
@@ -183,6 +196,15 @@
         d.hours.push({ h: at.getHours(), m, p: scaled(sunAt(d.t0 + m * 60000).dir, SKY_R) });
       }
     }
+    // Each hour's weather sits on the way to the sun in the middle of that
+    // hour, between it and the house. A low sun would put it among the bars,
+    // so there it moves out beyond the path instead.
+    d.sky = [];
+    for (const [end, code] of d.weather_hours || []) {
+      const m = (end * 1000 - d.t0) / 60000 - 30, look = SKY_LOOK[weatherGroup(code)];
+      const s = sunAt(d.t0 + m * 60000);
+      if (look) d.sky.push({ m, look, p: s.alt * DEG > 2 ? scaled(s.dir, SKY_R + mix(1, -1.6, smooth(12, 28, s.alt * DEG))) : null });
+    }
     d.crown = [];
     d.azRise = d.azSet = null;
     if (d.set <= d.rise) return;
@@ -247,7 +269,7 @@
       ...raw, t0: raw.t0 * 1000, p1, p2, target, forecast, act, sumA, sumT, clear, lastBin,
       totalT: sumT[BINS], hasTarget: !!raw.target, hasData: sumA[BINS] > 0,
       scaleW: Math.max(MIN_SCALE_W, ...act, ...target, ...(forecast || [])),
-      arc: [], hours: [], crown: [], azRise: null, azSet: null,
+      arc: [], hours: [], sky: [], crown: [], azRise: null, azSet: null,
     };
     const span = site ? sunWindow(d) : dataWindow(d);
     d.rise = span.rise;
@@ -283,6 +305,26 @@
     draw();
     ctx.restore();
   }
+
+  // The rose turns with the view: north on the screen is where the yaw points
+  // away from. The letters stay upright around it.
+  const rose = $("sun-rose");
+  const compassButtons = [...card.querySelectorAll(".sun-compass-dir")];
+  const COMPASS_R = 19;
+  let compassYaw = null;
+  function turnCompass() {
+    if (compassYaw === cam.yaw) return;
+    compassYaw = cam.yaw;
+    rose.style.transform = `rotate(${-cam.yaw}rad)`;
+    for (const b of compassButtons) {
+      const a = +b.dataset.az * RAD - cam.yaw;
+      b.style.transform = `translate(${Math.sin(a) * COMPASS_R}px, ${-Math.cos(a) * COMPASS_R}px)`;
+    }
+  }
+
+  let weatherShown = true;
+  try { weatherShown = localStorage.getItem(WEATHER_KEY) !== "off"; } catch (_e) { /* on by default */ }
+  $("sun-weather-toggle").setAttribute("aria-pressed", String(weatherShown));
 
   // ---- Light ----
   let SUN = [0, 0, 1], L = { e: 0, day: 0, clear: 1, shadow: 0 };
@@ -441,26 +483,83 @@
     ctx.textBaseline = "alphabetic";
     ctx.font = `400 ${S < 16 ? 9 : 10.5}px ${MONO}`;
     for (const arc of solsticeArcs(+d.date.slice(0, 4))) {
-      strokeSide(arc.pts, far, color(T.line2), 1);
+      strokeSide(arc.pts, far, color(T.muted, far ? 0.9 : 0.6), 1.4);
       const q = P(arc.apex[0], arc.apex[1], arc.apex[2]);
       if ((q[2] > 0) === far && S >= 16) {
-        ctx.fillStyle = color(T.muted);
+        ctx.fillStyle = color(T.ink2);
         ctx.fillText(arc.label, q[0], q[1] - 7);
       }
     }
     const past = [], future = [];
     for (const q of d.arc) (q.m <= m ? past : future).push(q.p);
     if (SUN[2] > 0) { const at = scaled(SUN, SKY_R); past.push(at); future.unshift(at); }
-    strokeSide(future, far, color(T.ink2, 0.7), 1.5, [1, 6]);
+    strokeSide(future, far, color(T.sun, far ? 0.8 : 0.5), 1.5, [1, 6]);
     strokeSide(past, far, color(T.sun, far ? 1 : 0.6), 2.6);
     for (const h of d.hours) {
       const q = P(h.p[0], h.p[1], h.p[2]);
       if ((q[2] > 0) !== far) continue;
-      ctx.fillStyle = h.m <= m ? color(T.sun) : color(T.ink2);
+      ctx.fillStyle = color(T.sun, h.m <= m ? 1 : 0.55);
       ctx.beginPath(); ctx.arc(q[0], q[1], 2.4, 0, TAU); ctx.fill();
       ctx.fillStyle = color(T.ink2);
       ctx.fillText(h.h, q[0], q[1] - 8);
     }
+  }
+
+  // Weather in the style of the scene: flat puffs of cloud, rain as strokes,
+  // snow as dots, a bolt in the sun's colour.
+  function paintSky(far, d) {
+    const r = Math.max(4, S * 0.3);
+    for (const h of d.sky) {
+      if (!h.p) continue;
+      const q = P(h.p[0], h.p[1], h.p[2]);
+      if ((q[2] > 0) === far) skyGlyph(q[0], q[1], r, h.look, far ? 1 : 0.7);
+    }
+  }
+  // Offset and radius of each puff, in units of r; a hint of cloud is a small one.
+  const PUFFS = [[], [[-0.3, 0.5], [0.25, 0.65]], [[-0.5, 0.8], [0.45, 1]], [[-0.95, 0.72], [0, 1], [0.9, 0.8]]];
+  function skyGlyph(x, y, r, look, alpha) {
+    const ink = (a, c = T.ink) => color(c, a * alpha);
+    const bottom = y + 0.5 * r;
+    const puffs = PUFFS[look.puffs];
+    if (puffs.length) {
+      ctx.beginPath();
+      for (const [dx, k] of puffs) { ctx.moveTo(x + dx * r + k * r, bottom - k * r); ctx.arc(x + dx * r, bottom - k * r, k * r, 0, TAU); }
+      const left = x + puffs[0][0] * r, right = x + puffs[puffs.length - 1][0] * r;
+      if (right > left) ctx.rect(left, bottom - 0.7 * r, right - left, 0.7 * r);
+      ctx.fillStyle = ink(look.dense ? 0.45 : 0.3);
+      ctx.fill();
+    }
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    const top = bottom + 0.35 * r;
+    if (look.fall === "rain" || look.fall === "drizzle") {
+      const len = look.fall === "rain" ? 0.7 * r : 0.35 * r;
+      ctx.beginPath();
+      for (const dx of [-0.6, 0, 0.6]) { ctx.moveTo(x + dx * r, top); ctx.lineTo(x + dx * r - 0.25 * len, top + len); }
+      ctx.strokeStyle = ink(0.7);
+      ctx.stroke();
+    } else if (look.fall === "snow") {
+      ctx.fillStyle = ink(0.75);
+      for (const [dx, dy] of [[-0.6, 0.15], [0, 0.5], [0.6, 0.15]]) { ctx.beginPath(); ctx.arc(x + dx * r, top + dy * r, Math.max(1.2, r * 0.12), 0, TAU); ctx.fill(); }
+    } else if (look.fall === "bolt") {
+      ctx.beginPath();
+      ctx.moveTo(x + 0.15 * r, top - 0.1 * r); ctx.lineTo(x - 0.2 * r, top + 0.45 * r); ctx.lineTo(x + 0.15 * r, top + 0.45 * r); ctx.lineTo(x - 0.15 * r, top + r);
+      ctx.strokeStyle = ink(1, T.sun);
+      ctx.stroke();
+    } else if (look.fall === "fog") {
+      ctx.beginPath();
+      [[-0.9, 0.7, -0.3], [-0.6, 0.95, 0.15], [-0.85, 0.5, 0.6]].forEach(([a, b, dy]) => { ctx.moveTo(x + a * r, y + dy * r); ctx.lineTo(x + b * r, y + dy * r); });
+      ctx.strokeStyle = ink(0.6);
+      ctx.stroke();
+    }
+  }
+  // A thin veil over the map while the hour shown is foggy.
+  function paintFog(d, m) {
+    if (!d.sky.some(h => h.look.fall === "fog" && Math.abs(h.m - m) <= 30)) return;
+    ctx.beginPath();
+    ctx.ellipse(CX, CY - S * 0.8, S * DIAL_R, S * DIAL_R * sinP + S * 1.4, 0, 0, TAU);
+    ctx.fillStyle = color(T.card2, 0.45);
+    ctx.fill();
   }
 
   function paintSun() {
@@ -556,7 +655,7 @@
     const R = DIAL_R + 0.75;
     [["north", 0], ["east", 90], ["south", 180], ["west", 270]].forEach(([key, a]) => {
       const q = P(R * Math.sin(a * RAD), R * Math.cos(a * RAD), 0);
-      ctx.fillStyle = key === "north" ? color(T.accent) : color(T.ink2);
+      ctx.fillStyle = key === "north" ? color(T.north) : color(T.ink2);
       ctx.fillText(tr(`sun.${key}`), q[0], q[1]);
     });
     if (d.azRise === null) return;
@@ -578,10 +677,12 @@
 
   function updateEstimate(d) {
     const kwh = `${num(d.kwh)} kWh`;
+    const projected = d.is_today && d.projection_kwh !== null && !d.day_done;
+    $("sun-estimate").classList.toggle("measured", !projected);
     if (!d.is_today) {
       put("sun-estimate-label", tr("sun.dayTotal"));
       put("sun-estimate", kwh);
-    } else if (d.projection_kwh !== null && !d.day_done) {
+    } else if (projected) {
       put("sun-estimate-label", tr("sun.todayExpected"));
       put("sun-estimate", `${num(d.projection_kwh)} kWh`);
     } else {
@@ -592,8 +693,8 @@
   }
 
   function weatherText(d) {
-    const group = d.weather && WEATHER_GROUPS.find(([highest]) => d.weather.code <= highest);
-    return group ? `${tr(`sun.weather.${group[1]}`)} · ${Math.round(d.weather.temp_c)} °C` : "";
+    const group = d.weather && weatherGroup(d.weather.code);
+    return group ? `${tr(`sun.weather.${group}`)} · ${Math.round(d.weather.temp_c)} °C` : "";
   }
 
   function belowHorizonText(ms) {
@@ -618,16 +719,21 @@
     put("sun-weather", m >= maxMinute(d) - BIN_MINUTES ? weatherText(d) : "");
 
     const sofar = energy(d.sumA, m), planned = energy(d.sumT, m);
-    put("sun-f-now", `${num(sofar / 1000)} kWh`);
-    put("sun-f-now-n", d.is_today ? tr("sun.upTo", { time: clock(ms) }) : tr("sun.wholeDay", { kwh: num(d.kwh) }));
+    // What was expected up to here is the figure, what came the small line below it.
+    const actual = num(sofar / 1000);
+    $("sun-f-target").classList.toggle("measured", !d.hasTarget);
+    $("sun-f-target-n").classList.toggle("measured", d.hasTarget);
     if (d.hasTarget) {
+      put("sun-f-target-k", tr("sun.targetSoFar"));
       put("sun-f-target", `${num(planned / 1000)} kWh`);
-      put("sun-f-target-n", planned > 40 ? tr("sun.actualIs", { pct: Math.round(sofar / planned * 100) }) : tr("sun.tooEarly"));
+      put("sun-f-target-n", planned > 40 ? tr("sun.actualLine", { kwh: actual, pct: Math.round(sofar / planned * 100) }) : tr("sun.actualOnly", { kwh: actual }));
       put("sun-f-full", `${num(d.totalT / 1000)} kWh`);
       put("sun-f-full-n", tr("sun.learnedFrom", { n: d.learned_days }));
     } else {
+      // Nothing to expect yet, so what came stays the figure.
       const learning = tr("sun.learning", { n: d.learned_days, needed: d.needed_days });
-      put("sun-f-target", "–");
+      put("sun-f-target-k", tr("sun.soFar"));
+      put("sun-f-target", `${actual} kWh`);
       put("sun-f-target-n", learning);
       put("sun-f-full", "–");
       put("sun-f-full-n", learning);
@@ -732,6 +838,7 @@
     const m = state.minute, v = sample(d, m);
     if (site && W) {
       setCamera();
+      turnCompass();
       updateLight(sunAt(d.t0 + m * 60000), v.clear);
       ctx.clearRect(0, 0, W, H);
       ctx.lineJoin = "round";
@@ -739,9 +846,13 @@
       const sunFar = P(SUN[0] * SKY_R, SUN[1] * SKY_R, SUN[2] * SKY_R)[2] > 0;
       paintArcs(true, d, m);
       if (sunFar) paintSun();
+      // After the sun, so the clouds can cover it.
+      if (weatherShown) paintSky(true, d);
       paintObjects(d, m);
+      if (weatherShown) paintFog(d, m);
       paintArcs(false, d, m);
       if (!sunFar) paintSun();
+      if (weatherShown) paintSky(false, d);
       paintLabels(d);
       placePulse();
     }
@@ -764,11 +875,11 @@
     lastFrame = now;
     let moving = false;
     if (cam.goal !== null) {
-      const diff = Math.atan2(Math.sin(cam.goal - cam.yaw), Math.cos(cam.goal - cam.yaw));
-      const k = 1 - Math.pow(0.992, dt);
+      const diff = Math.atan2(Math.sin(cam.goal.yaw - cam.yaw), Math.cos(cam.goal.yaw - cam.yaw));
+      const k = 1 - Math.pow(CAMERA_EASE, dt);
       cam.yaw += diff * k;
-      cam.pitch += (DEFAULT_PITCH - cam.pitch) * k;
-      if (Math.abs(diff) < 0.002 && Math.abs(DEFAULT_PITCH - cam.pitch) < 0.002) cam.goal = null;
+      cam.pitch += (cam.goal.pitch - cam.pitch) * k;
+      if (Math.abs(diff) < 0.002 && Math.abs(cam.goal.pitch - cam.pitch) < 0.002) cam.goal = null;
       moving = true;
     } else if (!drag && Math.abs(cam.spin) > 2e-5) {
       cam.yaw += cam.spin * dt;
@@ -841,16 +952,23 @@
     $("sun-osm").hidden = !(site && site.has_map);
     $("sun-meteo").hidden = !(state.day && (state.day.forecast || state.day.weather));
     $("sun-play").hidden = !hasSky;
-    $("sun-reset").hidden = !hasSky;
+    $("sun-controls").hidden = !hasSky;
+    $("sun-weather-toggle").hidden = !(state.day && state.day.sky.length);
     if (!hasSky) pulse.hidden = true;
   }
 
   function applyTexts() {
     canvas.setAttribute("aria-label", tr("sun.sceneLabel"));
     timeInput.setAttribute("aria-label", tr("sun.timeLabel"));
-    $("sun-reset").setAttribute("aria-label", tr("sun.resetView"));
-    $("sun-reset").title = tr("sun.resetView");
-    $("sun-reset").textContent = tr("sun.north");
+    for (const [id, key] of [["sun-reset", "sun.resetView"], ["sun-weather-toggle", "sun.weatherToggle"]]) {
+      $(id).setAttribute("aria-label", tr(key));
+      $(id).title = tr(key);
+    }
+    for (const b of compassButtons) {
+      b.textContent = tr(`sun.${b.dataset.dir}`);
+      b.setAttribute("aria-label", tr(`sun.look.${b.dataset.dir}`));
+      b.title = tr(`sun.look.${b.dataset.dir}`);
+    }
     $("sun-play").setAttribute("aria-label", tr(state.playing ? "sun.pause" : "sun.play"));
     solstices = { year: null, arcs: [] };
     for (const id of Object.keys(shown)) delete shown[id];
@@ -891,9 +1009,21 @@
     cam.pitch = clamp(cam.pitch + move[1], MIN_PITCH, MAX_PITCH);
     invalidate();
   });
-  $("sun-reset").addEventListener("click", () => {
+  function moveCamera(yaw, pitch) {
     cam.spin = 0;
-    cam.goal = site && site.lat < 0 ? YAW_SOUTH : YAW_NORTH;
+    if (REDUCED_MOTION) { cam.yaw = yaw; cam.pitch = pitch; cam.goal = null; } else cam.goal = { yaw, pitch };
+    invalidate();
+  }
+  // Back to the default view, slowly, and the day plays meanwhile.
+  $("sun-reset").addEventListener("click", () => {
+    moveCamera(site && site.lat < 0 ? YAW_SOUTH : YAW_NORTH, DEFAULT_PITCH);
+    if (state.day && !state.playing) startPlaying();
+  });
+  for (const b of compassButtons) b.addEventListener("click", () => moveCamera(+b.dataset.az * RAD, DEFAULT_PITCH));
+  $("sun-weather-toggle").addEventListener("click", () => {
+    weatherShown = !weatherShown;
+    $("sun-weather-toggle").setAttribute("aria-pressed", String(weatherShown));
+    try { localStorage.setItem(WEATHER_KEY, weatherShown ? "on" : "off"); } catch (_e) { /* stays for this visit */ }
     invalidate();
   });
 
@@ -917,11 +1047,14 @@
   scrub.addEventListener("pointerup", () => { scrubbing = false; });
   scrub.addEventListener("pointercancel", () => { scrubbing = false; });
   timeInput.addEventListener("input", () => { setFollow(false); setMinute(+timeInput.value); });
-  $("sun-play").addEventListener("click", () => {
+  function startPlaying() {
     const d = state.day;
-    if (!d) return;
-    if (!state.playing && state.minute >= maxMinute(d) - 1) setMinute(d.m0);
-    setPlaying(!state.playing);
+    if (state.minute >= maxMinute(d) - 1) setMinute(d.m0);
+    setPlaying(true);
+  }
+  $("sun-play").addEventListener("click", () => {
+    if (!state.day) return;
+    if (state.playing) setPlaying(false); else startPlaying();
   });
   $("sun-now").addEventListener("click", () => {
     setPlaying(false);
@@ -939,7 +1072,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       S = Math.min(W / 26.5, H / 21);
       CX = W / 2;
-      CY = H * (H > W * 0.8 ? 0.62 : 0.67);   // a phone has the figures above the scene and can use its height
+      CY = H * (H > W * 0.8 ? 0.6 : 0.7);   // a phone has the figures above the scene and can use its height
     }
     timelineDirty = true;
     invalidate();

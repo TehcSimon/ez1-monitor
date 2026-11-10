@@ -337,7 +337,28 @@
       <div class="sun-view" id="sun-view">
         <canvas id="sun-canvas" tabindex="0" role="img"></canvas>
         <span class="sun-pulse" id="sun-pulse" hidden></span>
-        <button class="sun-reset" id="sun-reset" type="button" hidden>N</button>
+        <!-- Weather toggle, default view (slow move back, then the day plays)
+             and a compass rose that turns with the view; its letters look
+             in that direction. -->
+        <div class="sun-controls" id="sun-controls" hidden>
+          <button class="sun-round" id="sun-weather-toggle" type="button" aria-pressed="true" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7.4 9.1 4.7 4.7 0 0 0 7 18.5z"/></svg>
+          </button>
+          <button class="sun-round" id="sun-reset" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 11.2 12 5l7.5 6.2V19.5h-5v-5h-5v5h-5z"/></svg>
+          </button>
+          <div class="sun-compass">
+            <svg class="sun-rose" id="sun-rose" viewBox="-20 -20 40 40" aria-hidden="true">
+              <circle r="9.5"/>
+              <path class="sun-rose-side" d="M0-13 2.6-2.6 13 0 2.6 2.6 0 13-2.6 2.6-13 0-2.6-2.6z"/>
+              <path class="sun-rose-north" d="M0-13 2.6-2.6 0 0-2.6-2.6z"/>
+            </svg>
+            <button class="sun-compass-dir sun-compass-north" type="button" data-dir="north" data-az="0">N</button>
+            <button class="sun-compass-dir" type="button" data-dir="east" data-az="90">E</button>
+            <button class="sun-compass-dir" type="button" data-dir="south" data-az="180">S</button>
+            <button class="sun-compass-dir" type="button" data-dir="west" data-az="270">W</button>
+          </div>
+        </div>
       </div>
       <div class="sun-hud sun-hud-left">
         <div class="sun-clock" id="sun-clock">--:--</div>
@@ -368,10 +389,9 @@
       </div>
     </div>
     <div class="sun-figures">
-      <div class="sun-figure"><span class="sun-key" data-i18n="sun.soFar">So far</span><span class="sun-value" id="sun-f-now">—</span><span class="sun-note" id="sun-f-now-n"></span></div>
-      <div class="sun-figure"><span class="sun-key" data-i18n="sun.targetSoFar">Expected so far</span><span class="sun-value" id="sun-f-target">—</span><span class="sun-note" id="sun-f-target-n"></span></div>
-      <div class="sun-figure"><span class="sun-key" data-i18n="sun.targetDay">Clear-day expectation</span><span class="sun-value" id="sun-f-full">—</span><span class="sun-note" id="sun-f-full-n"></span></div>
+      <div class="sun-figure"><span class="sun-key" id="sun-f-target-k">Expected so far</span><span class="sun-value" id="sun-f-target">—</span><span class="sun-note" id="sun-f-target-n"></span></div>
       <div class="sun-figure sun-figure-sky"><span class="sun-key" data-i18n="sun.sun">Sun angle</span><span class="sun-value" id="sun-f-sun">—</span><span class="sun-note" id="sun-f-sun-n"></span></div>
+      <div class="sun-figure"><span class="sun-key" data-i18n="sun.targetDay">Clear-day expectation</span><span class="sun-value" id="sun-f-full">—</span><span class="sun-note" id="sun-f-full-n"></span></div>
     </div>
   </section>
 

@@ -50,6 +50,7 @@
 
   /* Sun scene: neutral greys, so the map sits quietly in the app. */
   --sun:                #f59e0b;
+  --north:              #f0604d;   /* compass north, a red that sits with the warm palette */
   --scene-dial:         #1a1a1a;
   --scene-ring:         #3a3a3a;
   --scene-ground:       #262626;
@@ -114,6 +115,7 @@
     --record-chase:    #b45309;   /* amber-700 — readable on white */
 
     --sun:                #d97706;
+    --north:              #dc2626;
     --scene-dial:         #f5f5f5;
     --scene-ring:         #d4d4d4;
     --scene-ground:       #ebebeb;
@@ -168,6 +170,7 @@ html[data-theme="light"] {
   --record-chase:    #b45309;
 
   --sun:                #d97706;
+  --north:              #dc2626;
   --scene-dial:         #f5f5f5;
   --scene-ring:         #d4d4d4;
   --scene-ground:       #ebebeb;
@@ -1005,7 +1008,7 @@ main {
 .sun-view { position: absolute; inset: 0; }
 #sun-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: pan-y; }
 #sun-canvas.grabbing { cursor: grabbing; }
-#sun-canvas:focus-visible, .sun-play:focus-visible, .sun-reset:focus-visible {
+#sun-canvas:focus-visible, .sun-play:focus-visible, .sun-round:focus-visible, .sun-compass-dir:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -1040,10 +1043,12 @@ main {
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.sun-power { color: var(--accent); }
+/* Colours carry meaning on this card: measured values in the sun's colour,
+   expected ones neutral, the accent only for what can be clicked. */
+.sun-power { font-size: clamp(26px, 3.8vw, 36px); color: var(--sun); }
 .sun-power small { font-family: var(--font-body); font-size: 0.5em; font-weight: 500; margin-left: 2px; }
 .sun-sub { font-family: var(--font-mono); font-size: 11px; line-height: 1.3; color: var(--text-secondary); }
-.sun-pv-row { display: flex; gap: 10px; justify-content: flex-end; }
+.sun-pv-row { display: flex; gap: 10px; justify-content: flex-end; font-weight: 700; }
 .sun-pv-row .pv-value-1 { color: var(--pv1); }
 .sun-pv-row .pv-value-2 { color: var(--pv2); }
 .sun-estimate-label {
@@ -1056,30 +1061,56 @@ main {
 }
 .sun-estimate {
   font-family: var(--font-display);
-  font-size: clamp(30px, 5.4vw, 46px);
+  font-size: clamp(24px, 4vw, 34px);
   font-weight: 700;
   line-height: 1.05;
-  color: var(--accent);
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
+.sun-estimate.measured, .sun-value.measured, .sun-note.measured { color: var(--sun); }
 .sun-credits { position: absolute; left: 16px; bottom: 12px; display: grid; gap: 2px; justify-items: start; font-family: var(--font-mono); font-size: 10.5px; }
 .sun-credits a { color: var(--text-secondary); text-decoration: none; }
 .sun-credits a:hover { text-decoration: underline; }
-.sun-reset {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 34px;
-  height: 34px;
+.sun-controls { position: absolute; right: 8px; bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.sun-round {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border: 1px solid var(--border-bright);
   border-radius: 50%;
   background: var(--bg-card);
   color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 500;
   cursor: pointer;
 }
+.sun-round svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.sun-round[aria-pressed="false"] { color: var(--text-muted); }
+.sun-compass { position: relative; width: 58px; height: 58px; }
+.sun-rose { position: absolute; inset: 9px; width: 40px; height: 40px; }
+.sun-rose circle { fill: var(--bg-card); stroke: var(--border-bright); stroke-width: 1; }
+.sun-rose-side { fill: var(--text-muted); }
+.sun-rose-north { fill: var(--north); }
+.sun-compass-dir {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 16px;
+  cursor: pointer;
+}
+.sun-compass-dir:hover { color: var(--text-primary); }
+.sun-compass-north { color: var(--north); }
 .sun-timeline { display: flex; gap: 10px; margin-top: 12px; }
 .sun-play {
   flex: 0 0 46px;
@@ -1108,7 +1139,7 @@ main {
 .sun-scrub:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 #sun-curve { display: block; width: 100%; height: 100%; }
 #sun-time { position: absolute; inset: 0; margin: 0; opacity: 0; pointer-events: none; }
-.sun-figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
+.sun-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
 .sun-figure { display: grid; gap: 3px; align-content: start; padding: 8px 14px; min-width: 0; border-left: 1px solid var(--border); }
 .sun-figure:first-child { border-left: 0; padding-left: 2px; }
 .sun-key { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-secondary); }
@@ -1120,7 +1151,7 @@ main {
 .sun-flat .sun-view, .sun-flat .sun-credits { display: none; }
 .sun-flat .sun-hud { position: static; }
 .sun-flat .sun-figure-sky { display: none; }
-.sun-flat .sun-figures { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sun-flat .sun-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* Too narrow for the figures to lie on the scene: they go above it. */
 @media (max-width: 1024px) {
@@ -1144,11 +1175,19 @@ main {
   .sun-estimate-label { order: 5; flex-basis: 100%; margin-top: 8px; }
   .sun-estimate { order: 6; flex-basis: 100%; }
   #sun-tomorrow, #sun-weather { order: 7; }
-  .sun-view { aspect-ratio: 1 / 0.86; }
-  .sun-figures, .sun-flat .sun-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sun-view { aspect-ratio: 1 / 1; }
+  .sun-controls { right: 4px; bottom: 2px; gap: 4px; }
+  .sun-round { width: 26px; height: 26px; }
+  .sun-round svg { width: 13px; height: 13px; }
+  /* The first figure gets the whole row, the other two share the next. */
+  .sun-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sun-figure { padding-left: 10px; padding-right: 0; }
-  .sun-figure:nth-child(odd) { border-left: 0; padding-left: 2px; }
-  .sun-figure:nth-child(n + 3) { border-top: 1px solid var(--border); }
+  .sun-figures .sun-figure:first-child { grid-column: 1 / -1; }
+  .sun-figure:nth-child(2) { border-left: 0; padding-left: 2px; }
+  .sun-figure:nth-child(n + 2) { border-top: 1px solid var(--border); }
+  .sun-flat .sun-figures .sun-figure:first-child { grid-column: auto; }
+  .sun-flat .sun-figure:nth-child(3) { border-left: 1px solid var(--border); padding-left: 10px; }
+  .sun-flat .sun-figure:nth-child(n + 2) { border-top: 0; }
 }
 
 /* ------------------------- Chart empty-state ------------------------- */
