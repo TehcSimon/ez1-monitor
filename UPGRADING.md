@@ -31,6 +31,19 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.15.2 to v1.15.3
+
+No manual steps, no database changes.
+
+- **Temperature graph with a scale.** Round values with dotted lines on the
+  left. The temperature line in the header's device details is gone, since
+  the graph shows the same value.
+- **Play skips the night.** It starts half an hour before sunrise and stops
+  half an hour after sunset, at the same pace as before.
+- **House button replay** runs at full speed for most of the day and brakes
+  later and harder towards the end.
+- **Larger compass rose** in the sun path, on phones a little larger.
+
 ## From v1.15.1 to v1.15.2
 
 No manual steps, no database changes.

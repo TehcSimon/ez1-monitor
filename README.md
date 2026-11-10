@@ -47,11 +47,11 @@ to live grid CO₂ data.
 </picture>
 
 - ⚡ **Live view.** Total and per-input power, refreshed every 10 s while the
-  sun is up and right away when you come back to the tab, plus inverter
-  temperature, grid voltage and frequency where the firmware reports them.
-  A small graph in the header shows the inverter's temperature over the last
-  three hours, light blue at 3 °C and below, red from 60 °C, and with
-  `WEATHER_ENABLED` the outside temperature as a dashed line.
+  sun is up and right away when you come back to the tab, plus grid voltage
+  and frequency where the firmware reports them. A small graph in the header
+  shows the inverter's temperature over the last three hours, light blue at
+  3 °C and below, red from 60 °C, and with `WEATHER_ENABLED` the outside
+  temperature as a dashed line.
 - 📈 **Every day, browsable.** The day's curve plus a day picker for every
   recorded day in the retention window — or jump there from a history bar.
 - 🌤️ **Shading at a glance.** Peak, average and yield per panel and in total
