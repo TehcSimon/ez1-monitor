@@ -31,6 +31,21 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.15.1 to v1.15.2
+
+No manual steps, no database changes.
+
+- **Temperature graph in the header.** Below the status pill, the inverter's
+  temperature over the last three hours, refreshed every minute, from the
+  readings the monitor already stores. It turns light blue at 3 °C and below
+  and red from 60 °C. With `WEATHER_ENABLED` the outside temperature runs
+  along as a dashed line. On phones it gets its own row below the header.
+  APsystems publishes no derating point for the EZ1, so 60 °C is a cautious
+  mark: the datasheet allows up to 65 °C around the inverter.
+- **Faster camera in the sun path.** Moves start fast and brake towards the
+  end (1.3 s), and the house button's replay of the day does the same.
+- New endpoint `GET /api/temperatures`.
+
 ## From v1.15.0 to v1.15.1
 
 No manual steps, no database changes.

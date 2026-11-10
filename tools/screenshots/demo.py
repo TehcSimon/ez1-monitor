@@ -197,7 +197,8 @@ CREATE TABLE IF NOT EXISTS measurements (
     te2           REAL,
     online        INTEGER,
     co2_g_per_kwh REAL,
-    price_per_kwh REAL
+    price_per_kwh REAL,
+    temp_c        REAL
 );
 CREATE TABLE IF NOT EXISTS device_info (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
@@ -233,16 +234,16 @@ def build_db(path: str) -> None:
                     continue
                 r = reading(d, m)
                 rows.append((_ts(d, m), r["p1"], r["p2"], r["e1"], r["e2"],
-                             r["te1"], r["te2"], 1, CO2_G_PER_KWH, price))
+                             r["te1"], r["te2"], 1, CO2_G_PER_KWH, price, _temperature(r)))
             if d < today and step == 1:
                 # The poller's single offline marker per night.
                 rows.append((_ts(d, last) + 120, None, None, None, None,
-                             None, None, 0, None, None))
+                             None, None, 0, None, None, None))
         d += timedelta(days=1)
 
     con = sqlite3.connect(path)
     con.executescript(SCHEMA)
-    con.executemany("INSERT INTO measurements VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+    con.executemany("INSERT INTO measurements VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
     con.execute(
         "INSERT INTO device_info (id, device_id, firmware, min_power, max_power,"
         " last_seen) VALUES (1, ?, ?, 30, ?, ?)",
@@ -262,11 +263,16 @@ def build_db(path: str) -> None:
 
 # --- serve -------------------------------------------------------------------
 
+def _temperature(r: dict) -> int:
+    """The inverter's temperature, warmer under load."""
+    return round(23 + 0.022 * (r["p1"] + r["p2"]))
+
+
 def detail(d: date, minute: int) -> dict:
-    """The reading plus temperature and grid values, warmer under load."""
+    """The reading plus temperature and grid values."""
     r = reading(d, minute)
     rng = random.Random(d.toordinal() * 1440 + minute)
-    return {**r, "t": round(23 + 0.022 * (r["p1"] + r["p2"])),
+    return {**r, "t": _temperature(r),
             "gv": round(232 + rng.uniform(-2, 4)),
             "gf": round(50 + rng.uniform(-0.03, 0.03), 2)}
 
@@ -360,7 +366,7 @@ def build_weather(path, lat, lon):
     """A forecast in the weather cache's format, its radiation taken from the
     same model as the power. A restart within the hour reuses that file, so
     the monitor doesn't ask Open-Meteo during the shots."""
-    times, radiation, codes = [], [], []
+    times, radiation, codes, temperatures = [], [], [], []
     for days_ahead in range(-23, 4):
         d = date.today() + timedelta(days=days_ahead)
         minutes = day_profile(d)[0]
@@ -368,10 +374,12 @@ def build_weather(path, lat, lon):
             times.append(_ts(d, hour * 60) + 3600)
             radiation.append(round(sum(a + b for a, b in minutes[hour * 60:(hour + 1) * 60]) / 60, 1))
             codes.append(DEMO_SKY[hour])
+            # Coolest around sunrise, warmest in the late afternoon.
+            temperatures.append(round(17 + 7 * math.sin((hour + 1 - 10) / 24 * 2 * math.pi), 1))
     Path(path).write_text(json.dumps({
         "version": 1, "lat": lat, "lon": lon, "fetched_at": time.time(),
         "times": times, "radiation": radiation,
-        "codes": codes, "temperatures": [24.0] * len(times),
+        "codes": codes, "temperatures": temperatures,
     }), encoding="utf-8")
 
 
