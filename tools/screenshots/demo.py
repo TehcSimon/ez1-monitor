@@ -351,21 +351,27 @@ def build_site(path):
     build_weather(Path(path).with_name("weather.json"), surroundings["lat"], surroundings["lon"])
 
 
+# WMO code by hour of the day, so the scene has some weather to draw: a
+# clear morning, clouds building up in the afternoon, showers in the evening.
+DEMO_SKY = [0] * 10 + [1, 1, 1, 2, 2, 2, 3, 3, 80, 61, 2, 1, 0, 0]
+
+
 def build_weather(path, lat, lon):
     """A forecast in the weather cache's format, its radiation taken from the
     same model as the power. A restart within the hour reuses that file, so
     the monitor doesn't ask Open-Meteo during the shots."""
-    times, radiation = [], []
+    times, radiation, codes = [], [], []
     for days_ahead in range(-23, 4):
         d = date.today() + timedelta(days=days_ahead)
         minutes = day_profile(d)[0]
         for hour in range(24):
             times.append(_ts(d, hour * 60) + 3600)
             radiation.append(round(sum(a + b for a, b in minutes[hour * 60:(hour + 1) * 60]) / 60, 1))
+            codes.append(DEMO_SKY[hour])
     Path(path).write_text(json.dumps({
         "version": 1, "lat": lat, "lon": lon, "fetched_at": time.time(),
         "times": times, "radiation": radiation,
-        "codes": [1] * len(times), "temperatures": [24.0] * len(times),
+        "codes": codes, "temperatures": [24.0] * len(times),
     }), encoding="utf-8")
 
 
