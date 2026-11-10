@@ -353,6 +353,30 @@ class Database:
                 return [{"timestamp": r["bucket_ts"], **{k: r[k] for k in ("p1","p2","e1","e2","te1","te2","online")}} for r in rows]
             return [dict(r) for r in rows]
 
+    async def get_power_bins(
+        self, start_ts: int, end_ts: int, offset_s: int, bin_seconds: int
+    ) -> dict[int, dict[int, float]]:
+        """Average total power per day and time-of-day slot, online rows only.
+
+        {day number: {slot: watts}}. Days are counted in the fixed offset_s
+        frame of yield_curve.py, so they are plain arithmetic, unaffected by
+        clock changes. A day without any reading doesn't appear.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT (timestamp + ?) / 86400 AS day,
+                          ((timestamp + ?) % 86400) / ? AS slot,
+                          AVG(COALESCE(p1, 0) + COALESCE(p2, 0)) AS watts
+                   FROM measurements
+                   WHERE timestamp >= ? AND timestamp < ? AND online = 1
+                   GROUP BY day, slot""",
+                (offset_s, offset_s, bin_seconds, start_ts, end_ts),
+            )
+            days: dict[int, dict[int, float]] = {}
+            for day, slot, watts in await cur.fetchall():
+                days.setdefault(day, {})[slot] = watts
+            return days
+
     async def get_monthly_totals(self, months: int = 12) -> list[dict]:
         """kWh sum per calendar month over the last N months.
 

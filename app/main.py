@@ -25,6 +25,10 @@ from .date_helpers import (
     same_progress_slice,
 )
 from .day_figures import summarize_day
+from .yield_curve import (
+    BIN_SECONDS, BINS, MIN_LEARNED_DAYS, WINDOW_DAYS, bins_of_day, day_start_ts,
+    learned_target, project_today, standard_offset_seconds,
+)
 from .money import (
     average_price_per_kwh, compute_money_saved, compute_money_saved_full,
     estimate_breakeven_date, value_of_new_kwh,
@@ -649,6 +653,20 @@ async def _period_summary(kind, cur_start, cur_end, prev_start, prev_end,
     }
 
 
+def _selectable_day(value: str, now: datetime) -> date_cls:
+    """A requested YYYY-MM-DD, clamped to the valid window: not in the future,
+    not before retention. Unreadable input means today."""
+    today = now.date()
+    try:
+        day = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return today
+    day = min(day, today)
+    if RETENTION_DAYS > 0:
+        day = max(day, (now - timedelta(days=RETENTION_DAYS)).date())
+    return day
+
+
 @app.get("/api/history")
 async def get_history(
     range: str = Query("day", pattern="^(day|week|month|year|multiyear)$"),
@@ -829,18 +847,7 @@ async def get_history(
     if range == "day":
         # Optional ?date=YYYY-MM-DD for historical day lookups
         if date:
-            try:
-                target_date = datetime.strptime(date, "%Y-%m-%d").date()
-            except ValueError:
-                target_date = now.date()
-            # Clamp to valid window: not in the future, not before retention
-            today = now.date()
-            if target_date > today:
-                target_date = today
-            if RETENTION_DAYS > 0:
-                earliest = (now - timedelta(days=RETENTION_DAYS)).date()
-                if target_date < earliest:
-                    target_date = earliest
+            target_date = _selectable_day(date, now)
             start = datetime.combine(target_date, time.min)
             end = start + timedelta(days=1)
             used_date = target_date.strftime("%Y-%m-%d")
@@ -901,6 +908,51 @@ async def get_history(
         # another shape.
         resp["figures"] = summarize_day(points)
     return resp
+
+
+@app.get("/api/yield-curve")
+async def get_yield_curve(
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+):
+    """One day's power in 5-minute slots, its learned target and, for today,
+    the projected total. See yield_curve.py."""
+    now = datetime.now()
+    day = _selectable_day(date, now) if date else now.date()
+    is_today = day == now.date()
+    offset_s = standard_offset_seconds(day.year)
+    t0 = day_start_ts(day, offset_s)
+
+    midnight = datetime.combine(day, time.min)
+    points = await db.get_range(
+        int(midnight.timestamp()), int((midnight + timedelta(days=1)).timestamp()) - 1,
+    )
+    p1, p2 = bins_of_day(points, t0)
+    kwh = summarize_day(points)["total"]["kwh"]
+
+    # Only days before this one, so a past day shows what was known back then.
+    learning = await db.get_power_bins(t0 - WINDOW_DAYS * 86400, t0, offset_s, BIN_SECONDS)
+    days = [[slots.get(b, 0.0) for b in range(BINS)] for slots in learning.values()]
+    target = learned_target(days)
+
+    projection = {"kwh": None, "done": False}
+    if is_today:
+        actual = [a + b for a, b in zip(p1, p2)]
+        now_bin = max(0, min(BINS, (int(now.timestamp()) - t0) // BIN_SECONDS))
+        projection = project_today(actual, target, now_bin, kwh)
+
+    return {
+        "date": day.isoformat(),
+        "is_today": is_today,
+        "t0": t0,
+        "p1": [round(v, 1) for v in p1],
+        "p2": [round(v, 1) for v in p2],
+        "target": [round(v, 1) for v in target] if target else None,
+        "kwh": kwh,
+        "projection_kwh": projection["kwh"],
+        "day_done": projection["done"],
+        "learned_days": len(days),
+        "needed_days": MIN_LEARNED_DAYS,
+    }
 
 
 @app.get("/api/stats")
