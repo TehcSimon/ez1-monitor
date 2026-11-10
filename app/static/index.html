@@ -80,6 +80,7 @@
       </div>
     </div>
   </div>
+  <div class="topbar-side">
   <div class="topbar-controls">
     <button id="theme-toggle" class="theme-toggle" type="button" title="Theme">
       <!-- Light (sun) — shown when current theme is DARK; click → switch to light -->
@@ -103,6 +104,16 @@
       <span class="status-dot"></span>
       <span id="status-text" data-i18n="status.connecting">connecting …</span>
     </div>
+  </div>
+  <!-- Inverter and outside temperature over the last hours, a running graph
+       refreshed every minute. Drawn by temp-spark.js. -->
+  <div class="temp-spark" id="temp-spark" hidden>
+    <div class="temp-spark-head">
+      <span id="temp-spark-inverter"></span>
+      <span id="temp-spark-outside"></span>
+    </div>
+    <canvas id="temp-spark-canvas" role="img"></canvas>
+  </div>
   </div>
 </header>
 
@@ -551,6 +562,7 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
+<script src="/static/temp-spark.js?v=__ASSET_VERSION__"></script>
 <script src="/static/sun-scene.js?v=__ASSET_VERSION__"></script>
 <script src="/static/app.js?v=__ASSET_VERSION__"></script>
 </body>

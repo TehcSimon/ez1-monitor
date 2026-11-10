@@ -335,6 +335,7 @@ async function loadLive() {
         updateDayPickerLabels();
       }
       updateDynamicLabels();
+      window.TempSpark?.load(state.lang, state.locale);
 
       document.getElementById("footer-inverter").textContent =
         data.config.inverter_ip;

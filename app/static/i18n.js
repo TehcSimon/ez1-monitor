@@ -9,6 +9,12 @@ const TRANSLATIONS = {
       temperature: "Temperatur",
       grid: "Netz",
     },
+    tempSpark: {
+      inverter: "WR {value}",
+      outside: "Außen {value}",
+      asleep: "WR schläft",
+      label: "Temperatur der letzten {hours} Stunden: Wechselrichter, gestrichelt außen",
+    },
     status: {
       connecting: "verbinde …",
       online: "online",
@@ -184,6 +190,12 @@ const TRANSLATIONS = {
       firmware: "Firmware",
       temperature: "Temperature",
       grid: "Grid",
+    },
+    tempSpark: {
+      inverter: "Inverter {value}",
+      outside: "Outside {value}",
+      asleep: "Inverter asleep",
+      label: "Temperature over the last {hours} hours: inverter, dashed outside",
     },
     status: {
       connecting: "connecting …",
