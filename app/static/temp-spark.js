@@ -18,6 +18,8 @@
   const REFRESH_MS = 60000;
   const GAP_S = 300;          // a longer pause in the readings breaks the line
   const MIN_SPAN_C = 8;       // keeps a calm hour from looking like a storm
+  const SCALE_W = 22;         // left column for the scale
+  const STEPS_C = [2, 5, 10, 20];
 
   let data = null, lang = "en", locale = "en", timer = null;
   const tr = (key, vars) => window.i18n.t(lang, key, vars);
@@ -56,18 +58,38 @@
     ctx.clearRect(0, 0, w, h);
 
     const start = data.now - data.window_s;
-    const values = [...inverter, ...outside.filter(p => p[0] >= start - 3600)].map(p => p[1]);
+    // Only what is visible counts for the range: the outside forecast reaches
+    // an hour beyond both ends, so its edges are read off the line.
+    const values = [...inverter, ...outside.filter(p => p[0] >= start && p[0] <= data.now)].map(p => p[1]);
+    if (outside.length) values.push(valueAt(outside, start), valueAt(outside, data.now));
     let lo = Math.min(...values), hi = Math.max(...values);
     if (hi - lo < MIN_SPAN_C) { const mid = (hi + lo) / 2; lo = mid - MIN_SPAN_C / 2; hi = mid + MIN_SPAN_C / 2; }
-    const X = ts => (ts - start) / data.window_s * w;
-    const Y = v => 2 + (hi - v) / (hi - lo) * (h - 4);
+    const plot = w - SCALE_W;
+    const X = ts => SCALE_W + (ts - start) / data.window_s * plot;
+    const Y = v => 5 + (hi - v) / (hi - lo) * (h - 10);
 
     ctx.fillStyle = t.line;
-    for (const x of [w / 3, w * 2 / 3]) ctx.fillRect(Math.round(x), 0, 1, h);
+    for (const x of [plot / 3, plot * 2 / 3]) ctx.fillRect(Math.round(SCALE_W + x), 0, 1, h);
+
+    // The scale: up to three round values with a dotted line each. Where the
+    // lines sit closer than a label is tall, only every other one is labelled.
+    const fits = s => s * (h - 10) / (hi - lo) >= 6 && Math.floor(hi / s) - Math.ceil(lo / s) + 1 <= 3;
+    const step = STEPS_C.find(fits) || 50;
+    const every = step * (h - 10) / (hi - lo) < 11 ? 2 : 1;
+    ctx.font = `9px ${getComputedStyle(box).fontFamily}`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (let v = Math.ceil(lo / step) * step, i = 0; v <= hi; v += step, i++) {
+      const y = Math.round(Y(v)) + 0.5;
+      ctx.fillStyle = t.outside;
+      if (i % every === 0) ctx.fillText(`${v}°`.replace("-", "\u2212"), SCALE_W - 4, y);
+      ctx.fillStyle = t.line;
+      for (let x = SCALE_W; x < w; x += 4) ctx.fillRect(x, y - 0.5, 2, 1);
+    }
 
     if (outside.length > 1) {
       ctx.save();
-      ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
+      ctx.beginPath(); ctx.rect(SCALE_W, 0, plot, h); ctx.clip();
       ctx.beginPath();
       outside.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
       ctx.setLineDash([3, 3]);

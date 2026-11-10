@@ -406,14 +406,13 @@ async function loadLive() {
   }
 }
 
-// Temperature and grid lines in the top bar. Hidden while the inverter sleeps
-// (m is null then) and on firmware that doesn't report these values.
+// Grid line in the top bar; the temperature has its own graph. Hidden while
+// the inverter sleeps (m is null then) and on firmware without these values.
 function renderDeviceReadings(m) {
   const setLine = (id, text) => {
     document.getElementById(id).textContent = text || "";
     document.getElementById(`${id}-line`).hidden = !text;
   };
-  setLine("device-temp", m && m.temp_c != null ? `${fmt.numUpTo(m.temp_c, 1)} °C` : "");
   const grid = [];
   if (m && m.grid_v != null) grid.push(`${fmt.power(m.grid_v)} V`);
   if (m && m.grid_hz != null) grid.push(`${fmt.num(m.grid_hz, 2)} Hz`);

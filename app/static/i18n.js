@@ -6,7 +6,6 @@ const TRANSLATIONS = {
       serial: "S/N",
       acLimit: "AC-Limit",
       firmware: "Firmware",
-      temperature: "Temperatur",
       grid: "Netz",
     },
     tempSpark: {
@@ -188,7 +187,6 @@ const TRANSLATIONS = {
       serial: "S/N",
       acLimit: "AC limit",
       firmware: "Firmware",
-      temperature: "Temperature",
       grid: "Grid",
     },
     tempSpark: {
