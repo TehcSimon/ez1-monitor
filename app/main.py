@@ -26,9 +26,14 @@ from .date_helpers import (
 )
 from .day_figures import summarize_day
 from .site_map import CACHE_FILE, SiteState, resolve_loop, site_payload
+from .weather import (
+    WEATHER_CACHE_FILE, WeatherState, current_conditions, poll_loop as weather_poll_loop,
+    radiation_by_hour,
+)
 from .yield_curve import (
-    BIN_SECONDS, BINS, MIN_LEARNED_DAYS, WINDOW_DAYS, bins_of_day, day_start_ts,
-    learned_target, project_today, standard_offset_seconds,
+    BIN_SECONDS, BINS, MIN_LEARNED_DAYS, WINDOW_DAYS, bins_of_day, curve_kwh, day_start_ts,
+    forecast_curve, learned_response, learned_target, project_today, radiation_bins,
+    standard_offset_seconds,
 )
 from .money import (
     average_price_per_kwh, compute_money_saved, compute_money_saved_full,
@@ -124,6 +129,8 @@ ELECTRICITY_MAPS_ZONE = os.getenv("ELECTRICITY_MAPS_ZONE", "DE").upper().strip()
 # site_map.py. SITE_FLOORS sets the own building's height where OSM has none.
 SITE_ADDRESS = os.getenv("SITE_ADDRESS", "").strip()
 SITE_FLOORS = float(os.getenv("SITE_FLOORS") or 0)
+# Adds an hourly forecast from Open-Meteo at that location, see weather.py.
+WEATHER_ENABLED = os.getenv("WEATHER_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 
 ONLINE_FRESH_SECONDS = 300
 DUSK_WINDOW_SECONDS = 300
@@ -145,6 +152,9 @@ carbon_state = CarbonState(
 site_state = SiteState(
     address=SITE_ADDRESS, floors=SITE_FLOORS,
     cache_path=Path(DB_PATH).with_name(CACHE_FILE),
+)
+weather_state = WeatherState(
+    enabled=WEATHER_ENABLED, cache_path=Path(DB_PATH).with_name(WEATHER_CACHE_FILE),
 )
 poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db, carbon_state,
                 price_per_kwh=PRICE_PER_KWH)
@@ -378,11 +388,12 @@ async def lifespan(app: FastAPI):
     # CO2 polling task — runs forever, no-op when token isn't set
     carbon_handle = asyncio.create_task(poll_loop(carbon_state))
     site_handle = asyncio.create_task(resolve_loop(site_state))
+    weather_handle = asyncio.create_task(weather_poll_loop(weather_state, site_state))
     try:
         yield
     finally:
         logger.info("Shutting down ...")
-        for handle in (retention_handle, aggregate_handle, carbon_handle, site_handle):
+        for handle in (retention_handle, aggregate_handle, carbon_handle, site_handle, weather_handle):
             handle.cancel()
             try:
                 await handle
@@ -928,12 +939,35 @@ async def get_site():
     return site_payload(site_state)
 
 
+def _weather_outlook(learning: dict, offset_s: int, t0: int, now_ts: float) -> tuple:
+    """Today's expected curve and tomorrow's total from the forecast, or
+    (None, None) without a recent forecast or enough days to learn from."""
+    hourly = radiation_by_hour(weather_state, now_ts)
+    if hourly is None:
+        return None, None
+    power_days, radiation_days = [], []
+    for day, slots in learning.items():
+        radiation = radiation_bins(hourly, day * 86400 - offset_s)
+        if radiation is not None:
+            power_days.append([slots.get(b, 0.0) for b in range(BINS)])
+            radiation_days.append(radiation)
+    response = learned_response(power_days, radiation_days)
+    today = radiation_bins(hourly, t0)
+    if response is None or today is None:
+        return None, None
+    tomorrow = radiation_bins(hourly, t0 + 86400)
+    return (
+        forecast_curve(response, today),
+        round(curve_kwh(forecast_curve(response, tomorrow)), 3) if tomorrow else None,
+    )
+
+
 @app.get("/api/yield-curve")
 async def get_yield_curve(
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     """One day's power in 5-minute slots, its learned target and, for today,
-    the projected total. See yield_curve.py."""
+    the projected total and whatever the forecast adds. See yield_curve.py."""
     now = datetime.now()
     day = _selectable_day(date, now) if date else now.date()
     is_today = day == now.date()
@@ -953,10 +987,14 @@ async def get_yield_curve(
     target = learned_target(days)
 
     projection = {"kwh": None, "done": False}
+    forecast, tomorrow_kwh, conditions = None, None, None
     if is_today:
+        now_ts = now.timestamp()
+        forecast, tomorrow_kwh = _weather_outlook(learning, offset_s, t0, now_ts)
+        conditions = current_conditions(weather_state, now_ts)
         actual = [a + b for a, b in zip(p1, p2)]
-        now_bin = max(0, min(BINS, (int(now.timestamp()) - t0) // BIN_SECONDS))
-        projection = project_today(actual, target, now_bin, kwh)
+        now_bin = max(0, min(BINS, (int(now_ts) - t0) // BIN_SECONDS))
+        projection = project_today(actual, target, now_bin, kwh, forecast)
 
     return {
         "date": day.isoformat(),
@@ -966,8 +1004,11 @@ async def get_yield_curve(
         "p2": [round(v, 1) for v in p2],
         "target": [round(v, 1) for v in target] if target else None,
         "kwh": kwh,
+        "forecast": [round(v, 1) for v in forecast] if forecast else None,
         "projection_kwh": projection["kwh"],
         "day_done": projection["done"],
+        "tomorrow_kwh": tomorrow_kwh,
+        "weather": conditions,
         "learned_days": len(days),
         "needed_days": MIN_LEARNED_DAYS,
     }
