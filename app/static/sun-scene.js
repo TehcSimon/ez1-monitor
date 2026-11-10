@@ -32,10 +32,18 @@
   const YAW_NORTH = 165 * RAD, YAW_SOUTH = -15 * RAD;
   const DEFAULT_PITCH = 28 * RAD, MIN_PITCH = 12 * RAD, MAX_PITCH = 72 * RAD;
   const PLAY_DURATION_MS = 26000;
-  // The house button's look back from sunrise: fast at first, slowing down
-  // towards the end of the day shown, or the present.
+  // Play skips most of the night: it runs from half an hour before sunrise
+  // to half an hour after sunset, at the pace of the whole timeline.
+  const PLAY_MARGIN_MIN = 30;
+  // The house button's look back from sunrise: full speed for most of the
+  // way, then braking hard towards the end of the day shown, or the present.
   const REPLAY_MS = 7000;
   const easeOut = (p, k) => 1 - Math.pow(1 - p, k);
+  const REPLAY_CRUISE = 0.55, REPLAY_BRAKE = 4;
+  const REPLAY_AT = REPLAY_BRAKE * REPLAY_CRUISE / (1 - REPLAY_CRUISE + REPLAY_BRAKE * REPLAY_CRUISE);
+  // Constant speed up to REPLAY_CRUISE, then an ease-out that starts at the same speed.
+  const replayEase = p => (p < REPLAY_CRUISE ? p / REPLAY_CRUISE * REPLAY_AT
+    : REPLAY_AT + (1 - REPLAY_AT) * easeOut((p - REPLAY_CRUISE) / (1 - REPLAY_CRUISE), REPLAY_BRAKE));
   // A camera move takes this long: fast at first, braking towards the end,
   // and then it is done (an exponential approach crept on for seconds).
   const CAMERA_MS = 1300;
@@ -316,15 +324,15 @@
   // away from. The letters stay upright around it.
   const rose = $("sun-rose");
   const compassButtons = [...card.querySelectorAll(".sun-compass-dir")];
-  const COMPASS_R = 19;
-  let compassYaw = null;
+  const compass = card.querySelector(".sun-compass");
+  let compassYaw = null, compassR = 19;
   function turnCompass() {
     if (compassYaw === cam.yaw) return;
     compassYaw = cam.yaw;
     rose.style.transform = `rotate(${-cam.yaw}rad)`;
     for (const b of compassButtons) {
       const a = +b.dataset.az * RAD - cam.yaw;
-      b.style.transform = `translate(${Math.sin(a) * COMPASS_R}px, ${-Math.cos(a) * COMPASS_R}px)`;
+      b.style.transform = `translate(${Math.sin(a) * compassR}px, ${-Math.cos(a) * compassR}px)`;
     }
   }
 
@@ -903,13 +911,13 @@
       } else if (r) {
         r.t += dt;
         const p = Math.min(1, r.t / REPLAY_MS);
-        setMinute(mix(r.from, end, easeOut(p, 2.5)));
+        setMinute(mix(r.from, end, replayEase(p)));
         if (p >= 1 || r.from >= end) { setPlaying(false); setFollow(d.is_today); }
       } else {
         const next = state.minute + dt * (d.m1 - d.m0) / PLAY_DURATION_MS;
-        setMinute(next);
+        setMinute(Math.min(next, playEnd(d)));
         // Once through. A replay of today ends at the present, so it goes live again.
-        if (next >= end) { setPlaying(false); setFollow(d.is_today); }
+        if (next >= playEnd(d)) { setPlaying(false); setFollow(d.is_today); }
       }
       moving = true;
     }
@@ -923,6 +931,12 @@
   }
 
   function maxMinute(d) { return d.is_today ? clamp(nowMinute(d), d.m0, d.m1) : d.m1; }
+  const playEnd = d => Math.min(maxMinute(d), d.set + PLAY_MARGIN_MIN);
+  // Before dawn today there is nothing to skip to: play the night so far.
+  function playStart(d) {
+    const start = Math.max(d.m0, d.rise - PLAY_MARGIN_MIN);
+    return start < playEnd(d) - 1 ? start : d.m0;
+  }
   function setMinute(m) {
     const d = state.day;
     state.minute = clamp(m, d.m0, maxMinute(d));
@@ -1083,7 +1097,7 @@
   timeInput.addEventListener("input", () => { setFollow(false); setMinute(+timeInput.value); });
   function startPlaying() {
     const d = state.day;
-    if (state.minute >= maxMinute(d) - 1) setMinute(d.m0);
+    if (state.minute < playStart(d) || state.minute >= playEnd(d) - 1) setMinute(playStart(d));
     setPlaying(true);
   }
   $("sun-play").addEventListener("click", () => {
@@ -1108,6 +1122,9 @@
       CX = W / 2;
       CY = H * (H > W * 0.8 ? 0.6 : 0.7);   // a phone has the figures above the scene and can use its height
     }
+    // The rose's size comes from the stylesheet; the letters ride on a third of it.
+    compassR = compass.offsetWidth * 19 / 58;
+    compassYaw = null;
     timelineDirty = true;
     invalidate();
   }

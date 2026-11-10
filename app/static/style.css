@@ -1097,8 +1097,8 @@ main {
 }
 .sun-round svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .sun-round[aria-pressed="false"] { color: var(--text-muted); }
-.sun-compass { position: relative; width: 58px; height: 58px; }
-.sun-rose { position: absolute; inset: 9px; width: 40px; height: 40px; }
+.sun-compass { --compass: 96px; position: relative; width: var(--compass); height: var(--compass); }
+.sun-rose { position: absolute; inset: calc(var(--compass) * 0.155); width: calc(var(--compass) * 0.69); height: calc(var(--compass) * 0.69); }
 .sun-rose circle { fill: var(--bg-card); stroke: var(--border-bright); stroke-width: 1; }
 .sun-rose-side { fill: var(--text-muted); }
 .sun-rose-north { fill: var(--north); }
@@ -1106,18 +1106,18 @@ main {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
+  width: calc(var(--compass) * 0.28);
+  height: calc(var(--compass) * 0.28);
+  margin: calc(var(--compass) * -0.14) 0 0 calc(var(--compass) * -0.14);
   padding: 0;
   border: 0;
   border-radius: 50%;
   background: none;
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: calc(var(--compass) * 0.135);
   font-weight: 500;
-  line-height: 16px;
+  line-height: calc(var(--compass) * 0.28);
   cursor: pointer;
 }
 .sun-compass-dir:hover { color: var(--text-primary); }
@@ -1190,6 +1190,7 @@ main {
   .sun-controls { right: 4px; bottom: 2px; gap: 4px; }
   .sun-round { width: 26px; height: 26px; }
   .sun-round svg { width: 13px; height: 13px; }
+  .sun-compass { --compass: 76px; }
   /* The first figure gets the whole row, the other two share the next. */
   .sun-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sun-figure { padding-left: 10px; padding-right: 0; }
@@ -1488,7 +1489,7 @@ footer {
 .temp-spark[hidden] { display: none; }
 .temp-spark-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; white-space: nowrap; }
 #temp-spark-inverter { font-weight: 700; }
-#temp-spark-canvas { display: block; width: 100%; height: 38px; }
+#temp-spark-canvas { display: block; width: 100%; height: 46px; }
 
 .theme-toggle, .mode-toggle {
   background: var(--bg-card-2);
@@ -1688,7 +1689,7 @@ html[data-theme="light"] .info-tooltip-content {
   .topbar { flex-wrap: wrap; row-gap: 14px; }
   .topbar-side { display: contents; }
   .temp-spark { order: 3; width: 100%; padding: 6px 10px 5px; }
-  #temp-spark-canvas { height: 30px; }
+  #temp-spark-canvas { height: 38px; }
 
   /* Day picker: touch-friendly buttons, narrower input */
   .day-picker { gap: 4px; flex-wrap: wrap; }
