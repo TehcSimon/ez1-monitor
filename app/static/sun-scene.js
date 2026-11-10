@@ -32,6 +32,9 @@
   const YAW_NORTH = 165 * RAD, YAW_SOUTH = -15 * RAD;
   const DEFAULT_PITCH = 28 * RAD, MIN_PITCH = 12 * RAD, MAX_PITCH = 72 * RAD;
   const PLAY_DURATION_MS = 26000;
+  // The house button's look back from sunrise: fast at first, slowing down
+  // towards the end of the day shown, or the present.
+  const REPLAY_MS = 9000;
   // Per millisecond; the remainder of a camera move after one ms.
   const CAMERA_EASE = 0.9965;
   const WEATHER_KEY = "ez1-sun-weather";
@@ -70,7 +73,7 @@
   const TOKENS = {
     card2: "--bg-card-2", line: "--border", line2: "--border-bright", ink: "--text-primary",
     ink2: "--text-secondary", muted: "--text-muted", north: "--north", pv1: "--pv1", pv2: "--pv2",
-    sun: "--sun", dial: "--scene-dial", ring: "--scene-ring", ground: "--scene-ground",
+    sun: "--sun", sunFill: "--sun-fill", dial: "--scene-dial", ring: "--scene-ring", ground: "--scene-ground",
     groundNight: "--scene-ground-night", road: "--scene-road", roof: "--scene-roof", home: "--scene-home",
     wallLit: "--scene-wall-lit", wallDark: "--scene-wall-dark", edge: "--scene-edge", label: "--scene-label",
   };
@@ -105,7 +108,8 @@
   let site = null;                // /api/site once ready, else null
   let solstices = { year: null, arcs: [] };
   let buildings = [], roads = [], streetNames = [], metre = 1;
-  const state = { day: null, minute: 0, playing: false, follow: true };
+  // replay: null, { waiting } while the camera moves home, then { from, t }.
+  const state = { day: null, minute: 0, playing: false, follow: true, replay: null };
 
   function applySite(payload) {
     site = payload.ready ? payload : null;
@@ -791,7 +795,7 @@
       tl.save();
       tl.beginPath(); tl.rect(0, 0, X(m), h); tl.clip();
       under(area);
-      tl.fillStyle = color(T.sun, 0.75);
+      tl.fillStyle = color(T.sunFill, 0.75);
       tl.fill();
       tl.restore();
     }
@@ -799,7 +803,7 @@
       const present = X(nowMinute(d)), ahead = points(d.forecast, BINS).filter(p => p[0] >= present);
       if (ahead.length) {
         under(ahead);
-        tl.fillStyle = color(T.sun, 0.25);
+        tl.fillStyle = color(T.sunFill, 0.25);
         tl.fill();
       }
     }
@@ -889,10 +893,21 @@
     if (state.playing && state.day) {
       const d = state.day;
       const end = maxMinute(d);
-      const next = state.minute + dt * (d.m1 - d.m0) / PLAY_DURATION_MS;
-      setMinute(next);
-      // Once through. A replay of today ends at the present, so it goes live again.
-      if (next >= end) { setPlaying(false); setFollow(d.is_today); }
+      const r = state.replay;
+      if (r && r.waiting) {
+        // The look back starts once the camera is home.
+        if (cam.goal === null) { state.replay = { from: d.rise, t: 0 }; setMinute(d.rise); }
+      } else if (r) {
+        r.t += dt;
+        const p = Math.min(1, r.t / REPLAY_MS);
+        setMinute(mix(r.from, end, 1 - Math.pow(1 - p, 3)));
+        if (p >= 1 || r.from >= end) { setPlaying(false); setFollow(d.is_today); }
+      } else {
+        const next = state.minute + dt * (d.m1 - d.m0) / PLAY_DURATION_MS;
+        setMinute(next);
+        // Once through. A replay of today ends at the present, so it goes live again.
+        if (next >= end) { setPlaying(false); setFollow(d.is_today); }
+      }
       moving = true;
     }
     if (moving || dirty) {
@@ -918,6 +933,7 @@
   }
   function setPlaying(on) {
     state.playing = on;
+    state.replay = null;
     $("sun-icon-play").toggleAttribute("hidden", on);   // SVG elements have no hidden property
     $("sun-icon-pause").toggleAttribute("hidden", !on);
     $("sun-play").setAttribute("aria-label", tr(on ? "sun.pause" : "sun.play"));
@@ -982,6 +998,7 @@
     drag = { x: e.clientX, y: e.clientY, t: performance.now(), mouse: e.pointerType !== "touch" };
     cam.spin = 0;
     cam.goal = null;
+    cancelWaiting();
   });
   canvas.addEventListener("pointermove", e => {
     if (!drag) return;
@@ -1005,6 +1022,7 @@
     if (!move) return;
     e.preventDefault();
     cam.goal = null;
+    cancelWaiting();
     cam.yaw += move[0];
     cam.pitch = clamp(cam.pitch + move[1], MIN_PITCH, MAX_PITCH);
     invalidate();
@@ -1014,12 +1032,22 @@
     if (REDUCED_MOTION) { cam.yaw = yaw; cam.pitch = pitch; cam.goal = null; } else cam.goal = { yaw, pitch };
     invalidate();
   }
-  // Back to the default view, slowly, and the day plays meanwhile.
+  // A look back that is still waiting for the camera ends when the camera goes elsewhere.
+  function cancelWaiting() { if (state.replay && state.replay.waiting) setPlaying(false); }
+  // Back to the default view, slowly, then the day from sunrise. Already
+  // there and live, it has nothing to do.
   $("sun-reset").addEventListener("click", () => {
-    moveCamera(site && site.lat < 0 ? YAW_SOUTH : YAW_NORTH, DEFAULT_PITCH);
-    if (state.day && !state.playing) startPlaying();
+    const d = state.day;
+    if (!d) return;
+    const yaw = site && site.lat < 0 ? YAW_SOUTH : YAW_NORTH;
+    const home = cam.goal === null && Math.abs(Math.atan2(Math.sin(yaw - cam.yaw), Math.cos(yaw - cam.yaw))) < RAD
+      && Math.abs(DEFAULT_PITCH - cam.pitch) < RAD;
+    if (home && d.is_today && state.follow && !state.playing) return;
+    moveCamera(yaw, DEFAULT_PITCH);
+    setPlaying(true);
+    state.replay = { waiting: true };
   });
-  for (const b of compassButtons) b.addEventListener("click", () => moveCamera(+b.dataset.az * RAD, DEFAULT_PITCH));
+  for (const b of compassButtons) b.addEventListener("click", () => { cancelWaiting(); moveCamera(+b.dataset.az * RAD, DEFAULT_PITCH); });
   $("sun-weather-toggle").addEventListener("click", () => {
     weatherShown = !weatherShown;
     $("sun-weather-toggle").setAttribute("aria-pressed", String(weatherShown));
