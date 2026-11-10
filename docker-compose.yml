@@ -70,5 +70,18 @@ services:
       # - ELECTRICITY_MAPS_TOKEN=your_token_here
       # - ELECTRICITY_MAPS_ZONE=DE
 
+      # --- Optional: location for the sun path card ---
+      # Your address, or "lat,lon" to skip the address search. Looked up once
+      # (Nominatim, OpenStreetMap) and cached in /data; the browser never
+      # contacts these services. Expected vs. actual and today's projection
+      # work without it. SITE_FLOORS is the number of storeys of your building,
+      # for its height and shadow where OpenStreetMap has none.
+      # - SITE_ADDRESS=Musterstrasse 1, 12345 Musterstadt
+      # - SITE_FLOORS=3
+      # true adds an hourly forecast from Open-Meteo at that location: a better
+      # estimate of today and one for tomorrow. Sends only the coordinates,
+      # rounded to about 1 km. No API key needed.
+      # - WEATHER_ENABLED=true
+
       # --- Logging ---
       - LOG_LEVEL=INFO

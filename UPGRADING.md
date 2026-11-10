@@ -31,6 +31,25 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.13.0 to v1.14.0
+
+No manual steps, no database changes.
+
+- **Sun path.** A new card between the period cards and the history chart:
+  expected vs. actual learned from your own days, and a projection of today's total.
+  Works by itself once 7 days are recorded.
+- **`SITE_ADDRESS` and `SITE_FLOORS` (optional).** With an address (or
+  `lat,lon`) the card adds a rotatable sun path and a reduced map of your
+  surroundings. The server looks the address up once at Nominatim and
+  OpenStreetMap and caches the result in `/data/site-map.json`; without the
+  variable nothing is sent anywhere. See [Sun path](README.md#sun-path).
+- **`WEATHER_ENABLED` (optional).** Set to `true` next to `SITE_ADDRESS` for an
+  hourly forecast from Open-Meteo: a better estimate of today from the start of
+  the day, what is still to come in the bars and on the timeline, and an
+  estimate for tomorrow. Only your coordinates, rounded to about 1 km, are
+  sent. The Unraid template gains the variable for new installs; on an existing
+  container add it by hand.
+
 ## From v1.12.1 to v1.13.0
 
 No manual steps. The database migrates by itself on first start.
