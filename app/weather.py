@@ -125,6 +125,20 @@ def codes_between(state: WeatherState, start: float, end: float, now: float) -> 
     return hours or None
 
 
+def temperatures_between(state: WeatherState, start: float, end: float, now: float) -> Optional[list]:
+    """[[time, °C], …] from the last hour before start to the first after end,
+    so a line through them covers the whole span; None without a recent
+    forecast or any value there. Unlike the radiation, the temperature holds
+    for the moment it is stamped with."""
+    if not _fresh(state, now):
+        return None
+    points = [
+        [t, round(float(v), 1)] for t, v in zip(state.times, state.temperatures)
+        if v is not None and start - 3600 < t < end + 3600
+    ]
+    return points or None
+
+
 def load_cache(state: WeatherState) -> None:
     """Restore the last answer, if it was fetched for the same place."""
     if state.cache_path is None:

@@ -10,7 +10,7 @@ import pytest
 from app import weather
 from app.site_map import SiteState
 from app.weather import (
-    WeatherState, codes_between, current_conditions, load_cache, parse_forecast, poll_loop, poll_once,
+    WeatherState, codes_between, current_conditions, load_cache, temperatures_between, parse_forecast, poll_loop, poll_once,
     radiation_by_hour, save_cache,
 )
 from app.yield_curve import WINDOW_DAYS, radiation_bins
@@ -83,6 +83,14 @@ class TestReading:
 
     def test_a_span_without_codes_has_none(self):
         assert codes_between(filled(), NOW + 10 * HOUR, NOW + 20 * HOUR, NOW) is None
+
+    def test_temperatures_reach_one_hour_beyond_both_ends(self):
+        assert temperatures_between(filled(), NOW, NOW, NOW) == [[NOW - 1800, 11.4], [NOW + 1800, 12.6]]
+
+    def test_temperatures_leave_out_gaps_and_old_data(self):
+        assert temperatures_between(filled(), NOW + 2 * HOUR, NOW + 3 * HOUR, NOW) is None
+        state = filled(fetched_at=NOW - weather.STALE_AFTER_S - 1)
+        assert temperatures_between(state, NOW, NOW, NOW) is None
 
     def test_old_codes_are_not_used(self):
         state = filled(fetched_at=NOW - weather.STALE_AFTER_S - 1)

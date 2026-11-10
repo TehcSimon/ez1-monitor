@@ -353,6 +353,18 @@ class Database:
                 return [{"timestamp": r["bucket_ts"], **{k: r[k] for k in ("p1","p2","e1","e2","te1","te2","online")}} for r in rows]
             return [dict(r) for r in rows]
 
+    async def get_temperatures(self, start_ts: int) -> list[list]:
+        """[[timestamp, °C], …] of the inverter since start_ts, oldest first.
+        Rows without a temperature (asleep, or firmware without it) are left out."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT timestamp, temp_c FROM measurements
+                   WHERE timestamp >= ? AND temp_c IS NOT NULL
+                   ORDER BY timestamp ASC""",
+                (start_ts,),
+            )
+            return [[row[0], row[1]] for row in await cur.fetchall()]
+
     async def get_power_bins(
         self, start_ts: int, end_ts: int, offset_s: int, bin_seconds: int
     ) -> dict[int, dict[int, float]]:

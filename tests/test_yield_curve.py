@@ -340,3 +340,20 @@ class TestForecastInTheEndpoint:
 class TestSiteEndpoint:
     async def test_off_by_default(self, main):
         assert await main.get_site() == {"configured": False, "ready": False}
+
+
+class TestTemperaturesEndpoint:
+    async def test_the_last_three_hours_of_the_inverter(self, main):
+        now = int(datetime.now().timestamp())
+        await main.db.insert_measurement(now - 4 * 3600, 0, 0, 0, 0, 0, 0, online=True, temp_c=10.0)
+        await main.db.insert_measurement(now - 3600, 0, 0, 0, 0, 0, 0, online=True, temp_c=31.5)
+        await main.db.insert_measurement(now - 60, 0, 0, 0, 0, 0, 0, online=True)
+        answer = await main.get_temperatures()
+        assert answer["inverter"] == [[now - 3600, 31.5]]
+        assert answer["window_s"] == 3 * 3600
+
+    async def test_outside_only_with_a_forecast(self, main, monkeypatch):
+        assert (await main.get_temperatures())["outside"] is None
+        monkeypatch.setattr(main, "weather_state", sunny_forecast(temp=18.0))
+        outside = (await main.get_temperatures())["outside"]
+        assert len(outside) >= 4 and {v for _, v in outside} == {18.0}

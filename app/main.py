@@ -28,7 +28,7 @@ from .day_figures import summarize_day
 from .site_map import CACHE_FILE, SiteState, resolve_loop, site_payload
 from .weather import (
     WEATHER_CACHE_FILE, WeatherState, codes_between, current_conditions,
-    poll_loop as weather_poll_loop, radiation_by_hour,
+    poll_loop as weather_poll_loop, radiation_by_hour, temperatures_between,
 )
 from .yield_curve import (
     BIN_SECONDS, BINS, MIN_LEARNED_DAYS, WINDOW_DAYS, bins_of_day, curve_kwh, day_start_ts,
@@ -960,6 +960,24 @@ def _weather_outlook(learning: dict, offset_s: int, t0: int, now_ts: float) -> t
         forecast_curve(response, today),
         round(curve_kwh(forecast_curve(response, tomorrow)), 3) if tomorrow else None,
     )
+
+
+# The span of the temperature graph in the top bar.
+TEMPERATURE_WINDOW_S = 3 * 3600
+
+
+@app.get("/api/temperatures")
+async def get_temperatures():
+    """The inverter's temperature over the last hours and, with
+    WEATHER_ENABLED, the outside temperature from the forecast."""
+    now = datetime.now().timestamp()
+    start = now - TEMPERATURE_WINDOW_S
+    return {
+        "now": int(now),
+        "window_s": TEMPERATURE_WINDOW_S,
+        "inverter": await db.get_temperatures(int(start)),
+        "outside": temperatures_between(weather_state, start, now, now),
+    }
 
 
 @app.get("/api/yield-curve")
