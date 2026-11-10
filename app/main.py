@@ -25,6 +25,7 @@ from .date_helpers import (
     same_progress_slice,
 )
 from .day_figures import summarize_day
+from .site_map import CACHE_FILE, SiteState, resolve_loop, site_payload
 from .yield_curve import (
     BIN_SECONDS, BINS, MIN_LEARNED_DAYS, WINDOW_DAYS, bins_of_day, day_start_ts,
     learned_target, project_today, standard_offset_seconds,
@@ -118,6 +119,12 @@ ELECTRICITY_MAPS_TOKEN = os.getenv("ELECTRICITY_MAPS_TOKEN", "").strip()
 # on the actual API call.
 ELECTRICITY_MAPS_ZONE = os.getenv("ELECTRICITY_MAPS_ZONE", "DE").upper().strip()
 
+# Optional location for the sun scene: an address, or "lat,lon" to skip the
+# address search. Looked up once and cached next to the database, see
+# site_map.py. SITE_FLOORS sets the own building's height where OSM has none.
+SITE_ADDRESS = os.getenv("SITE_ADDRESS", "").strip()
+SITE_FLOORS = float(os.getenv("SITE_FLOORS") or 0)
+
 ONLINE_FRESH_SECONDS = 300
 DUSK_WINDOW_SECONDS = 300
 DUSK_THRESHOLD_W = 5.0
@@ -135,6 +142,10 @@ carbon_state = CarbonState(
     static_g_per_kwh=CO2_KG_PER_KWH * 1000.0,  # env is kg, internal is g
 )
 
+site_state = SiteState(
+    address=SITE_ADDRESS, floors=SITE_FLOORS,
+    cache_path=Path(DB_PATH).with_name(CACHE_FILE),
+)
 poller = Poller(INVERTER_IP, INVERTER_PORT, POLL_INTERVAL, db, carbon_state,
                 price_per_kwh=PRICE_PER_KWH)
 
@@ -366,11 +377,12 @@ async def lifespan(app: FastAPI):
     aggregate_handle = asyncio.create_task(aggregate_refresh_task())
     # CO2 polling task — runs forever, no-op when token isn't set
     carbon_handle = asyncio.create_task(poll_loop(carbon_state))
+    site_handle = asyncio.create_task(resolve_loop(site_state))
     try:
         yield
     finally:
         logger.info("Shutting down ...")
-        for handle in (retention_handle, aggregate_handle, carbon_handle):
+        for handle in (retention_handle, aggregate_handle, carbon_handle, site_handle):
             handle.cancel()
             try:
                 await handle
@@ -908,6 +920,12 @@ async def get_history(
         # another shape.
         resp["figures"] = summarize_day(points)
     return resp
+
+
+@app.get("/api/site")
+async def get_site():
+    """Location and surroundings for the sun scene, see site_map.py."""
+    return site_payload(site_state)
 
 
 @app.get("/api/yield-curve")

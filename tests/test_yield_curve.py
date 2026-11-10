@@ -187,3 +187,8 @@ class TestYieldCurveEndpoint:
     async def test_a_date_in_the_future_means_today(self, main):
         answer = await main.get_yield_curve(date=(date.today() + timedelta(days=3)).isoformat())
         assert answer["date"] == date.today().isoformat()
+
+
+class TestSiteEndpoint:
+    async def test_off_by_default(self, main):
+        assert await main.get_site() == {"configured": False, "ready": False}
