@@ -213,6 +213,8 @@ function refreshChartColors() {
   const css = getComputedStyle(document.documentElement);
   COLORS.accent     = css.getPropertyValue("--accent").trim() || "#f59e0b";
   COLORS.accentWarm = css.getPropertyValue("--accent-warm").trim() || "#fb923c";
+  // Areas and bars: brighter than the accent's lines in the light theme.
+  COLORS.accentFill = css.getPropertyValue("--accent-fill").trim() || COLORS.accent;
   COLORS.text       = css.getPropertyValue("--text-primary").trim() || "#f4ede0";
   COLORS.muted      = css.getPropertyValue("--text-muted").trim() || "#6f6353";
   COLORS.border     = css.getPropertyValue("--border").trim() || "#2a241c";
@@ -1059,8 +1061,8 @@ async function loadTodayChart() {
 
     const ctx = document.getElementById("chart-today").getContext("2d");
     const grad = ctx.createLinearGradient(0, 0, 0, 280);
-    grad.addColorStop(0, COLORS.accent + "55");
-    grad.addColorStop(1, COLORS.accent + "00");
+    grad.addColorStop(0, COLORS.accentFill + "55");
+    grad.addColorStop(1, COLORS.accentFill + "00");
 
     todayChart = upsertChart(todayChart, "chart-today", {
       type: "line",
@@ -1254,7 +1256,7 @@ function renderWeeklyHistory(data) {
   const labels = weeks.map(w => w.week_start);
   const series = weeks.map(w => w.kwh);
   const thisYear = new Date().getFullYear();
-  const backgroundColors = weeks.map(w => w.iso_year === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55");
+  const backgroundColors = weeks.map(w => w.iso_year === thisYear ? COLORS.accentFill + "cc" : COLORS.accentFill + "55");
   const wkWord = state.lang === "de" ? "KW" : "W";
 
   const boundaries = [];
@@ -1310,7 +1312,7 @@ function renderAnchoredDaily(data) {
 
   historyChart = upsertChart(historyChart, "chart-history", {
     type: "bar",
-    data: { labels, datasets: [{ label: "kWh", data: series, backgroundColor: COLORS.accent + "cc", borderColor: COLORS.accent, borderWidth: 1, borderRadius: 3 }] },
+    data: { labels, datasets: [{ label: "kWh", data: series, backgroundColor: COLORS.accentFill + "cc", borderColor: COLORS.accent, borderWidth: 1, borderRadius: 3 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       onHover: (event, els) => { event.native.target.style.cursor = els.length ? "pointer" : "default"; },
@@ -1597,7 +1599,7 @@ function renderYearlyHistory(data) {
   const series = years.map(y => y.total_kwh);
   const thisYear = new Date().getFullYear();
   const backgroundColors = labels.map(l =>
-    parseInt(l, 10) === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55"
+    parseInt(l, 10) === thisYear ? COLORS.accentFill + "cc" : COLORS.accentFill + "55"
   );
 
   historyChart = upsertChart(historyChart, "chart-history", {
@@ -1668,7 +1670,7 @@ function renderDailyHistory(data, isYear) {
   if (isYear && labels.length > 0) {
     backgroundColors = labels.map(label => {
       const y = parseInt(label.substring(0, 4), 10);
-      return y === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55";
+      return y === thisYear ? COLORS.accentFill + "cc" : COLORS.accentFill + "55";
     });
     let previousYear = null;
     labels.forEach(label => {
@@ -1679,12 +1681,13 @@ function renderDailyHistory(data, isYear) {
       previousYear = y;
     });
   } else {
-    backgroundColors = labels.map(() => COLORS.accent + "cc");
+    backgroundColors = labels.map(() => COLORS.accentFill + "cc");
   }
 
   // Drill-down: highlight the day currently shown in the Today chart
   borderColors = labels.map(l => (l === viewedDayKey) ? COLORS.good : COLORS.accent);
-  borderWidths = labels.map(l => (l === viewedDayKey) ? 2 : 1);
+  // A year's bars are too thin for an outline: it would cover the fill.
+  borderWidths = labels.map(l => (l === viewedDayKey) ? 2 : (isYear ? 0 : 1));
 
   historyChart = upsertChart(historyChart, "chart-history", {
     type: "bar",
@@ -1781,7 +1784,7 @@ function renderMonthlyHistory(data) {
   const thisYear = new Date().getFullYear();
   const backgroundColors = labels.map(label => {
     const y = parseInt(label.substring(0, 4), 10);
-    return y === thisYear ? COLORS.accent + "cc" : COLORS.accent + "55";
+    return y === thisYear ? COLORS.accentFill + "cc" : COLORS.accentFill + "55";
   });
 
   const boundaries = [];

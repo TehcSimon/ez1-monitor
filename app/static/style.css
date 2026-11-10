@@ -18,6 +18,7 @@
   --accent:         #f59e0b;
   --accent-warm:    #fb923c;
   --accent-glow:    #f59e0b33;
+  --accent-fill:    #f59e0b;     /* areas and bars under the accent's lines */
 
   --good:           #4ade80;
   --bad:            #f87171;
@@ -44,12 +45,13 @@
   --hof-badge-text:  #1c1207;
   --hof-title-color: #fbbf24;   /* amber-400 — slot titles in gold */
   /* Record-chase pill: stays amber in BOTH themes. Deliberately NOT
-     --accent-warm, which the light theme redefines to blue — the chase
+     --accent-warm, which the light theme redefines to a deeper amber — the chase
      state is thematically tied to the amber Hall-of-Fame glow. */
   --record-chase:    #fb923c;
 
   /* Sun scene: neutral greys, so the map sits quietly in the app. */
   --sun:                #f59e0b;
+  --sun-fill:           #f59e0b;
   --north:              #f0604d;   /* compass north, a red that sits with the warm palette */
   --scene-dial:         #1a1a1a;
   --scene-ring:         #3a3a3a;
@@ -67,11 +69,10 @@
 
 /* Light theme — applied when user explicitly chose light, OR when the
    user has no preference set and the OS prefers light. */
-/* Light theme — cool / neutral / electric blue.
-   Deliberately contrasted with the dark theme's warm amber Solar mood.
-   Light theme leans into "Strom" (electricity), dark theme leans into
-   "Sonne" (sun) — two valid identities, one project, user picks per
-   personal preference. */
+/* Light theme — cool, neutral surfaces with the same sun-amber accent as the
+   dark theme. The accent is a deeper amber for lines and numbers, areas use
+   the brighter --accent-fill: a dark amber at low opacity on white turns tan,
+   which is what the warm light theme before v1.4 looked like. */
 
 @media (prefers-color-scheme: light) {
   html:not([data-theme]) {
@@ -85,26 +86,27 @@
     --text-secondary: #334155;       /* slate-700 */
     --text-muted:     #64748b;       /* slate-500 */
 
-    --accent:         #2563eb;       /* blue-600 — electric blue */
-    --accent-warm:    #1d4ed8;       /* blue-700 — slightly deeper for warm-emphasis */
-    --accent-glow:    #2563eb33;
+    --accent:         #d97706;       /* amber-600, 3.2:1 on white for lines and numbers */
+    --accent-warm:    #ea580c;       /* orange-600: warmer, not darker, so gradients stay bright */
+    --accent-glow:    #f59e0b33;
+    --accent-fill:    #fbbf24;       /* amber-400 for areas, so they stay yellow and never turn tan */
 
     --good:           #16a34a;
     --bad:            #dc2626;
     --neutral:        #64748b;
 
-    --pv1:            #ea580c;       /* orange-600 */
+    --pv1:            #2563eb;       /* blue-600 */
     --pv2:            #0d9488;       /* teal-600 */
 
     --tooltip-bg:     #ffffff;
     --grain-opacity:  0.02;
-    --button-text:    #ffffff;
-    /* Subtle blue-tinted body glow instead of warm amber */
-    --body-glow-1:    #dbeafe22;     /* blue-100 fade */
-    --body-glow-2:    #bfdbfe22;     /* blue-200 fade */
+    --button-text:    #15120e;
+    /* A faint warm glow on the cool background */
+    --body-glow-1:    #fef3c722;
+    --body-glow-2:    #fde68a22;
     --topbar-bg:      #eef2f7;       /* slate-100 + tiny blue cast */
-    --accent-card-glow: #dbeafe;     /* blue-100 — pale sky on the accent card */
-    --hero-glow: #dbeafe;            /* same gentle blue wash in the hero card */
+    --accent-card-glow: #fffbeb;     /* amber-50, a trace of warmth on white */
+    --hero-glow: #fffbeb;
     --hero-text-shadow: none;
     /* Hall of Fame highscore glow — deeper amber that's visible on white */
     --hof-glow-soft:   #d9770633;
@@ -115,6 +117,8 @@
     --record-chase:    #b45309;   /* amber-700 — readable on white */
 
     --sun:                #d97706;
+
+    --sun-fill:           #fbbf24;
     --north:              #dc2626;
     --scene-dial:         #f5f5f5;
     --scene-ring:         #d4d4d4;
@@ -142,25 +146,26 @@ html[data-theme="light"] {
   --text-secondary: #334155;
   --text-muted:     #64748b;
 
-  --accent:         #2563eb;
-  --accent-warm:    #1d4ed8;
-  --accent-glow:    #2563eb33;
+  --accent:         #d97706;       /* amber-600, 3.2:1 on white for lines and numbers */
+  --accent-warm:    #ea580c;       /* orange-600: warmer, not darker, so gradients stay bright */
+  --accent-glow:    #f59e0b33;
+  --accent-fill:    #fbbf24;       /* amber-400 for areas, so they stay yellow and never turn tan */
 
   --good:           #16a34a;
   --bad:            #dc2626;
   --neutral:        #64748b;
 
-  --pv1:            #ea580c;
+  --pv1:            #2563eb;       /* blue-600 */
   --pv2:            #0d9488;
 
   --tooltip-bg:     #ffffff;
   --grain-opacity:  0.02;
-  --button-text:    #ffffff;
-  --body-glow-1:    #dbeafe22;
-  --body-glow-2:    #bfdbfe22;
+  --button-text:    #15120e;
+  --body-glow-1:    #fef3c722;
+  --body-glow-2:    #fde68a22;
   --topbar-bg:      #eef2f7;
-  --accent-card-glow: #dbeafe;
-  --hero-glow: #dbeafe;
+  --accent-card-glow: #fffbeb;     /* amber-50, a trace of warmth on white */
+  --hero-glow: #fffbeb;
   --hero-text-shadow: none;
   --hof-glow-soft:   #d9770633;
   --hof-glow-bright: #b4530988;
@@ -170,6 +175,8 @@ html[data-theme="light"] {
   --record-chase:    #b45309;
 
   --sun:                #d97706;
+
+  --sun-fill:           #fbbf24;
   --north:              #dc2626;
   --scene-dial:         #f5f5f5;
   --scene-ring:         #d4d4d4;
@@ -200,6 +207,7 @@ html[data-theme="dark"] {
   --accent:         #f59e0b;
   --accent-warm:    #fb923c;
   --accent-glow:    #f59e0b33;
+  --accent-fill:    #f59e0b;     /* areas and bars under the accent's lines */
 
   --good:           #4ade80;
   --bad:            #f87171;
@@ -1515,6 +1523,15 @@ html[data-theme="light"] .card {
 }
 html[data-theme="light"] .logo-mark {
   box-shadow: 0 0 20px var(--accent-glow), inset 0 -2px 6px rgba(0, 0, 0, 0.2);
+}
+/* The logo's sun ends in a dark amber that reads brown on white. */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) .logo-mark {
+    background: radial-gradient(circle at 30% 30%, #fde68a, var(--accent-fill) 45%, var(--accent));
+  }
+}
+html[data-theme="light"] .logo-mark {
+  background: radial-gradient(circle at 30% 30%, #fde68a, var(--accent-fill) 45%, var(--accent));
 }
 
 /* Logo-mark inner border: bright on dark, dark on light */
