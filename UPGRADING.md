@@ -31,6 +31,18 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.15.0 to v1.15.1
+
+No manual steps, no database changes.
+
+- **Light theme in sun amber.** The accent is amber like in the dark theme,
+  surfaces stay cool white. Areas and bars use a brighter amber, so they stay
+  yellow instead of turning tan. PV 1 is blue, PV 2 stays teal.
+- **House button in the sun path.** It first moves back to the default view,
+  then plays the day from sunrise, fast at first and slowing down towards now.
+  Already in the default view and live, it does nothing.
+- **Year view.** The daily bars lose their outline, which covered the fill.
+
 ## From v1.14.0 to v1.15.0
 
 No manual steps, no database changes.
