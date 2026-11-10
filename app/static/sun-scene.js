@@ -34,9 +34,11 @@
   const PLAY_DURATION_MS = 26000;
   // The house button's look back from sunrise: fast at first, slowing down
   // towards the end of the day shown, or the present.
-  const REPLAY_MS = 9000;
-  // Per millisecond; the remainder of a camera move after one ms.
-  const CAMERA_EASE = 0.9965;
+  const REPLAY_MS = 7000;
+  const easeOut = (p, k) => 1 - Math.pow(1 - p, k);
+  // A camera move takes this long: fast at first, braking towards the end,
+  // and then it is done (an exponential approach crept on for seconds).
+  const CAMERA_MS = 1300;
   const WEATHER_KEY = "ez1-sun-weather";
   // WMO weather codes, each group by its highest code.
   const WEATHER_GROUPS = [
@@ -879,11 +881,12 @@
     lastFrame = now;
     let moving = false;
     if (cam.goal !== null) {
-      const diff = Math.atan2(Math.sin(cam.goal.yaw - cam.yaw), Math.cos(cam.goal.yaw - cam.yaw));
-      const k = 1 - Math.pow(CAMERA_EASE, dt);
-      cam.yaw += diff * k;
-      cam.pitch += (cam.goal.pitch - cam.pitch) * k;
-      if (Math.abs(diff) < 0.002 && Math.abs(cam.goal.pitch - cam.pitch) < 0.002) cam.goal = null;
+      const g = cam.goal;
+      g.t += dt;
+      const e = easeOut(Math.min(1, g.t / CAMERA_MS), 3);
+      cam.yaw = g.fromYaw + g.turn * e;
+      cam.pitch = mix(g.fromPitch, g.pitch, e);
+      if (g.t >= CAMERA_MS) cam.goal = null;
       moving = true;
     } else if (!drag && Math.abs(cam.spin) > 2e-5) {
       cam.yaw += cam.spin * dt;
@@ -900,7 +903,7 @@
       } else if (r) {
         r.t += dt;
         const p = Math.min(1, r.t / REPLAY_MS);
-        setMinute(mix(r.from, end, 1 - Math.pow(1 - p, 3)));
+        setMinute(mix(r.from, end, easeOut(p, 2.5)));
         if (p >= 1 || r.from >= end) { setPlaying(false); setFollow(d.is_today); }
       } else {
         const next = state.minute + dt * (d.m1 - d.m0) / PLAY_DURATION_MS;
@@ -1029,7 +1032,10 @@
   });
   function moveCamera(yaw, pitch) {
     cam.spin = 0;
-    if (REDUCED_MOTION) { cam.yaw = yaw; cam.pitch = pitch; cam.goal = null; } else cam.goal = { yaw, pitch };
+    // The shorter way round.
+    const turn = Math.atan2(Math.sin(yaw - cam.yaw), Math.cos(yaw - cam.yaw));
+    if (REDUCED_MOTION) { cam.yaw += turn; cam.pitch = pitch; cam.goal = null; }
+    else cam.goal = { fromYaw: cam.yaw, turn, fromPitch: cam.pitch, pitch, t: 0 };
     invalidate();
   }
   // A look back that is still waiting for the camera ends when the camera goes elsewhere.
