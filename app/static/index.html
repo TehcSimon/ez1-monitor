@@ -323,6 +323,58 @@
 
   </section>
 
+  <!-- Sun scene: rotatable sun path, yield and map, target vs. actual and
+       today's projection. Built by sun-scene.js; stays hidden until there is
+       something to show. Follows the day picked in the day chart. -->
+  <section class="card sun-card" id="sun-card" hidden>
+    <div class="card-header">
+      <div class="card-header-left">
+        <h2 data-i18n="sun.title">Sun path</h2>
+      </div>
+      <button class="day-today-btn" id="sun-now" type="button" data-i18n="sun.now" hidden>Now</button>
+    </div>
+    <div class="sun-stage" id="sun-stage">
+      <div class="sun-view" id="sun-view">
+        <canvas id="sun-canvas" tabindex="0" role="img"></canvas>
+        <span class="sun-pulse" id="sun-pulse" hidden></span>
+        <button class="sun-reset" id="sun-reset" type="button" hidden>N</button>
+      </div>
+      <div class="sun-hud sun-hud-left">
+        <div class="sun-clock" id="sun-clock">--:--</div>
+        <div class="sun-sub" id="sun-date"></div>
+        <div class="sun-estimate-label" id="sun-estimate-label"></div>
+        <div class="sun-estimate" id="sun-estimate">—</div>
+        <div class="sun-sub" id="sun-tomorrow"></div>
+      </div>
+      <div class="sun-hud sun-hud-right">
+        <div class="sun-power"><span id="sun-power">0</span><small>W</small></div>
+        <div class="sun-sub" id="sun-sky"></div>
+        <div class="sun-sub sun-pv-row"><span class="pv-value-1" id="sun-pv1"></span><span class="pv-value-2" id="sun-pv2"></span></div>
+        <div class="sun-sub" id="sun-weather"></div>
+      </div>
+      <div class="sun-credits">
+        <a id="sun-osm" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" hidden>© OpenStreetMap</a>
+        <a id="sun-meteo" href="https://open-meteo.com/" target="_blank" rel="noopener" data-i18n="sun.weatherCredit" hidden>Weather data by Open-Meteo.com</a>
+      </div>
+    </div>
+    <div class="sun-timeline">
+      <button class="sun-play" id="sun-play" type="button" hidden>
+        <svg id="sun-icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>
+        <svg id="sun-icon-pause" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M6.5 4.5h4v15h-4zm7 0h4v15h-4z"/></svg>
+      </button>
+      <div class="sun-scrub" id="sun-scrub">
+        <canvas id="sun-curve" aria-hidden="true"></canvas>
+        <input id="sun-time" type="range" step="1">
+      </div>
+    </div>
+    <div class="sun-figures">
+      <div class="sun-figure"><span class="sun-key" data-i18n="sun.soFar">So far</span><span class="sun-value" id="sun-f-now">—</span><span class="sun-note" id="sun-f-now-n"></span></div>
+      <div class="sun-figure"><span class="sun-key" data-i18n="sun.targetSoFar">Expected so far</span><span class="sun-value" id="sun-f-target">—</span><span class="sun-note" id="sun-f-target-n"></span></div>
+      <div class="sun-figure"><span class="sun-key" data-i18n="sun.targetDay">Clear-day expectation</span><span class="sun-value" id="sun-f-full">—</span><span class="sun-note" id="sun-f-full-n"></span></div>
+      <div class="sun-figure sun-figure-sky"><span class="sun-key" data-i18n="sun.sun">Sun angle</span><span class="sun-value" id="sun-f-sun">—</span><span class="sun-note" id="sun-f-sun-n"></span></div>
+    </div>
+  </section>
+
   <!-- Historical chart with range + granularity tabs -->
   <section class="card chart-card history-card">
     <div class="card-header">
@@ -479,6 +531,7 @@
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
 </footer>
 
+<script src="/static/sun-scene.js?v=__ASSET_VERSION__"></script>
 <script src="/static/app.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

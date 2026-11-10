@@ -1024,6 +1024,7 @@ function renderDayFigures(figures) {
 
 async function loadTodayChart() {
   const seq = ++todayReqSeq;
+  window.SunScene?.load(state.viewedDay ? fmt.isoDay(state.viewedDay) : null, state.lang, state.locale);
   try {
     const dateParam = state.viewedDay
       ? `&date=${fmt.isoDay(state.viewedDay)}`
