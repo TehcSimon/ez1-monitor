@@ -105,6 +105,7 @@ def main():
             ctx, page = open_dashboard(browser, theme, DESKTOP)
             # Hero: top bar, live power, today's curve and the four stat cards.
             shoot_region(page, f"dashboard-{theme}", ".topbar", ".comparison-grid", pad=24)
+            save(page.locator(".sun-card").screenshot(), f"sun-scene-{theme}")
             ctx.close()
 
             ctx, page = open_dashboard(browser, theme, PHONE, mobile=True)

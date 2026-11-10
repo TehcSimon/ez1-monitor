@@ -3,6 +3,7 @@
 One deterministic model feeds both halves of a realistic demo setup:
 
     python demo.py build-db /data/ez1.db   # history → demo SQLite database
+    python demo.py build-site /data/x.json # made-up surroundings and forecast for the sun scene
     python demo.py serve [port]            # live → fake EZ1-M local API
 
 A real ez1-monitor container then runs against the pair unmodified: the
@@ -16,6 +17,7 @@ same zone as the monitor, and the same (pinned) clock — compose.yml provides
 both. Not affiliated with any real device: the serial is obviously fake.
 """
 import bisect
+import hashlib
 import json
 import math
 import random
@@ -306,10 +308,73 @@ def serve(port: int = 8050) -> None:
     ThreadingHTTPServer(("", port), _FakeInverter).serve_forever()
 
 
+# --- The demo surroundings ---------------------------------------------------
+
+def _block(x0, y0, x1, y1, height, home=False):
+    item = {"f": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], "h": height}
+    return {**item, "home": 1} if home else item
+
+
+def build_site(path):
+    """A made-up street corner in the sun scene's cache format, so the
+    screenshots show the feature without showing anybody's real neighbourhood.
+    The monitor finds it under SITE_ADDRESS=Demo and asks no outside service."""
+    surroundings = {
+        "lat": 51.3, "lon": 9.5,
+        "buildings": [
+            _block(-13, -6.5, 13, 6.5, 10, home=True),
+            _block(-40, -7, -22, 6, 8),
+            _block(-20, 20, -4, 35, 8),
+            _block(4, 20, 20, 34, 11),
+            _block(-20, -43, -6, -32, 8),
+            _block(0, -42, 14, -32, 8),
+            _block(39, 10, 44, 22, 8),
+            _block(40, -12, 46, 6, 10),
+            _block(16, -4, 23, 3, 3),
+            _block(-19, 12, -13, 18, 3),
+        ],
+        "roads": [
+            {"w": 7, "p": [[-90, -24], [33, -24], [90, -24]]},
+            {"w": 6, "p": [[33, -24], [33, 90]]},
+        ],
+        "labels": [
+            {"t": "Lindenweg", "p": [[x, -24] for x in range(-40, 41, 8)]},
+            {"t": "Am Hang", "p": [[33, y] for y in range(-22, 33, 6)]},
+        ],
+    }
+    Path(path).write_text(json.dumps({
+        "version": 1,
+        "address": hashlib.sha256(b"Demo").hexdigest(),
+        "lat": surroundings["lat"], "lon": surroundings["lon"],
+        "surroundings": surroundings,
+    }), encoding="utf-8")
+    build_weather(Path(path).with_name("weather.json"), surroundings["lat"], surroundings["lon"])
+
+
+def build_weather(path, lat, lon):
+    """A forecast in the weather cache's format, its radiation taken from the
+    same model as the power. A restart within the hour reuses that file, so
+    the monitor doesn't ask Open-Meteo during the shots."""
+    times, radiation = [], []
+    for days_ahead in range(-23, 4):
+        d = date.today() + timedelta(days=days_ahead)
+        minutes = day_profile(d)[0]
+        for hour in range(24):
+            times.append(_ts(d, hour * 60) + 3600)
+            radiation.append(round(sum(a + b for a, b in minutes[hour * 60:(hour + 1) * 60]) / 60, 1))
+    Path(path).write_text(json.dumps({
+        "version": 1, "lat": lat, "lon": lon, "fetched_at": time.time(),
+        "times": times, "radiation": radiation,
+        "codes": [1] * len(times), "temperatures": [24.0] * len(times),
+    }), encoding="utf-8")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "build-db" and len(sys.argv) == 3:
         build_db(sys.argv[2])
+    elif cmd == "build-site" and len(sys.argv) == 3:
+        build_site(sys.argv[2])
     elif cmd == "serve":
         serve(int(sys.argv[2]) if len(sys.argv) > 2 else 8050)
     else:

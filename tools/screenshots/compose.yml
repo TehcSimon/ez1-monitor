@@ -36,7 +36,7 @@ services:
     pull_policy: build
     volumes: [data:/data, faketime:/faketime:ro, ./:/tools:ro]
     # Fresh database on every run.
-    command: ["sh", "-c", "rm -f /data/ez1.db* && python /tools/demo.py build-db /data/ez1.db"]
+    command: ["sh", "-c", "rm -f /data/ez1.db* && python /tools/demo.py build-db /data/ez1.db && python /tools/demo.py build-site /data/site-map.json"]
     healthcheck: { disable: true }
 
   inverter:
@@ -61,6 +61,11 @@ services:
       PRICE_PER_KWH: "0.35"
       SELF_CONSUMPTION_PCT: "70"
       INSTALL_COST: "650"
+      # Answered from the fictional map and forecast demo.py puts into the
+      # cache, so the demo never asks an outside service.
+      SITE_ADDRESS: "Demo"
+      SITE_FLOORS: "3"
+      WEATHER_ENABLED: "true"
     volumes: [data:/data, faketime:/faketime:ro]
     networks: [lan]
     depends_on:
