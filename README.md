@@ -96,7 +96,7 @@ to live grid CO₂ data.
     <td colspan="2"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sun-scene-dark.webp"><img src="docs/screenshots/sun-scene-light.webp" alt="Sun path and yield bars around a reduced street map, with today's projection"></picture></td>
   </tr>
   <tr>
-    <td colspan="2"><sub><b>Sun path.</b> Drag to rotate, scrub or play the day. The map is a made-up street here; with <code>SITE_ADDRESS</code> it is yours.</sub></td>
+    <td colspan="2"><sub><b>Sun path.</b> Drag to rotate, scrub or play the day. The compass rose turns the view to a direction, the house button back to the default and plays the day. The map is a made-up street here; with <code>SITE_ADDRESS</code> it is yours.</sub></td>
   </tr>
   <tr>
     <td colspan="2"><img src="docs/screenshots/year-weekly-dark.webp" alt="Year view with weekly bars"></td>
@@ -362,6 +362,9 @@ forecast into a curve for the rest of today, a projection from the start of the
 day and an estimate for tomorrow. The earlier it is, the more the forecast
 counts against how the day has gone so far; from midday on they count half
 each. Without a recent forecast the card falls back to your own history.
+The scene also draws each hour's weather along the sun's path: clouds, rain,
+snow, a thunderstorm, and a veil of fog over the map. The cloud button next to
+the compass rose hides it.
 
 Tested on 139 days of one plant from June to November, each day estimated only
 from the days before it and with the forecast as it was published a day
@@ -419,7 +422,7 @@ unauthenticated — meant for the LAN.
 | `GET /api/history?range=week&week=YYYY-Www` | A specific ISO week (daily bars + summary) |
 | `GET /api/history?range=month&month=YYYY-MM` | A specific month (daily bars + summary) |
 | `GET /api/history?range=multiyear&granularity=monthly\|yearly` | All years |
-| `GET /api/yield-curve?date=YYYY-MM-DD` | A day in 5-minute slots with learned expectation, today's projection and forecast |
+| `GET /api/yield-curve?date=YYYY-MM-DD` | A day in 5-minute slots with learned expectation, today's projection, forecast and hourly weather |
 | `GET /api/site` | Location and map cut-out for the sun path card |
 | `GET /api/stats` | Aggregated statistics with same-period and YoY comparisons |
 | `GET /api/highscores` | All-time best day/week/month/year with animation state |

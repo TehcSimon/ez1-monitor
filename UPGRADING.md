@@ -31,6 +31,22 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.14.0 to v1.15.0
+
+No manual steps, no database changes.
+
+- **Weather in the sun path.** With `WEATHER_ENABLED` the scene draws each
+  hour's weather between the house and the sun: clouds, rain, snow, a
+  thunderstorm, fog over the map. A button next to the compass hides it.
+- **Compass rose and default view.** The rose turns with the view; its letters
+  look north, east, south or west. The house button moves slowly back to the
+  default view, now flatter and a little further south, and plays the day.
+- **Calmer figures.** Three tiles instead of four: what was expected so far,
+  with the actual value below it, sun angle and clear-day expectation. Measured
+  values are in the sun's colour, expected ones neutral, north is red.
+- **API.** `/api/yield-curve` adds `weather_hours`, the WMO code of each hour of
+  the day.
+
 ## From v1.13.0 to v1.14.0
 
 No manual steps, no database changes.
