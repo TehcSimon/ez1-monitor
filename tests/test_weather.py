@@ -10,7 +10,7 @@ import pytest
 from app import weather
 from app.site_map import SiteState
 from app.weather import (
-    WeatherState, current_conditions, load_cache, parse_forecast, poll_loop, poll_once,
+    WeatherState, codes_between, current_conditions, load_cache, parse_forecast, poll_loop, poll_once,
     radiation_by_hour, save_cache,
 )
 from app.yield_curve import WINDOW_DAYS, radiation_bins
@@ -73,6 +73,20 @@ class TestReading:
     def test_without_any_data_nothing_is_there(self):
         assert radiation_by_hour(WeatherState(), NOW) is None
         assert current_conditions(WeatherState(), NOW) is None
+        assert codes_between(WeatherState(), NOW - HOUR, NOW + HOUR, NOW) is None
+
+    def test_codes_cover_every_hour_overlapping_the_span_but_gaps(self):
+        assert codes_between(filled(), NOW - HOUR, NOW + HOUR, NOW) == [[NOW - 1800, 3], [NOW + 1800, 61]]
+
+    def test_an_hour_ending_at_the_start_is_not_part_of_it(self):
+        assert codes_between(filled(), NOW - 1800, NOW, NOW) == [[NOW + 1800, 61]]
+
+    def test_a_span_without_codes_has_none(self):
+        assert codes_between(filled(), NOW + 10 * HOUR, NOW + 20 * HOUR, NOW) is None
+
+    def test_old_codes_are_not_used(self):
+        state = filled(fetched_at=NOW - weather.STALE_AFTER_S - 1)
+        assert codes_between(state, NOW - HOUR, NOW + HOUR, NOW) is None
 
 
 class TestWhatIsRequested:

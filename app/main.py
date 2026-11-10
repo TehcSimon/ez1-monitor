@@ -27,8 +27,8 @@ from .date_helpers import (
 from .day_figures import summarize_day
 from .site_map import CACHE_FILE, SiteState, resolve_loop, site_payload
 from .weather import (
-    WEATHER_CACHE_FILE, WeatherState, current_conditions, poll_loop as weather_poll_loop,
-    radiation_by_hour,
+    WEATHER_CACHE_FILE, WeatherState, codes_between, current_conditions,
+    poll_loop as weather_poll_loop, radiation_by_hour,
 )
 from .yield_curve import (
     BIN_SECONDS, BINS, MIN_LEARNED_DAYS, WINDOW_DAYS, bins_of_day, curve_kwh, day_start_ts,
@@ -1009,6 +1009,7 @@ async def get_yield_curve(
         "day_done": projection["done"],
         "tomorrow_kwh": tomorrow_kwh,
         "weather": conditions,
+        "weather_hours": codes_between(weather_state, t0, t0 + 86400, now.timestamp()),
         "learned_days": len(days),
         "needed_days": MIN_LEARNED_DAYS,
     }

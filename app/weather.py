@@ -15,7 +15,7 @@ database, so restarting the container costs no extra request.
 
     hourly.time                 epoch seconds, the END of each hour
     hourly.shortwave_radiation  W/m², mean over the hour before that time
-    hourly.weather_code         WMO code
+    hourly.weather_code         WMO code, also drawn hour by hour into the scene
     hourly.temperature_2m       °C
 """
 from __future__ import annotations
@@ -111,6 +111,18 @@ def current_conditions(state: WeatherState, now: float) -> Optional[dict]:
     if state.codes[i] is None or state.temperatures[i] is None:
         return None
     return {"code": int(state.codes[i]), "temp_c": round(float(state.temperatures[i]), 1)}
+
+
+def codes_between(state: WeatherState, start: float, end: float, now: float) -> Optional[list]:
+    """[[end of hour, WMO code], …] for the hours that overlap start – end,
+    or None without a recent forecast or any code in that span."""
+    if not _fresh(state, now):
+        return None
+    hours = [
+        [t, int(c)] for t, c in zip(state.times, state.codes)
+        if c is not None and start < t < end + 3600
+    ]
+    return hours or None
 
 
 def load_cache(state: WeatherState) -> None:
