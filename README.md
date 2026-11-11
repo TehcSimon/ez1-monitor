@@ -194,27 +194,12 @@ spec:
 
 ## How it works
 
-```mermaid
-graph LR
-    EZ1["☀️ EZ1 inverter<br/>local API :8050"]
-    EM["🌍 Electricity Maps<br/>(optional)"]
-
-    subgraph Box["🐳 ez1-monitor"]
-        Poller["Poller<br/>every 60 s · adaptive"]
-        DB[("SQLite<br/>readings + aggregates")]
-        API["FastAPI :8080"]
-    end
-
-    UI["🖥️ Dashboard · 📱 PWA"]
-    Prom["📊 Prometheus · Grafana<br/>Home Assistant"]
-
-    EZ1 -->|"power & energy counters"| Poller
-    EM -.->|"grid g CO₂/kWh, hourly"| Poller
-    Poller -->|"stamped with CO₂ factor & price"| DB
-    DB --> API
-    API -->|"/api/*"| UI
-    API -->|"/metrics"| Prom
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.svg">
+    <img src="docs/how-it-works-light.svg" alt="Data flow: the EZ1 inverter and, optionally, Electricity Maps, OpenStreetMap and Open-Meteo feed the ez1-monitor container. The poller writes stamped readings to SQLite, map and forecast are cached as JSON, and FastAPI serves the dashboard, /metrics and /health." width="880">
+  </picture>
+</p>
 
 - **Every reading is stamped** with the CO₂ factor and electricity price
   active at that moment. A tariff change only affects new production, and

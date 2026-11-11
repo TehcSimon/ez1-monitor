@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="612" viewBox="0 0 880 612" role="img" aria-labelledby="title desc">
+  <!-- The README's "How it works" diagram, light theme. how-it-works-dark.svg
+       has the same markup and differs only in the <style> block, so change
+       both files together. -->
+  <title id="title">How EZ1 Monitor works</title>
+  <desc id="desc">The EZ1 inverter's local API is polled every 60 seconds, less often at night. Optional: Electricity Maps for the grid's CO2 intensity (hourly), OpenStreetMap for the location and the buildings around it (once) and Open-Meteo for the weather forecast (hourly). Inside the ez1-monitor container the poller stamps each reading with the CO2 factor and the price and writes it to SQLite; map and forecast are cached as JSON. FastAPI serves the dashboard (/api/*), Prometheus (/metrics) and health checks (/health).</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+    .mid { text-anchor: middle; }
+    .card { fill: #ffffff; stroke: #e2e8f0; }
+    .box { fill: #f8fafc; stroke: #cbd5e1; }
+    .opt { fill: #ffffff; stroke: #94a3b8; }
+    .app { fill: #fffbeb; stroke: #d97706; stroke-width: 1.5; }
+    .inner { fill: #ffffff; stroke: #cbd5e1; }
+    .edge { fill: none; stroke: #64748b; stroke-width: 1.5; }
+    .dash { stroke-dasharray: 5 4; }
+    .head { fill: #64748b; }
+    .t { font-size: 15px; font-weight: 600; fill: #0f172a; }
+    .s { font-size: 13px; fill: #475569; }
+    .l { font-size: 12px; fill: #64748b; }
+    .v, .m { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; }
+    .v { fill: #b45309; }
+    .m { fill: #475569; }
+    .cap { font-size: 13px; font-weight: 600; fill: #b45309; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path class="head" d="M0 0 L10 5 L0 10 Z"/>
+    </marker>
+  </defs>
+
+  <rect class="card" x="0.5" y="0.5" width="879" height="611" rx="14"/>
+  <rect class="app" x="24" y="136" width="832" height="326" rx="12"/>
+
+  <!-- Sources: the inverter, and the outside services you can switch on -->
+  <g class="mid">
+    <rect class="box" x="24" y="24" width="196" height="78" rx="10"/>
+    <text class="t" x="122" y="49">EZ1 inverter</text>
+    <text class="s" x="122" y="68">local API :8050</text>
+    <text class="v" x="122" y="87">INVERTER_IP</text>
+
+    <rect class="opt dash" x="236" y="24" width="196" height="78" rx="10"/>
+    <text class="t" x="334" y="49">Electricity Maps</text>
+    <text class="s" x="334" y="68">grid CO₂ intensity</text>
+    <text class="v" x="334" y="87">ELECTRICITY_MAPS_TOKEN</text>
+
+    <rect class="opt dash" x="448" y="24" width="196" height="78" rx="10"/>
+    <text class="t" x="546" y="49">OpenStreetMap</text>
+    <text class="s" x="546" y="68">location, buildings</text>
+    <text class="v" x="546" y="87">SITE_ADDRESS</text>
+
+    <rect class="opt dash" x="660" y="24" width="196" height="78" rx="10"/>
+    <text class="t" x="758" y="49">Open-Meteo</text>
+    <text class="s" x="758" y="68">weather forecast</text>
+    <text class="v" x="758" y="87">WEATHER_ENABLED</text>
+  </g>
+
+  <!-- Inside the container -->
+  <g class="mid">
+    <rect class="inner" x="48" y="164" width="372" height="64" rx="8"/>
+    <text class="t" x="234" y="191">Poller</text>
+    <text class="s" x="234" y="211">stamps each reading with CO₂ factor and price</text>
+
+    <rect class="opt dash" x="460" y="164" width="372" height="64" rx="8"/>
+    <text class="t" x="646" y="191">Map &amp; forecast cache</text>
+    <text class="m" x="646" y="211">site-map.json · weather.json</text>
+
+    <rect class="inner" x="48" y="260" width="372" height="64" rx="8"/>
+    <text class="t" x="234" y="287">SQLite</text>
+    <text class="s" x="234" y="307">readings + daily, monthly, yearly aggregates</text>
+
+    <rect class="inner" x="48" y="356" width="784" height="64" rx="8"/>
+    <text class="t" x="440" y="383">FastAPI :8080</text>
+    <text class="s" x="440" y="403">comparisons · records · savings · projection</text>
+  </g>
+  <text class="cap" x="44" y="446">ez1-monitor</text>
+
+  <!-- Consumers -->
+  <g class="mid">
+    <rect class="box" x="24" y="500" width="264" height="64" rx="10"/>
+    <text class="t" x="156" y="527">Dashboard · PWA</text>
+    <text class="s" x="156" y="547">your browser, on the LAN</text>
+
+    <rect class="box" x="308" y="500" width="264" height="64" rx="10"/>
+    <text class="t" x="440" y="527">Prometheus · Grafana</text>
+    <text class="s" x="440" y="547">Home Assistant &amp; co.</text>
+
+    <rect class="box" x="592" y="500" width="264" height="64" rx="10"/>
+    <text class="t" x="724" y="527">Health check</text>
+    <text class="s" x="724" y="547">Docker, Kubernetes</text>
+  </g>
+
+  <!-- Edges, drawn last so that no box covers them -->
+  <path class="edge" d="M122 102 V162" marker-end="url(#arrow)"/>
+  <path class="edge dash" d="M334 102 V162" marker-end="url(#arrow)"/>
+  <path class="edge dash" d="M546 102 V162" marker-end="url(#arrow)"/>
+  <path class="edge dash" d="M758 102 V162" marker-end="url(#arrow)"/>
+  <text class="l" x="130" y="125">every 60 s, slower at night</text>
+  <text class="l" x="342" y="125">hourly</text>
+  <text class="l" x="554" y="125">once</text>
+  <text class="l" x="766" y="125">hourly</text>
+
+  <path class="edge" d="M234 228 V258" marker-end="url(#arrow)"/>
+  <path class="edge" d="M234 324 V354" marker-end="url(#arrow)"/>
+  <path class="edge dash" d="M646 228 V354" marker-end="url(#arrow)"/>
+
+  <path class="edge" d="M156 420 V498" marker-end="url(#arrow)"/>
+  <path class="edge" d="M440 420 V498" marker-end="url(#arrow)"/>
+  <path class="edge" d="M724 420 V498" marker-end="url(#arrow)"/>
+  <text class="m" x="164" y="485">/api/*</text>
+  <text class="m" x="448" y="485">/metrics</text>
+  <text class="m" x="732" y="485">/health</text>
+
+  <rect class="opt dash" x="24" y="582" width="26" height="14" rx="3"/>
+  <text class="l" x="60" y="593">optional, off until you set it</text>
+</svg>
