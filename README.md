@@ -37,7 +37,7 @@ what the plant has saved so far and when it will have paid for itself.
 
 Everything runs in one small container on your own hardware — a NAS, an
 Unraid box, a Raspberry Pi. Nothing leaves your network unless you opt in
-to live grid CO₂ data.
+to live grid CO₂ data, the map or the weather forecast.
 
 ## What you get
 
@@ -49,9 +49,8 @@ to live grid CO₂ data.
 - ⚡ **Live view.** Total and per-input power, refreshed every 10 s while the
   sun is up and right away when you come back to the tab, plus grid voltage
   and frequency where the firmware reports them. A small graph in the header
-  shows the inverter's temperature over the last three hours, light blue at
-  3 °C and below, red from 60 °C, and with `WEATHER_ENABLED` the outside
-  temperature as a dashed line.
+  shows the inverter's temperature over the last three hours, next to the
+  outside temperature when the weather forecast is on.
 - 📈 **Every day, browsable.** The day's curve plus a day picker for every
   recorded day in the retention window — or jump there from a history bar.
 - 🌤️ **Shading at a glance.** Peak, average and yield per panel and in total
@@ -350,7 +349,12 @@ it needs no module data and already contains recurring shading such as a
 privacy screen. The projection extrapolates the rest of the day from how today
 compares to the expectation so far, once 10 % of the expected energy is in.
 
-**The weather forecast** is optional: set `WEATHER_ENABLED=true` in addition to
+**The sun's path and the map** need `SITE_ADDRESS`: a normal postal address,
+or `lat,lon` to skip the address search. The map shows a fixed 50 m around
+your building. Heights come from OpenStreetMap, where most buildings have none
+and are estimated from their type; `SITE_FLOORS` sets your own.
+
+**The weather forecast** needs `WEATHER_ENABLED=true` on top of
 `SITE_ADDRESS`. The same three weeks then also teach how much your plant
 delivers per W/m² of forecast radiation at each time of day. That turns the
 forecast into a curve for the rest of today, a projection from the start of the
@@ -360,6 +364,9 @@ each. Without a recent forecast the card falls back to your own history.
 The scene also draws each hour's weather along the sun's path: clouds, rain,
 snow, a thunderstorm, and a veil of fog over the map. The cloud button next to
 the compass rose hides it.
+
+<details>
+<summary><b>How accurate is the projection?</b></summary>
 
 Tested on 139 days of one plant from June to November, each day estimated only
 from the days before it and with the forecast as it was published a day
@@ -374,28 +381,27 @@ The forecast helps most in the morning and on changeable days; from midday on
 the two are about equal. For tomorrow the median error is 16 %, and one day in
 ten is off by more than 56 % (123 % for the average of the last three weeks).
 
-**Sun path and map** are optional and need `SITE_ADDRESS`. The address is
-either a normal postal address or `lat,lon`, which skips the address search.
+</details>
 
-These two settings are the only ones that send something about where you live
-to an outside service, so both are off unless you set them. Once, and again
-only when the value changes, the server sends the address to
-[Nominatim](https://nominatim.openstreetmap.org/) and the surrounding
-coordinates to the [OpenStreetMap API](https://www.openstreetmap.org/), or to
-Overpass if that fails. The result is kept in `site-map.json` next to the
-database. With `WEATHER_ENABLED` it also asks
-[Open-Meteo](https://open-meteo.com/) once an hour for the forecast at your
-coordinates rounded to two decimals, about 1 km, and keeps the answer in
-`weather.json`. The browser never talks to any of them, and neither the address
-nor the coordinates are logged. The address isn't written to those files
-either. As with everything else on the dashboard, anyone who can open it can
-see the map, so mind that before exposing it beyond your LAN.
+**What leaves your network.** These two settings are the only ones that send
+something about where you live to an outside service, so both are off unless
+you set them. The requests come from the server, never from the browser:
 
-The map shows a fixed 50 m around your building. Heights come from
-OpenStreetMap, where most buildings have none and are estimated from their
-type; `SITE_FLOORS` sets your own. Map data © OpenStreetMap contributors,
-available under the [ODbL](https://www.openstreetmap.org/copyright). Weather
-data by [Open-Meteo.com](https://open-meteo.com/) under
+- `SITE_ADDRESS`: the address to [Nominatim](https://nominatim.openstreetmap.org/),
+  the surrounding coordinates to the [OpenStreetMap API](https://www.openstreetmap.org/)
+  or, if that fails, to Overpass — once, and again only when the address
+  changes. The result is kept in `site-map.json` next to the database.
+- `WEATHER_ENABLED`: your coordinates, rounded to two decimals (about 1 km),
+  to [Open-Meteo](https://open-meteo.com/) once an hour. The answer is kept in
+  `weather.json`.
+
+Neither the address nor the coordinates are logged, and the address isn't
+written to those files. Anyone who can open the dashboard can see the map, so
+mind that before exposing it beyond your LAN.
+
+Map data © OpenStreetMap contributors, available under the
+[ODbL](https://www.openstreetmap.org/copyright). Weather data by
+[Open-Meteo.com](https://open-meteo.com/) under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), free for
 non-commercial use and without an API key.
 
@@ -518,15 +524,16 @@ ez1-monitor/
 │   ├── site_map.py        # optional location: address lookup, OSM cut-out, cache
 │   ├── weather.py         # optional hourly forecast from Open-Meteo, cached
 │   ├── yield_curve.py     # learned target, today's projection, forecast response (pure)
+│   ├── day_figures.py     # per-panel figures of the selected day (pure)
 │   ├── money.py           # savings and payback model (pure)
 │   ├── lifetime.py        # lifetime counters across a counter reset (pure)
 │   ├── date_helpers.py    # calendar and ISO-week math (pure)
-│   └── static/            # dashboard: index.html, app.js, sun-scene.js, i18n.js, style.css, vendored libs
+│   └── static/            # dashboard: index.html, app.js, sun-scene.js, temp-spark.js, i18n.js, style.css, vendored libs
 ├── tests/                 # pytest suites
 ├── tools/
 │   ├── generate_mock_db.py   # mock database for testing the Hall-of-Fame glow
 │   └── screenshots/          # demo data, fake inverter, Playwright → docs/screenshots/
-├── docs/screenshots/      # README images
+├── docs/                  # README screenshots and diagram
 ├── .unraid/               # Unraid template and icon
 ├── Dockerfile             # multi-stage Alpine build, non-root, UID-agnostic
 ├── docker-compose.yml
