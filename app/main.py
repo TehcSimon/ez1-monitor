@@ -1,6 +1,8 @@
 """FastAPI app for EZ1 Monitor."""
 import asyncio
+import csv
 import functools
+import io
 import ipaddress
 import logging
 import os
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import (
     CollectorRegistry, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST,
@@ -1425,6 +1427,76 @@ async def get_aggregates(
         return {"year": year, "monthly": monthly}
     yearly = await db.get_yearly_aggregates()
     return {"yearly": yearly}
+
+
+# ---------------------------- CSV export --------------------------------
+
+def _csv_number(value, digits: int, comma: bool) -> str:
+    """A number for the CSV export: fixed decimals, a decimal comma for the
+    German format, an empty field for a missing value."""
+    if value is None:
+        return ""
+    text = f"{value:.{digits}f}"
+    return text.replace(".", ",") if comma else text
+
+
+@app.get("/api/export")
+async def export_csv(
+    request: Request,
+    resolution: str = Query("5min", pattern="^(5min|day)$"),
+):
+    """The readings as a CSV download, linked from the dashboard footer.
+
+    - resolution=5min: one row per 5-minute slot with readings (the slots of
+      the sun path), as far back as the raw rows reach (RETENTION_DAYS).
+      Average power per input and in total, inverter temperature and grid
+      values, the last three empty where the firmware doesn't report them.
+      `time` is the slot's start in local time.
+    - resolution=day: one row per recorded day from daily_aggregates, so the
+      whole history, also beyond retention.
+
+    The format follows the dashboard's language: German gets semicolons and
+    a decimal comma, which is what a German Excel expects when it opens a
+    file (with a point, "3.5" turns into the 3rd of May); English gets commas
+    and a decimal point. The column names are plain ASCII and the same in
+    both, so scripts don't depend on the language and no BOM is needed.
+    Streamed in chunks, so a long retention never sits in memory as a whole.
+    """
+    comma = detect_language(request) == "de"
+
+    async def rows():
+        if resolution == "day":
+            yield ["date", "kwh", "peak_w"]
+            for day in await db.get_daily_series("0000-01-01", "9999-12-31"):
+                yield [day["date"], _csv_number(day["kwh"], 3, comma),
+                       _csv_number(day["peak_w"], 0, comma)]
+            return
+        yield ["time", "pv1_w", "pv2_w", "total_w", "inverter_temp_c", "grid_v", "grid_hz"]
+        async for slot_ts, p1, p2, temp_c, grid_v, grid_hz in db.iter_power_slots(BIN_SECONDS):
+            total = None if p1 is None and p2 is None else (p1 or 0) + (p2 or 0)
+            yield [
+                datetime.fromtimestamp(slot_ts).strftime("%Y-%m-%d %H:%M"),
+                _csv_number(p1, 1, comma), _csv_number(p2, 1, comma),
+                _csv_number(total, 1, comma), _csv_number(temp_c, 1, comma),
+                _csv_number(grid_v, 1, comma), _csv_number(grid_hz, 2, comma),
+            ]
+
+    async def body():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, delimiter=";" if comma else ",")
+        async for row in rows():
+            writer.writerow(row)
+            if buffer.tell() >= 64 * 1024:
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate()
+        yield buffer.getvalue()
+
+    filename = f"ez1-monitor-{resolution}-{date_cls.today().isoformat()}.csv"
+    return StreamingResponse(
+        body(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------------- Prometheus --------------------------------

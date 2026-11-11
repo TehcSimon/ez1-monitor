@@ -389,6 +389,35 @@ class Database:
                 days.setdefault(day, {})[slot] = watts
             return days
 
+    async def iter_power_slots(self, slot_seconds: int):
+        """Average power per input, inverter temperature and grid values per
+        slot, online rows only, oldest first, as tuples
+        (slot_ts, p1, p2, temp_c, grid_v, grid_hz). Feeds the CSV export.
+
+        A generator rather than a list: two years of retention at 5 minutes
+        are some 120 000 slots, which get_range() would hold in memory as
+        dicts all at once. Slots are cut on the epoch like get_range's
+        buckets; every UTC offset is a multiple of 15 minutes, so with
+        slot_seconds = BIN_SECONDS these are the slots of the sun path
+        (yield_curve.bins_of_day). AVG skips the NULLs of firmware without
+        temperature or grid values, and such a column stays NULL.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                """SELECT (timestamp / ?) * ? AS slot_ts,
+                          AVG(p1), AVG(p2), AVG(temp_c), AVG(grid_v), AVG(grid_hz)
+                   FROM measurements
+                   WHERE online = 1
+                   GROUP BY slot_ts
+                   ORDER BY slot_ts ASC""",
+                (slot_seconds, slot_seconds),
+            )
+            # In batches: iterating the cursor directly fetches one row per
+            # round trip to aiosqlite's thread (sqlite3's arraysize is 1).
+            while rows := await cur.fetchmany(1000):
+                for row in rows:
+                    yield row
+
     async def get_monthly_totals(self, months: int = 12) -> list[dict]:
         """kWh sum per calendar month over the last N months.
 
