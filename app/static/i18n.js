@@ -136,6 +136,10 @@ const TRANSLATIONS = {
     footer: {
       updateEvery: "Update alle {s} s",
       lastReading: "letzte Messung",
+      csv5min: "5 Min",
+      csvDays: "Tage",
+      csv5minHint: "Leistung je 5 Minuten, so weit die Rohdaten reichen",
+      csvDaysHint: "Ertrag je Tag über die ganze Historie",
     },
     sun: {
       title: "Sonnenlauf",
@@ -318,6 +322,10 @@ const TRANSLATIONS = {
     footer: {
       updateEvery: "Update every {s} s",
       lastReading: "last reading",
+      csv5min: "5 min",
+      csvDays: "days",
+      csv5minHint: "Power per 5 minutes, as far back as the raw readings reach",
+      csvDaysHint: "Yield per day over the whole history",
     },
     sun: {
       title: "Sun path",

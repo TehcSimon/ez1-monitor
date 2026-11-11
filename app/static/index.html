@@ -559,6 +559,10 @@
   <span id="footer-update-text"></span>
   <span class="dot-sep">·</span>
   <span id="footer-last-text"><span data-i18n="footer.lastReading">last reading</span>: <span id="footer-last">—</span></span>
+  <span class="dot-sep">·</span>
+  <!-- CSV downloads (GET /api/export). The server picks the format from the
+       dashboard's language, so the links carry no language parameter. -->
+  <span class="footer-export">CSV: <a id="footer-csv-5min" href="/api/export?resolution=5min" download data-i18n="footer.csv5min">5 min</a> / <a id="footer-csv-day" href="/api/export?resolution=day" download data-i18n="footer.csvDays">days</a></span>
 </footer>
 
 <script src="/static/temp-spark.js?v=__ASSET_VERSION__"></script>

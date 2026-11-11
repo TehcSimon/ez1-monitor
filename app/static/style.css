@@ -1467,6 +1467,15 @@ footer {
   font-size: 10px;
   letter-spacing: 0.08em;
 }
+/* CSV downloads: as quiet as the rest of the footer, a dotted underline and
+   the accent on hover. */
+.footer-export a {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.footer-export a:hover,
+.footer-export a:focus-visible { color: var(--accent); }
 
 /* ------------------------- Topbar controls (theme toggle + status) ------------------------- */
 .topbar-controls {

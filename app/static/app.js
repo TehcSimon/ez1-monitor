@@ -456,6 +456,11 @@ function updateDynamicLabels() {
       s: state.pollInterval,
     });
   }
+  // What each CSV link downloads, as its tooltip.
+  for (const [id, key] of [["footer-csv-5min", "csv5minHint"], ["footer-csv-day", "csvDaysHint"]]) {
+    const link = document.getElementById(id);
+    if (link) link.title = window.i18n.t(state.lang, `footer.${key}`);
+  }
 }
 
 
