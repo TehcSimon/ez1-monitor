@@ -142,16 +142,17 @@ docker run -d --name ez1-monitor --restart unless-stopped \
   ghcr.io/tehcsimon/ez1-monitor:latest
 ```
 
-Open `http://<host>:8080`. `INVERTER_IP` is required — the container exits
-without it. Set `TZ` to your timezone: it decides where days, weeks and
-months begin (the default is UTC).
+Open `http://<host>:8080`. Only `INVERTER_IP` is required — the container
+exits without it. `TZ` decides where days, weeks and months begin (the
+default is UTC); everything else is optional, see
+[Configuration](#configuration).
 
 ### Install paths
 
 | | How |
 |---|---|
 | **Docker** | The command above. Multi-arch image (`amd64`, `arm64`) for NAS, mini PC or Raspberry Pi. |
-| **Docker Compose** | Clone the repo, set `INVERTER_IP` and friends in [`docker-compose.yml`](docker-compose.yml), then `docker compose up -d`. |
+| **Docker Compose** | Download [`docker-compose.yml`](docker-compose.yml), fill in `INVERTER_IP`, then `docker compose up -d`. |
 | **Unraid** | One click: add `https://github.com/TehcSimon/ez1-monitor` under *Apps → Settings → Template Repositories* and install **ez1-monitor** — or set it up by hand, see below. |
 | **Kubernetes / OpenShift** | UID-agnostic non-root image, works under OpenShift's restricted SCC. Snippet below. |
 
@@ -162,7 +163,7 @@ months begin (the default is UTC).
 2. Repository: `ghcr.io/tehcsimon/ez1-monitor:latest`
 3. Network Type: Bridge, Port `8080:8080`
 4. Path: `/mnt/user/appdata/ez1-monitor` → `/data`
-5. Variables: `INVERTER_IP` = your inverter's IP, `TZ` = your timezone
+5. Variable: `INVERTER_IP` = your inverter's IP (Unraid sets `TZ` itself)
 6. Apply
 
 </details>
@@ -174,7 +175,7 @@ months begin (the default is UTC).
 spec:
   securityContext:
     runAsNonRoot: true
-    fsGroup: 0           # required for /data volume write access
+    fsGroup: 0
   containers:
     - name: ez1-monitor
       image: ghcr.io/tehcsimon/ez1-monitor:latest
@@ -228,30 +229,36 @@ graph LR
 
 ## Configuration
 
-All configuration is done via environment variables.
+All configuration is done via environment variables; only `INVERTER_IP` is
+required.
 
 | Variable | Default | What it does |
 |---|---|---|
+| **Basics** | | |
 | `INVERTER_IP` | **required** | IP address or hostname of the inverter |
-| `TZ` | `Etc/UTC` | IANA timezone (e.g. `Europe/Berlin`) — where days, weeks and months begin |
-| `INVERTER_PORT` | `8050` | Port of the inverter's local API |
-| `POLL_INTERVAL` | `60` | Seconds between polls; 10× slower (max. 5 min) while the inverter is offline |
-| `PRICE_PER_KWH` | `0.35` | Your electricity price per kWh, stamped on every reading — update it when your [tariff changes](#changing-your-tariff) |
-| `CURRENCY` | `EUR` | ISO 4217 code for money formatting (`EUR`, `USD`, `CHF`, …) |
-| `SELF_CONSUMPTION_PCT` | `100` | Share (%) of production you use yourself; only affects money and payback |
-| `FEED_IN_TARIFF` | `0` | Compensation per fed-in kWh, same currency (often `0` for balcony plants) |
-| `INSTALL_COST` | `0` | Total installation cost; `> 0` shows the payback card |
-| `LIFETIME_OFFSET_KWH` | `0` | Added to the lifetime total, negative lowers it; rarely needed, see [Savings, payback & CO₂](#savings-payback--co) |
-| `CO2_KG_PER_KWH` | `0.38` | Static grid CO₂ factor — the fallback without Electricity Maps |
-| `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Enables [live grid intensity](#live-grid-intensity-electricity-maps) |
-| `ELECTRICITY_MAPS_ZONE` | `DE` | Zone label for the UI (the actual zone is bound to the token) |
-| `SITE_ADDRESS` | *(empty)* | Your address or `lat,lon`; enables the sun path and map of the [sun path](#sun-path) |
-| `SITE_FLOORS` | *(empty)* | Storeys of your building, for its height and shadow where OpenStreetMap has none |
-| `WEATHER_ENABLED` | `false` | `true` adds an hourly forecast from Open-Meteo at `SITE_ADDRESS` to the [sun path](#sun-path) |
-| `RETENTION_DAYS` | `730` | Days of raw readings to keep (`0` = forever); aggregates are always kept |
-| `DEFAULT_LANG` | *(empty)* | Force `de` or `en`; empty = browser language |
+| `TZ` | `Etc/UTC` | IANA timezone, e.g. `Europe/Berlin` — where days, weeks and months begin |
+| **Advanced** | | |
+| `DEFAULT_LANG` | *(empty)* | `de` or `en`; empty = browser language |
 | `DB_PATH` | `/data/ez1.db` | SQLite database file |
-| `LOG_LEVEL` | `INFO` | Python log level (`DEBUG`, `INFO`, `WARNING`) |
+| `INVERTER_PORT` | `8050` | Port of the inverter's local API |
+| `POLL_INTERVAL` | `60` | Seconds between polls; 10× slower (max. 5 min) while the inverter sleeps |
+| `RETENTION_DAYS` | `730` | Days of raw readings to keep, `0` = forever; aggregates are always kept |
+| `LIFETIME_OFFSET_KWH` | `0` | Correction of the lifetime total, see [Savings, payback & CO₂](#savings-payback--co) |
+| `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
+| **Money & payback** | | |
+| `PRICE_PER_KWH` | `0.35` | Electricity price per kWh, stamped on every reading — see [Changing your tariff](#changing-your-tariff) |
+| `CURRENCY` | `EUR` | ISO 4217 code: `EUR`, `USD`, `CHF`, … |
+| `SELF_CONSUMPTION_PCT` | `100` | Share (%) of production you use yourself |
+| `FEED_IN_TARIFF` | `0` | Paid per fed-in kWh, often `0` for balcony plants |
+| `INSTALL_COST` | `0` | Installation cost; `> 0` shows the payback card |
+| **Sun path & weather** | | |
+| `SITE_ADDRESS` | *(empty)* | Address or `lat,lon`; adds the sun's path and the map to the [sun path card](#sun-path) |
+| `SITE_FLOORS` | *(empty)* | Storeys of your building, where OpenStreetMap has no height |
+| `WEATHER_ENABLED` | `false` | `true` adds the Open-Meteo forecast; needs `SITE_ADDRESS` |
+| **CO₂** | | |
+| `CO2_KG_PER_KWH` | `0.38` | Static grid factor, used without Electricity Maps |
+| `ELECTRICITY_MAPS_TOKEN` | *(empty)* | Enables [live grid intensity](#live-grid-intensity-electricity-maps) |
+| `ELECTRICITY_MAPS_ZONE` | `DE` | Zone label in the UI; the real zone is bound to the token |
 
 > **Security note:** there is no built-in authentication. Run it on a
 > trusted LAN, or put it behind a reverse proxy with auth before exposing

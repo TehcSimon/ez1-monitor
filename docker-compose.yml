@@ -1,87 +1,33 @@
 services:
   ez1-monitor:
-    build: .
-    # Or, after the GitHub Actions workflow has pushed an image:
-    # image: ghcr.io/tehcsimon/ez1-monitor:latest
+    image: ghcr.io/tehcsimon/ez1-monitor:latest
     container_name: ez1-monitor
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       - /mnt/user/appdata/ez1-monitor:/data
-    # The container runs as non-root (UID 1000, GID 0). If upgrading from
-    # v1.0.x, ensure the data directory is writable by UID 1000:
-    #   sudo chown -R 1000:0 /mnt/user/appdata/ez1-monitor
-    #   sudo chmod -R g=u   /mnt/user/appdata/ez1-monitor
     environment:
-      # --- Connection (INVERTER_IP is required, no default) ---
-      - INVERTER_IP=192.168.50.123       # REQUIRED — set to your inverter's IP
-      - INVERTER_PORT=8050
-      - POLL_INTERVAL=60                 # seconds between polls
+      - INVERTER_IP=
+      - TZ=Europe/Berlin
 
-      # --- Data retention ---
-      - RETENTION_DAYS=730               # keep raw measurements for N days
-                                         # (730 = 2 years for YoY compare).
-                                         # Set to 0 to disable pruning.
+      # - DEFAULT_LANG=
+      # - INVERTER_PORT=8050
+      # - POLL_INTERVAL=60
+      # - RETENTION_DAYS=730
+      # - LIFETIME_OFFSET_KWH=0
+      # - LOG_LEVEL=INFO
 
-      # --- Timezone ---
-      - TZ=Europe/Berlin                 # IANA tz, e.g. America/New_York
+      # - PRICE_PER_KWH=0.35
+      # - CURRENCY=EUR
+      # - SELF_CONSUMPTION_PCT=100
+      # - FEED_IN_TARIFF=0
+      # - INSTALL_COST=0
 
-      # --- Localization (leave DEFAULT_LANG empty to auto-detect) ---
-      - DEFAULT_LANG=                    # "", "de" or "en"
-      - CURRENCY=EUR                     # ISO 4217 code, e.g. EUR / USD / CHF
+      # - SITE_ADDRESS=
+      # - SITE_FLOORS=
+      # - WEATHER_ENABLED=false
 
-      # --- Economic / environmental factors ---
-      - PRICE_PER_KWH=0.35               # local electricity price per kWh;
-                                         # stamped on every reading, so just
-                                         # update it when your tariff changes
-      - SELF_CONSUMPTION_PCT=100         # % of production you self-consume;
-                                         # 100 = old behaviour. The fed-in
-                                         # remainder earns FEED_IN_TARIFF.
-                                         # Affects only "money saved" &
-                                         # amortization, not kWh or CO2.
-      - FEED_IN_TARIFF=0                 # pay per kWh for the fed-in share
-                                         # (often 0 for a balcony plant)
-      - INSTALL_COST=0                   # total install cost; >0 shows the
-                                         # amortization card, 0 hides it
-      - LIFETIME_OFFSET_KWH=0            # added to the lifetime total, negative
-                                         # lowers it. Only for a counter wrap
-                                         # from before the monitor was set up;
-                                         # wraps it sees are added back by itself.
-      - CO2_KG_PER_KWH=0.38              # grid CO2 intensity (kg CO2/kWh)
-                                         # Used as fallback when Electricity
-                                         # Maps integration is disabled or
-                                         # unavailable.
-
-      # --- Optional: Electricity Maps live grid CO2 integration ---
-      # When ELECTRICITY_MAPS_TOKEN is set, the container fetches live
-      # carbon-intensity values for your grid zone once per hour and
-      # stamps each measurement with the active factor. The lifetime CO2
-      # calculation then becomes historically accurate — daytime polls
-      # use the (typically lower) sunny-grid factor, nighttime polls use
-      # the (typically higher) coal/gas-heavy factor. Falls back through
-      # last-known-value (up to 48h) → rolling average → CO2_KG_PER_KWH
-      # if the API is unavailable.
-      #
-      # Sign up at https://www.electricitymaps.com/free-tier-api (use the
-      # "Home Assistant" path for free permanent access). The zone is
-      # bound to the token in the portal, so ELECTRICITY_MAPS_ZONE is for
-      # the UI display label only.
-      # - ELECTRICITY_MAPS_TOKEN=your_token_here
+      # - CO2_KG_PER_KWH=0.38
+      # - ELECTRICITY_MAPS_TOKEN=
       # - ELECTRICITY_MAPS_ZONE=DE
-
-      # --- Optional: location for the sun path card ---
-      # Your address, or "lat,lon" to skip the address search. Looked up once
-      # (Nominatim, OpenStreetMap) and cached in /data; the browser never
-      # contacts these services. Expected vs. actual and today's projection
-      # work without it. SITE_FLOORS is the number of storeys of your building,
-      # for its height and shadow where OpenStreetMap has none.
-      # - SITE_ADDRESS=Musterstrasse 1, 12345 Musterstadt
-      # - SITE_FLOORS=3
-      # true adds an hourly forecast from Open-Meteo at that location: a better
-      # estimate of today and one for tomorrow. Sends only the coordinates,
-      # rounded to about 1 km. No API key needed.
-      # - WEATHER_ENABLED=true
-
-      # --- Logging ---
-      - LOG_LEVEL=INFO

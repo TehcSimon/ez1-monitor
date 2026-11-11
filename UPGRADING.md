@@ -8,10 +8,10 @@ container. Your data lives in the `/data` volume and is picked up as is.
 docker pull ghcr.io/tehcsimon/ez1-monitor:latest
 docker rm -f ez1-monitor   # then re-run your original `docker run` command
 
-# Docker Compose with the published image (`image: ghcr.io/tehcsimon/ez1-monitor:latest`)
+# Docker Compose with the published image (the default in docker-compose.yml)
 docker compose pull && docker compose up -d
 
-# Docker Compose building from this repo (`build: .`, the default in docker-compose.yml)
+# Docker Compose building from this repo (`build: .` instead of `image:`)
 git pull && docker compose up -d --build
 
 # Unraid: Docker tab → "Check for Updates" → "apply update"

@@ -10,18 +10,18 @@
   <Support>https://github.com/TehcSimon/ez1-monitor/issues</Support>
   <Project>https://github.com/TehcSimon/ez1-monitor</Project>
   <Overview>
-    Local-only monitoring dashboard for the APsystems EZ1 microinverter family.
-    Polls the inverter's local API every minute (configurable), stores all
-    measurements in SQLite, and serves a web dashboard with live power,
-    daily/weekly/monthly history, period comparisons and lifetime statistics
-    (energy, CO2 avoided, money saved). No cloud, no account, no telemetry.
-    UI auto-detects German or English from browser language.
+    Lean, self-hosted dashboard for the APsystems EZ1 microinverter family,
+    straight from the inverter's local API: live power, every day's curve,
+    fair comparisons, records, savings and payback, and a sun path with an
+    optional weather forecast. No cloud, no account, no telemetry.
     [br][br]
-    [b]Prerequisites:[/b][br]
-    1. EZ1 inverter reachable on your network with a known IP (use DHCP reservation).[br]
-    2. Local API enabled on the inverter (AP EasyPower app -> inverter settings
-    -> Local Mode -> Continuous).[br]
-    3. Test API responds: [i]curl http://&lt;ez1-ip&gt;:8050/getDeviceInfo[/i]
+    [b]Before you start:[/b][br]
+    1. Give the inverter a fixed IP (DHCP reservation).[br]
+    2. In the AP EasyPower app, set its Local Mode to Continuous.[br]
+    3. Check that it answers: [i]curl http://&lt;ez1-ip&gt;:8050/getDeviceInfo[/i]
+    [br][br]
+    Only the inverter IP is required. Everything else, including price,
+    payback, sun path, weather and CO2, is under Advanced View.
   </Overview>
   <Category>HomeAutomation: Productivity: Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
@@ -35,45 +35,43 @@
   <DonateLink/>
   <Requires/>
 
-  <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="HTTP port the dashboard is served on." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Inverter IP" Target="INVERTER_IP" Default="" Mode="" Description="IP address or hostname of the inverter." Type="Variable" Display="always" Required="true" Mask="false"></Config>
 
-  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/ez1-monitor" Mode="rw" Description="Persistent storage for the SQLite database." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ez1-monitor</Config>
+  <Config Name="WebUI port" Target="8080" Default="8080" Mode="tcp" Description="Port of the dashboard." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
 
-  <Config Name="Inverter IP" Target="INVERTER_IP" Default="" Mode="" Description="REQUIRED. IP address of your EZ1 inverter. Use a DHCP reservation so it never changes. The container refuses to start if this is empty." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/ez1-monitor" Mode="rw" Description="Database and caches." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ez1-monitor</Config>
 
-  <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="IANA timezone identifier. Determines day boundaries for daily/weekly/monthly aggregations and timestamps in logs. Examples: Europe/Berlin, America/New_York, Asia/Tokyo, UTC" Type="Variable" Display="always" Required="false" Mask="false">Europe/Berlin</Config>
+  <Config Name="UI language" Target="DEFAULT_LANG" Default="" Mode="" Description="de or en. Empty = browser language." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
-  <Config Name="UI language" Target="DEFAULT_LANG" Default="" Mode="" Description="Force the UI language. Leave empty to auto-detect from the browser. Valid values: empty, de, en" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Inverter port" Target="INVERTER_PORT" Default="8050" Mode="" Description="Port of the inverter's local API." Type="Variable" Display="advanced" Required="false" Mask="false">8050</Config>
 
-  <Config Name="Currency" Target="CURRENCY" Default="EUR" Mode="" Description="ISO 4217 currency code for the 'money saved' card, e.g. EUR, USD, CHF" Type="Variable" Display="always" Required="false" Mask="false">EUR</Config>
+  <Config Name="Poll interval (s)" Target="POLL_INTERVAL" Default="60" Mode="" Description="10x slower, at most 5 min, while the inverter sleeps." Type="Variable" Display="advanced" Required="false" Mask="false">60</Config>
 
-  <Config Name="Electricity price per kWh" Target="PRICE_PER_KWH" Default="0.35" Mode="" Description="Your local electricity price per kWh (in the configured currency). Used for the 'money saved' calculation. Stamped on every reading: when your tariff changes, just update it here, and what has already been produced keeps its value." Type="Variable" Display="always" Required="false" Mask="false">0.35</Config>
+  <Config Name="Data retention (days)" Target="RETENTION_DAYS" Default="730" Mode="" Description="Raw readings to keep, 0 = forever. Aggregates are always kept." Type="Variable" Display="advanced" Required="false" Mask="false">730</Config>
 
-  <Config Name="Self-consumption (%)" Target="SELF_CONSUMPTION_PCT" Default="100" Mode="" Description="Estimated share of production you actually self-consume (0-100). Without a battery or smart control you can't use 100 percent; the rest is fed into the grid. Affects only the realistic 'money saved' and amortization figures, not the kWh or CO2 numbers. 100 = previous behaviour." Type="Variable" Display="always" Required="false" Mask="false">100</Config>
+  <Config Name="Lifetime offset (kWh)" Target="LIFETIME_OFFSET_KWH" Default="0" Mode="" Description="Correction of the lifetime total, e.g. a counter wrap from before the monitor ran. See README." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
 
-  <Config Name="Feed-in tariff per kWh" Target="FEED_IN_TARIFF" Default="0" Mode="" Description="Compensation per kWh (in the configured currency) for the share you don't self-consume. Often 0 for a balcony plant without a feed-in contract." Type="Variable" Display="always" Required="false" Mask="false">0</Config>
+  <Config Name="Log level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="DEBUG, INFO, WARNING or ERROR." Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
 
-  <Config Name="Installation cost (amortization)" Target="INSTALL_COST" Default="0" Mode="" Description="One-off total cost of your installation (in the configured currency). When set above 0, a 'Payback' card shows how far your savings have repaid it, with a break-even highlight. 0 hides the card." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
+  <Config Name="Electricity price per kWh" Target="PRICE_PER_KWH" Default="0.35" Mode="" Description="Stamped on every reading, so a new tariff only affects new production." Type="Variable" Display="advanced" Required="false" Mask="false">0.35</Config>
 
-  <Config Name="Lifetime offset (kWh)" Target="LIFETIME_OFFSET_KWH" Default="0" Mode="" Description="Added to the lifetime total and everything built on it (money, CO2, payback); negative values lower it. Only for a counter wrap from before the monitor was set up, or a manual correction. Wraps the monitor sees are added back by itself, entering one of those would count it twice." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
+  <Config Name="Currency" Target="CURRENCY" Default="EUR" Mode="" Description="ISO 4217 code, e.g. EUR, USD, CHF." Type="Variable" Display="advanced" Required="false" Mask="false">EUR</Config>
 
-  <Config Name="Data retention (days)" Target="RETENTION_DAYS" Default="730" Mode="" Description="Keep raw measurements for N days. Default 730 (2 years) allows year-over-year comparisons. Older data is pruned daily. Set to 0 to disable automatic pruning." Type="Variable" Display="advanced" Required="false" Mask="false">730</Config>
+  <Config Name="Self-consumption (%)" Target="SELF_CONSUMPTION_PCT" Default="100" Mode="" Description="Share of production you use yourself." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
 
-  <Config Name="Inverter Port" Target="INVERTER_PORT" Default="8050" Mode="" Description="Port of the inverter's local API. Default is 8050." Type="Variable" Display="advanced" Required="false" Mask="false">8050</Config>
+  <Config Name="Feed-in tariff per kWh" Target="FEED_IN_TARIFF" Default="0" Mode="" Description="Paid for the share you feed in. Often 0 for a balcony plant." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
 
-  <Config Name="Poll interval (seconds)" Target="POLL_INTERVAL" Default="60" Mode="" Description="How often the inverter is polled. Default 60s. Lower values create more data; higher values are gentler on the inverter. Automatically slowed down 10x (capped at 5 min) when the inverter is offline." Type="Variable" Display="advanced" Required="false" Mask="false">60</Config>
+  <Config Name="Installation cost" Target="INSTALL_COST" Default="0" Mode="" Description="Above 0 shows the payback card." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
 
-  <Config Name="Grid CO2 intensity (kg/kWh)" Target="CO2_KG_PER_KWH" Default="0.38" Mode="" Description="Grid CO2 intensity in kg CO2 per kWh. Default 0.38 reflects the recent German grid mix. Used as fallback when the optional Electricity Maps integration is disabled or unavailable." Type="Variable" Display="advanced" Required="false" Mask="false">0.38</Config>
+  <Config Name="Site address" Target="SITE_ADDRESS" Default="" Mode="" Description="Address or lat,lon. Adds the sun's path and a map, looked up once at OpenStreetMap." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
-  <Config Name="Site address (optional)" Target="SITE_ADDRESS" Default="" Mode="" Description="Optional. Your address, or lat,lon to skip the address search. Enables the sun path and the map of the surroundings in the sun path card. Looked up once (Nominatim, OpenStreetMap) and cached in /data; the browser never contacts these services. Leave empty to keep the container from sending anything." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Building storeys" Target="SITE_FLOORS" Default="" Mode="" Description="Sets your building's height where OpenStreetMap has none." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
-  <Config Name="Storeys of your building (optional)" Target="SITE_FLOORS" Default="" Mode="" Description="Optional. Number of storeys of your building, for its height and shadow in the sun path card where OpenStreetMap has none." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Weather forecast" Target="WEATHER_ENABLED" Default="false" Mode="" Description="true adds an hourly forecast from Open-Meteo. Needs the site address." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 
-  <Config Name="Weather forecast (optional)" Target="WEATHER_ENABLED" Default="false" Mode="" Description="Optional, needs the site address. Set to true to fetch an hourly forecast from Open-Meteo (no API key) for a better estimate of today, what is still to come in the sun path card, and an estimate for tomorrow. Only your coordinates, rounded to about 1 km, are sent. Leave at false to keep the container from asking." Type="Variable" Display="always" Required="false" Mask="false">false</Config>
+  <Config Name="CO2 factor (kg/kWh)" Target="CO2_KG_PER_KWH" Default="0.38" Mode="" Description="Static grid factor, used without Electricity Maps." Type="Variable" Display="advanced" Required="false" Mask="false">0.38</Config>
 
-  <Config Name="Electricity Maps API token (optional)" Target="ELECTRICITY_MAPS_TOKEN" Default="" Mode="" Description="Optional. When set, the container fetches live grid carbon intensity once per hour from electricitymaps.com and stamps each measurement with the active factor. The lifetime CO2 calculation then becomes historically accurate. Get a free token at https://www.electricitymaps.com/free-tier-api (use the 'Home Assistant' path for permanent free access)." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Electricity Maps token" Target="ELECTRICITY_MAPS_TOKEN" Default="" Mode="" Description="Live grid CO2 intensity, fetched hourly. Free token at electricitymaps.com/free-tier-api (Home Assistant path)." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
 
-  <Config Name="Electricity Maps zone label" Target="ELECTRICITY_MAPS_ZONE" Default="DE" Mode="" Description="ISO country code (DE, AT, CH, FR, ...) for the UI display label. The actual zone is bound to the token in the Electricity Maps portal — this env var is for the UI only." Type="Variable" Display="advanced" Required="false" Mask="false">DE</Config>
-
-  <Config Name="Log level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="Python log level: DEBUG, INFO, WARNING, ERROR" Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
+  <Config Name="Electricity Maps zone" Target="ELECTRICITY_MAPS_ZONE" Default="DE" Mode="" Description="Label in the UI. The real zone is bound to the token." Type="Variable" Display="advanced" Required="false" Mask="false">DE</Config>
 </Container>
