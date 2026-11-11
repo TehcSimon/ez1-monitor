@@ -75,7 +75,8 @@ to live grid CO₂ data, the map or the weather forecast.
 - 🚦 **Smart status.** Tells dusk from a real outage and shrugs off a single
   dropped poll — no false alarms — and polls 10× slower while the inverter
   sleeps.
-- 📊 **Prometheus `/metrics`** for Grafana, Home Assistant & co.
+- 📊 **Prometheus `/metrics` and CSV export** for Grafana, Home Assistant & co.,
+  or a spreadsheet.
 - 📱 **PWA, themes, two languages.** Installable on iOS and Android, light
   and dark theme, English and German.
 - 🔒 **Self-contained.** All assets self-hosted (no CDN, no Google Fonts),
@@ -407,8 +408,8 @@ non-commercial use and without an API key.
 
 ## API & metrics
 
-All endpoints return JSON except `/metrics`. Like the dashboard, they're
-unauthenticated — meant for the LAN.
+All endpoints return JSON except `/metrics` and `/api/export`. Like the
+dashboard, they're unauthenticated — meant for the LAN.
 
 <details>
 <summary><b>REST endpoints</b></summary>
@@ -430,6 +431,7 @@ unauthenticated — meant for the LAN.
 | `GET /api/highscores` | All-time best day/week/month/year with animation state |
 | `GET /api/aggregates` | Long-term yearly aggregates (survive retention) |
 | `GET /api/aggregates?year=YYYY` | Monthly aggregates for a specific year |
+| `GET /api/export?resolution=5min\|day` | CSV download: power per input, inverter temperature and grid values in 5-minute slots as far as the raw readings reach, or the daily totals of the whole history. In German with `;` and a decimal comma |
 | `GET /metrics` | Prometheus exposition format |
 
 </details>
@@ -462,6 +464,9 @@ A single SQLite file (`/data/ez1.db`, WAL mode). With normal day/night
 cycles and 60 s polling, expect about 20 MB per year. To back it up, copy
 the file — safe while the container is running. The Unraid appdata backup
 plugin handles this automatically.
+
+For a spreadsheet or your own analysis, the CSV links in the footer download
+the power in 5-minute slots or the daily totals.
 
 ## Upgrading
 

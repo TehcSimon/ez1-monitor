@@ -31,6 +31,28 @@ are idempotent. Only these releases do anything noticeable on first start:
 
 The rest of this file is the release history, newest first.
 
+## From v1.15.3 to v1.15.4
+
+No manual steps, no database changes.
+
+- **CSV export.** Two links in the footer download the readings for a
+  spreadsheet or your own analysis: power per input and in total, inverter
+  temperature and grid values in 5-minute slots (the slots of the sun path)
+  as far back as the raw readings reach, or the daily totals of the whole
+  history. With the dashboard in German the files use semicolons and a
+  decimal comma, so a German Excel opens them as they are; in English,
+  commas and a decimal point. The column names are the same in both.
+  New endpoint `GET /api/export?resolution=5min|day`.
+- **`docker-compose.yml` rewritten.** It pulls the published image instead
+  of building from the checkout and carries no comments. `INVERTER_IP` is
+  left empty, the optional variables are commented out with their defaults.
+  If you edited the file inside a checkout, `git pull` reports a conflict.
+- **Unraid template regrouped.** The Basic View shows only the inverter IP,
+  the port and appdata, everything else is under Advanced. The TZ field is
+  gone, Unraid sets `TZ` itself. Both only reach new installs; an existing
+  container keeps its settings.
+- **The README diagram** is now `docs/how-it-works-{light,dark}.svg`.
+
 ## From v1.15.2 to v1.15.3
 
 No manual steps, no database changes.
